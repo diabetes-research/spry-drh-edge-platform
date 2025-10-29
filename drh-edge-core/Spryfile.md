@@ -22,10 +22,8 @@ Download your research data source (based on  the file format mentioned in  http
 directory as this `README.md` and then run `spry.ts task prepare-db`. pass the study files folder name in the prepare-db task
 
 ```bash prepare-db --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
-
 #!/usr/bin/env -S bash
 ## example usage  ./run-drh-etl-surveilr.sh --data_path raw-data/flexi-cgm-study/ --tenant_id FLCG --tenant_name "FLCG" 
-
  ./run-drh-etl-surveilr.sh --data_path raw-data/flexi-cgm-study/ --tenant_id FLCG --tenant_name "FLCG" 
 
 ```
