@@ -1,0 +1,2 @@
+study_id,study_name,start_date,end_date,treatment_modalities,funding_source,nct_number,study_description
+FLCM,"Flexible CGM Data Study (Freq: 5 min, Days: 7)",2024-01-01,2025-12-31,MDI;Insulin Pump;Hybrid Closed Loop,JDRF,NCT9683665,A synthetic multi-arm trial based on user-defined parameters.
