@@ -1,0 +1,11 @@
+fitness_meta_id,participant_id,file_name,source,file_format
+FM-P-001-1,P-001,fitness_P-001_raw.json,Wearable Device API,JSON
+FM-P-002-2,P-002,fitness_P-002_raw.json,Wearable Device API,JSON
+FM-P-003-3,P-003,fitness_P-003_raw.json,Wearable Device API,JSON
+FM-P-004-4,P-004,fitness_P-004_raw.json,Wearable Device API,JSON
+FM-P-005-5,P-005,fitness_P-005_raw.json,Wearable Device API,JSON
+FM-P-006-6,P-006,fitness_P-006_raw.json,Wearable Device API,JSON
+FM-P-007-7,P-007,fitness_P-007_raw.json,Wearable Device API,JSON
+FM-P-008-8,P-008,fitness_P-008_raw.json,Wearable Device API,JSON
+FM-P-009-9,P-009,fitness_P-009_raw.json,Wearable Device API,JSON
+FM-P-010-10,P-010,fitness_P-010_raw.json,Wearable Device API,JSON

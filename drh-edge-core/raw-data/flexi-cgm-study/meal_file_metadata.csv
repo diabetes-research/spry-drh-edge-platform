@@ -1,0 +1,11 @@
+meal_meta_id,participant_id,file_name,source,file_format
+MM-P-001-1,P-001,meal_log_P-001.csv,Nutrition App,CSV
+MM-P-002-2,P-002,meal_log_P-002.csv,Nutrition App,CSV
+MM-P-003-3,P-003,meal_log_P-003.csv,Nutrition App,CSV
+MM-P-004-4,P-004,meal_log_P-004.csv,Nutrition App,CSV
+MM-P-005-5,P-005,meal_log_P-005.csv,Nutrition App,CSV
+MM-P-006-6,P-006,meal_log_P-006.csv,Nutrition App,CSV
+MM-P-007-7,P-007,meal_log_P-007.csv,Nutrition App,CSV
+MM-P-008-8,P-008,meal_log_P-008.csv,Nutrition App,CSV
+MM-P-009-9,P-009,meal_log_P-009.csv,Nutrition App,CSV
+MM-P-010-10,P-010,meal_log_P-010.csv,Nutrition App,CSV

@@ -1,0 +1,11 @@
+participant_id,study_id,site_id,diagnosis_icd,med_rxnorm,treatment_modality,gender,race_ethnicity,age,bmi,baseline_hba1c,diabetes_type,study_arm
+P-001,FLCM,ST-001,E10.9,314076,Insulin Pump,Male,Ben,24,22.4,6.9,Type 1,Control
+P-002,FLCM,ST-001,E10.9,866952,MDI,Female,David,53,23.0,8.2,Type 1,Intervention B
+P-003,FLCM,ST-001,E10.9,314076,Insulin Pump,Male,David,27,22.0,7.8,Type 1,Control
+P-004,FLCM,ST-001,E10.9,314076,Insulin Pump,Female,Grace,30,20.6,8.5,Type 1,Intervention A
+P-005,FLCM,ST-001,E10.9,866952,MDI,Male,Ben,56,28.1,8.2,Type 1,Control
+P-006,FLCM,ST-001,E10.9,866952,Hybrid Closed Loop,Female,Chloe,42,23.6,7.2,Type 1,Control
+P-007,FLCM,ST-001,E10.9,314076,Insulin Pump,Male,Alex,50,26.6,6.0,Type 1,Intervention A
+P-008,FLCM,ST-001,E10.9,866952,Hybrid Closed Loop,Female,David,52,32.1,7.9,Type 1,Control
+P-009,FLCM,ST-001,E10.9,866952,Hybrid Closed Loop,Male,David,59,24.6,7.3,Type 1,Intervention B
+P-010,FLCM,ST-001,E10.9,866952,MDI,Female,Emma,32,34.4,8.3,Type 1,Intervention B
