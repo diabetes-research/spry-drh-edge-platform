@@ -1,6 +1,6 @@
 ---
 sqlpage-conf:
-  database_url: "sqlite://DRH.studydata.sqlite.db?mode=rwc"
+  database_url: "sqlite://resource-surveillance.sqlite.db?mode=rwc"
   web_root: "./dev-src.auto"
   allow_exec: true
   port: 9227
@@ -18,14 +18,23 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 
 ## Setup
 
-Download your research data source (based on  the file format mentioned in  https://drh.diabetestechnology.org/organize-cgm-data ) and place it into the same
-directory as this `README.md` and then run `spry.ts task prepare-db`. pass the study files folder name in the prepare-db task
+**Instructions**
+Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
+Place the study data files in a **directory** in the same path as this `Spryfile.md`, then run the following command: `spry.ts task prepare-db`
+When running the `prepare-db` task, provide the **study data folder path**, **tenant ID**, and **tenant name** as parameters.
+
 
 ```bash prepare-db --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/usr/bin/env -S bash
-## example usage  ./run-drh-etl-surveilr.sh --data_path raw-data/flexi-cgm-study/ --tenant_id FLCG --tenant_name "FLCG" 
- ./run-drh-etl-surveilr.sh --data_path raw-data/flexi-cgm-study/ --tenant_id FLCG --tenant_name "FLCG" 
-
+rm -f resource-surveillance.sqlite.db
+rm -f 01-execute-cgm-tracing.sql
+rm -f 02-file-meta-ingest-data-json.sql
+surveilr ingest files -r raw-data/flexi-cgm-study/ --tenant-id FLCG --tenant-name "FLCG" && surveilr orchestrate transform-csv
+surveilr shell common-sql/drh-data-quality-prepare.sql
+cat duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql | duckdb ":memory:"
+#surveilr shell  --engine duckdb duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql 
+surveilr shell common-sql/drh-metrics-pipeline.sql
+# cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
 ```
 
 ## SQLPage Dev / Watch mode
@@ -34,7 +43,6 @@ While you're developing, Spry's `dev-src.auto` generator should be used:
 
 ```bash prepare-sqlpage-dev --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
 ./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
-./create-raw-cgm-sql-files.sh 
 ```
 
 ```bash clean --descr "Clean up the project directory's generated artifacts"
@@ -782,13 +790,21 @@ The exact date and time when the glucose level was recorded. This is crucial for
 - **CGM_Value**:
 The measured glucose level at the given timestamp. This value is typically recorded in milligrams per deciliter (mg/dL) or millimoles per liter (mmol/L) and provides insight into the participant''s glucose fluctuations throughout the day.' as contents_md;
 
-SELECT 'table' AS component,
-        'Table' AS markdown,
-        'Column Count' as align_right,
-        TRUE as sort,
-        TRUE as search;
-SELECT '[' || table_name || '](cgm-data/raw-cgm/' || table_name || '.sql)' AS "Table"
-FROM drh_raw_cgm_table_lst;
+SELECT 
+    'table' AS component,
+    'RAW FILES' AS markdown,
+    TRUE AS sort,
+    TRUE AS search;
+
+SELECT 
+    '[' || REPLACE(r.table_name, 'uniform_resource_', '') || '](cgm-data/raw-cgm/' || r.table_name || '.sql)' AS "RAW FILES"
+FROM 
+    drh_raw_cgm_table_lst AS r
+JOIN 
+    sqlpage_files AS f 
+    ON f.path = 'drh/cgm-data/raw-cgm/' || r.table_name || '.sql'
+ORDER BY 
+    r.table_name;
 
 
 ```
