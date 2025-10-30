@@ -19,9 +19,11 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 ## Setup
 
 **Instructions**
-Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
-Place the study data files in a **directory** in the same path as this `Spryfile.md`, then run the following command: `spry.ts task prepare-db`
-When running the `prepare-db` task, provide the **study data folder path**, **tenant ID**, and **tenant name** as parameters.
+- Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
+- Place the study data files in a **directory** in the same path as this `Spryfile.md`, then run the following command:
+  -  `spry.ts task prepare-db`
+- When running the `prepare-db` task, provide the **study data folder path**, **tenant ID**, and **tenant name** as parameters.
+
 
 
 ```bash prepare-db --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
