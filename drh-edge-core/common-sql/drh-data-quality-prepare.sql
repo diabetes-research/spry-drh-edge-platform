@@ -1353,6 +1353,50 @@ FROM
             study_id IS NULL
             OR study_id = ''
         UNION ALL
+        SELECT
+            'uniform_resource_cgm_file_metadata' AS table_name,
+            'tenant_id' AS column_name,
+            tenant_id AS value,
+            rowid
+        FROM
+            uniform_resource_cgm_file_metadata
+        WHERE
+            tenant_id IS NULL
+            OR tenant_id = ''
+        UNION ALL
+        SELECT
+            'uniform_resource_cgm_file_metadata' AS table_name,
+            'map_field_of_cgm_date' AS column_name,
+            map_field_of_cgm_date AS value,
+            rowid
+        FROM
+            uniform_resource_cgm_file_metadata
+        WHERE
+            map_field_of_cgm_date IS NULL
+            OR map_field_of_cgm_date = ''
+        UNION ALL
+              SELECT
+            'uniform_resource_cgm_file_metadata' AS table_name,
+            'map_field_of_cgm_value' AS column_name,
+            map_field_of_cgm_value AS value,
+            rowid
+        FROM
+            uniform_resource_cgm_file_metadata
+        WHERE
+            map_field_of_cgm_value IS NULL
+            OR map_field_of_cgm_value = ''
+        UNION ALL        
+              SELECT
+            'uniform_resource_cgm_file_metadata' AS table_name,
+            'map_field_of_patient_id' AS column_name,
+            map_field_of_patient_id AS value,
+            rowid
+        FROM
+            uniform_resource_cgm_file_metadata
+        WHERE
+            map_field_of_patient_id IS NULL
+            OR map_field_of_patient_id = ''
+        UNION ALL
         -- uniform_resource_investigator
         SELECT
             'uniform_resource_investigator' AS table_name,
@@ -1610,7 +1654,20 @@ SELECT
     'uniform_resource_author' AS table_name,
     COUNT(*) AS row_count
 FROM
-    uniform_resource_author;
+    uniform_resource_author
+UNION ALL
+SELECT
+    'uniform_resource_fitness_file_metadata' AS table_name,
+    COUNT(*) AS row_count
+FROM
+    uniform_resource_fitness_file_metadata
+    UNION ALL
+SELECT
+    'uniform_resource_meal_file_metadata' AS table_name,
+    COUNT(*) AS row_count
+FROM
+    uniform_resource_meal_file_metadata;
+
 
 DROP VIEW IF EXISTS empty_tables;
 

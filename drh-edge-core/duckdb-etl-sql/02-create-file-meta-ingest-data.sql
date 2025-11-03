@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- DUCKDB JSON INGEST AND EXPORT (v1.4.1+)
--- This script dynamically generates an INSERT statement to move metadata and 
--- raw CGM data (as JSON arrays) from various SQLite tables into a single DuckDB 
+-- This script dynamically generates an INSERT statement to move metadata and
+-- raw CGM data (as JSON arrays) from various SQLite tables into a single DuckDB
 -- table, executes it, and exports the final generated SQL string.
 -- ==============================================================================
 
@@ -26,7 +26,7 @@ SELECT COUNT(*) AS exists_flag
 FROM pragma_table_info('drh.uniform_resource_cgm_file_metadata');
 
 -- Show a warning if table not found (no RAISE_ERROR in 1.4.1)
-SELECT 
+SELECT
  CASE WHEN exists_flag = 0 THEN '⚠️ Table "drh.uniform_resource_cgm_file_metadata" not found in SQLite DB'
    ELSE '✅ Metadata table found'
  END AS status
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS file_meta_ingest_data (
 -- 3. Define a temporary view containing the necessary IDs and metadata
 -- UPDATED: Removed selection of tenant_id and study_id.
 CREATE OR REPLACE TEMPORARY VIEW cgm_metadata_local AS
-SELECT 
+SELECT
 gen_ulid() AS db_file_id,
 gen_ulid() || '-' || CAST(row_number() OVER (ORDER BY file_name) AS TEXT) AS file_meta_id,
 device_id,
@@ -88,9 +88,10 @@ SELECT
  || '''map_field_of_patient_id'', '|| '''' || T1.map_field_of_patient_id  -- Fixed with manual quoting
  || ''') AS file_meta_data, ' -- Added final closing quote for the string
 
- -- cgm_data JSON array (Selects from the dynamically named raw data table)
- || '(SELECT JSON_ARRAY(json_object(T2.*)) FROM drh."uniform_resource_'
- || REPLACE(REGEXP_REPLACE(TRIM(LOWER(T1.file_name)), '\.[^\.]+$', '', 'g'), '-', '_')
+-- cgm_data JSON array (Selects from the dynamically named raw data table)
+ -- FINAL FIX FOR 1.4.1: Use STRING_AGG and manual bracket wrapping to create the JSON array.
+ || '(SELECT ''['' || STRING_AGG(TO_JSON(T2), '','') || '']'' FROM drh."uniform_resource_'
+ || REPLACE(REGEXP_REPLACE(TRIM(LOWER(T1.file_name)), '\\.[^\\.]+$', '', 'g'), '-', '_')
  || '" AS T2) AS cgm_data'
 
  , ' UNION ALL ' -- Aggregate multiple SELECTs with UNION ALL
