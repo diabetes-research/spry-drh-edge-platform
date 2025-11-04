@@ -40,19 +40,6 @@ surveilr shell common-sql/drh-metrics-pipeline.sql
 cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
 ```
 
-
-<!-- ```bash prepare-db --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
-#!/usr/bin/env -S bash
-rm -f resource-surveillance.sqlite.db
-rm -f 01-execute-cgm-tracing.sql
-rm -f 02-file-meta-ingest-data-json.sql
-surveilr ingest files -r raw-data/flexi-cgm-study/ --tenant-id FLCG --tenant-name "FLCG" && surveilr orchestrate transform-csv
-surveilr shell common-sql/drh-data-quality-prepare.sql
-cat duckdb-etl-sql/01-generate-execute-cgm.sql | duckdb ":memory:"
-#surveilr shell  --engine duckdb duckdb-etl-sql/01-generate-execute-cgm.sql 
-
-``` -->
-
 ## SQLPage Dev / Watch mode
 
 While you're developing, Spry's `dev-src.auto` generator should be used:
