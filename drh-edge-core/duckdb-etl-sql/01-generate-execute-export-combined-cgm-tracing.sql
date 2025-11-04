@@ -20,9 +20,21 @@ ATTACH 'resource-surveillance.sqlite.db' AS drh (TYPE sqlite);
 -- 2. ULID-LIKE GENERATOR (DuckDB-safe)
 ---------------------------------------
 CREATE OR REPLACE MACRO gen_ulid() AS (
- STRFTIME(NOW(), '%Y%m%d%H%M%S') || '-' || CAST(ABS(random()) * 1e16 AS VARCHAR)
+    -- Generates a 26-character string, time-prefix for sortability.
+    SUBSTRING(
+        REPLACE(
+            STRFTIME(NOW(), '%Y%m%d%H%M%S%f') || CAST(ABS(random()) * 1e16 AS VARCHAR),
+            '.', '' 
+        ), 1, 26
+    )
 );
 
+
+-- 1. Generate the single, constant db_file_id for the entire batch
+CREATE OR REPLACE TEMPORARY VIEW constant_batch_ids AS
+SELECT
+    gen_ulid() AS db_file_id_constant;
+    
 ---------------------------------------
 -- 3. VERIFY REQUIRED TABLE EXISTS
 ---------------------------------------
@@ -42,8 +54,8 @@ FROM metadata_exists;
 ---------------------------------------
 CREATE OR REPLACE TEMP VIEW metadata_local AS
 SELECT
-  gen_ulid() AS db_file_id,
-  gen_ulid() || '-' || CAST(row_number() OVER (ORDER BY file_name) AS TEXT) AS file_meta_id,
+  (select db_file_id_constant from constant_batch_ids limit 1) AS db_file_id,
+  gen_ulid() AS file_meta_id,
   (select party_id from drh.party limit 1) AS tenant_id,
   (select study_id from drh.uniform_resource_study limit 1 )AS study_id,
   device_id,
