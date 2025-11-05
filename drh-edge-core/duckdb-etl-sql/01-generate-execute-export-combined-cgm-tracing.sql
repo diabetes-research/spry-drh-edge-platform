@@ -16,29 +16,14 @@ LOAD json;
 ---------------------------------------
 ATTACH 'resource-surveillance.sqlite.db' AS drh (TYPE sqlite);
 
+  
 ---------------------------------------
--- 2. ULID-LIKE GENERATOR (DuckDB-safe)
----------------------------------------
-CREATE OR REPLACE MACRO gen_ulid() AS (
-    -- Generates a 26-character string, time-prefix for sortability.
-    SUBSTRING(
-        REPLACE(
-            STRFTIME(NOW(), '%Y%m%d%H%M%S%f') || CAST(ABS(random()) * 1e16 AS VARCHAR),
-            '.', '' 
-        ), 1, 26
-    )
-);
-
-
--- 1. Generate the single, constant db_file_id for the entire batch
-CREATE OR REPLACE TEMPORARY VIEW constant_batch_ids AS
-SELECT
-    gen_ulid() AS db_file_id_constant;
-    
----------------------------------------
--- 3. VERIFY REQUIRED TABLE EXISTS
+-- 2. VERIFY REQUIRED TABLE EXISTS
 ---------------------------------------
 CREATE OR REPLACE TEMP TABLE metadata_exists AS
+SELECT COUNT(*) AS exists_flag
+FROM pragma_table_info('drh.uniform_resource_cgm_file_metadata');
+
 SELECT COUNT(*) AS exists_flag
 FROM pragma_table_info('drh.uniform_resource_cgm_file_metadata');
 
@@ -53,9 +38,7 @@ FROM metadata_exists;
 -- 4. PREPARE LOCAL METADATA VIEW
 ---------------------------------------
 CREATE OR REPLACE TEMP VIEW metadata_local AS
-SELECT
-  (select db_file_id_constant from constant_batch_ids limit 1) AS db_file_id,
-  gen_ulid() AS file_meta_id,
+SELECT  
   (select party_id from drh.party limit 1) AS tenant_id,
   (select study_id from drh.uniform_resource_study limit 1 )AS study_id,
   device_id,
@@ -78,16 +61,24 @@ SELECT
   'CREATE OR REPLACE VIEW combined_cgm_tracing AS ' ||
   STRING_AGG(
     'SELECT ' ||
-    '''' || tenant_id || ''' AS tenant_id, ' ||
-    '''' || study_id || ''' AS study_id, ' ||
-    '''' || patient_id || ''' AS participant_id, ' ||
-    'TRY_CAST(STRFTIME(''%Y-%m-%d %H:%M:%S'', TRY_CAST("' || map_field_of_cgm_date || '" AS TIMESTAMP)) AS TIMESTAMP) AS Date_Time, ' ||
-    'TRY_CAST("' || map_field_of_cgm_value || '" AS REAL) AS CGM_Value ' ||        
+    '''' || T1.tenant_id || ''' AS tenant_id, ' ||
+    '''' || T1.study_id || ''' AS study_id, ' ||
+    '''' || T1.patient_id || ''' AS participant_id, ' ||
+    || CASE
+                 WHEN T1.map_field_of_cgm_date LIKE '%/%' THEN 
+                    'TRY_CAST(STRFTIME(''%Y-%m-%d %H:%M:%S'', datetime('
+                    || SPLIT_PART(T1.map_field_of_cgm_date, '/', 1) || ' || ''-'' || printf(''%02d'', ' || SPLIT_PART(T1.map_field_of_cgm_date, '/', 2) || ') || ''-'' || printf(''%02d'', ' || SPLIT_PART(T1.map_field_of_cgm_date, '/', 3) || ')'
+                    || ')) AS TIMESTAMP) AS Date_Time'                
+                ELSE                     
+                    'TRY_CAST(STRFTIME(''%Y-%m-%d %H:%M:%S'', TRY_CAST("' || T1.map_field_of_cgm_date || '" AS TIMESTAMP)) AS TIMESTAMP) AS Date_Time'
+            END
+            || ', '            
+            || 'TRY_CAST("' || T1.map_field_of_cgm_value || '" AS REAL) AS CGM_Value'   
     'FROM drh.uniform_resource_' ||
-    REPLACE(REGEXP_REPLACE(TRIM(LOWER(file_name)), '\.[^\.]+$', '', 'g'), '-', '_'),
+    REPLACE(REGEXP_REPLACE(TRIM(LOWER(T1.file_name)), '\.[^\.]+$', '', 'g'), '-', '_'),
     ' UNION ALL '
   ) AS final_union_query
-FROM metadata_local;
+FROM metadata_local AS T1;
 
 ---------------------------------------
 -- 6. EXPORT THE UNION SQL TO A TEMP FILE
@@ -107,13 +98,15 @@ COPY (
 CREATE OR REPLACE TEMP VIEW cgm_count_check AS
 SELECT COUNT(*) AS record_count FROM combined_cgm_tracing;
 
+select * from  cgm_count_check;
+
 ---------------------------------------
 -- 9. EXPORT TO SQLITE ONLY IF DATA EXISTS
 ---------------------------------------
-CREATE OR REPLACE TABLE drh.combined_cgm_tracing_cached AS
+DROP TABLE IF EXISTS drh.combined_cgm_tracing_cached;
+CREATE TABLE drh.combined_cgm_tracing_cached AS
 SELECT *
-FROM combined_cgm_tracing
-WHERE (SELECT record_count FROM cgm_count_check) > 0;
+FROM combined_cgm_tracing;
 
 ---------------------------------------
 -- 10. SUMMARY
@@ -130,5 +123,6 @@ DROP VIEW IF EXISTS metadata_local;
 DROP VIEW IF EXISTS union_query_generator;
 DROP VIEW IF EXISTS cgm_count_check;
 DROP TABLE IF EXISTS metadata_exists;
+DROP V IF EXISTS combined_cgm_tracing;
 
 
