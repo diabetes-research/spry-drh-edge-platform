@@ -1,6 +1,6 @@
 ---
 sqlpage-conf:
-  database_url: "sqlite://DRH.studydata.sqlite.db?mode=rwc"
+  database_url: "sqlite://resource-surveillance.sqlite.db?mode=rwc"
   web_root: "./dev-src.auto"
   allow_exec: true
   port: 9227
@@ -18,13 +18,27 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 
 ## Setup
 
-Download your research data source (based on  the file format mentioned in  https://drh.diabetestechnology.org/organize-cgm-data ) and place it into the same
-directory as this `README.md` and then run `spry.ts task prepare-db`. pass the study files folder name in the prepare-db task
+**Instructions**
+- Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
+- Place the study data files in a **directory** in the same path as this `Spryfile.md`, then run the following command:
+  -  `spry.ts task prepare-db`
+- When running the `prepare-db` task, provide the **study data folder path**, **tenant ID**, and **tenant name** as parameters.
+
+
 
 ```bash prepare-db --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/usr/bin/env -S bash
-## example usage  ./run-drh-etl-surveilr.sh --data_path raw-data/flexi-cgm-study/ --tenant_id FLCG --tenant_name "FLCG" 
- ./run-drh-etl-surveilr.sh --data_path raw-data/flexi-cgm-study/ --tenant_id FLCG --tenant_name "FLCG" 
+rm -f resource-surveillance.sqlite.db 
+rm -f *.sql                     
+surveilr ingest files -r raw-data/synthetic-data/ --tenant-id FLCG --tenant-name "FLCG" && surveilr orchestrate transform-csv
+surveilr shell common-sql/drh-data-quality-prepare.sql
+# cat duckdb-etl-sql/drh-master-etl.sql | duckdb ":memory:"
+
+# surveilr shell  --engine duckdb duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql 
+cat duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql | duckdb ":memory:"
+cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
+surveilr shell common-sql/drh-metrics-pipeline.sql
+cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
 
 ```
 
@@ -34,7 +48,6 @@ While you're developing, Spry's `dev-src.auto` generator should be used:
 
 ```bash prepare-sqlpage-dev --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
 ./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
-./create-raw-cgm-sql-files.sh 
 ```
 
 ```bash clean --descr "Clean up the project directory's generated artifacts"
@@ -252,11 +265,11 @@ SELECT
     'red'                    as color;                
 
 SELECT
-    'Combined CGM Tracing' AS title,
-    '/drh/cgm-combined-data.sql' AS link,
-    'Explore the comprehensive CGM dataset, integrating glucose monitoring data from all participants for in-depth analysis of glycemic patterns and trends across the study.' AS description,
-    'book'                as icon,
-    'red'                    as color;         
+ 'Combined Participant Data' AS title,
+ '/drh/combined-participant-data.sql' AS link,
+ 'View all integrated study data, including detailed Continuous Glucose Monitoring tracing, Meal logs, and Fitness tracking data for all participants in a single, tabbed dashboard. This is the central hub for raw study data analysis.' AS description,
+ 'database'    as icon,
+ 'red'     as color;
 
 
 SELECT
@@ -398,7 +411,7 @@ ${pagination.limit};
 ${pagination.navigation}
 
 ```
-
+                                                                                                   
 ## Study Participant Dashboard
 
 ```sql drh/study-participant-dashboard.sql{ route: { caption: "Study Participant Dashboard" } }
@@ -519,7 +532,7 @@ ${pagination.limit};
 ${pagination.navigation}
 ;
 ```
-
+                                                                                                                                                                                 
 
 ## Researcher and Associated Information
 
@@ -782,48 +795,172 @@ The exact date and time when the glucose level was recorded. This is crucial for
 - **CGM_Value**:
 The measured glucose level at the given timestamp. This value is typically recorded in milligrams per deciliter (mg/dL) or millimoles per liter (mmol/L) and provides insight into the participant''s glucose fluctuations throughout the day.' as contents_md;
 
-SELECT 'table' AS component,
-        'Table' AS markdown,
-        'Column Count' as align_right,
-        TRUE as sort,
-        TRUE as search;
-SELECT '[' || table_name || '](cgm-data/raw-cgm/' || table_name || '.sql)' AS "Table"
-FROM drh_raw_cgm_table_lst;
+SELECT 
+    'table' AS component,
+    'RAW FILES' AS markdown,
+    TRUE AS sort,
+    TRUE AS search;
+
+SELECT 
+    '[' || REPLACE(r.table_name, 'uniform_resource_', '') || '](cgm-data/raw-cgm/' || r.table_name || '.sql)' AS "RAW FILES"
+FROM 
+    drh_raw_cgm_table_lst AS r
+JOIN 
+    sqlpage_files AS f 
+    ON f.path = 'drh/cgm-data/raw-cgm/' || r.table_name || '.sql'
+ORDER BY 
+    r.table_name;
 
 
 ```
 
+## Combined Participant Data 
 
-## Combined CGM Tracing
-
-```sql drh/cgm-combined-data.sql{ route: { caption: "Combined CGM Tracing" } }
--- @route.description "Explore the comprehensive CGM dataset, integrating glucose monitoring data from all participants for in-depth analysis of glycemic patterns and trends across the study."
-
-${paginate("combined_cgm_tracing")}
+```sql drh/combined-participant-data.sql{ route: { caption: "Combined Participant Data" } }
+-- @route.description "Explore the comprehensive dataset including continuous glucose monitoring, Meal logging, and Fitness tracking data across all study participants for detailed, integrated analysis."
+SELECT 'text' AS component, $page_title AS title;
 
 SELECT
 'text' as component,
 '
+This dashboard provides a consolidated view of the three primary data streams collected during the study:
 
-The **Combined CGM Tracing** refers to a consolidated dataset of continuous glucose monitoring (CGM) data, collected from multiple participants in a research study. CGM devices track glucose levels at regular intervals throughout the day, providing detailed insights into the participants'' glycemic control over time.
+1.  **Continuous Glucose Monitoring (CGM) Tracing:** The core physiological data, showing blood glucose levels over time.
+2.  **Meal Data:** Logs of dietary intake, providing context for glucose fluctuations.
+3.  **Fitness Data:** Records of physical activity, serving as another key behavioral factor influencing metabolism.
 
-In a research study, this combined dataset is crucial for analyzing glucose trends across different participants and understanding overall patterns in response to interventions or treatments. The **Combined CGM Tracing** dataset typically includes:
-- **Participant ID**: A unique identifier for each participant, ensuring the data is de-identified while allowing for tracking individual responses.
-- **Date_Time**: The timestamp for each CGM reading, formatted uniformly to allow accurate time-based analysis.(YYYY-MM-DD HH:MM:SS)
-- **CGM_Value**: The recorded glucose level at each time point, often converted to a standard unit (e.g., mg/dL or mmol/L) and stored as a real number for precise calculations.
-
-This combined view enables researchers to perform comparative analyses, evaluate glycemic variability, and assess overall glycemic control across participants, which is essential for understanding the efficacy of treatments or interventions in the study. By aggregating data from multiple sources, researchers can identify population-level trends while maintaining the integrity of individual data. 
-
+By aggregating these datasets, researchers can conduct integrated analyses to understand the complex interplay between behavior (diet, activity) and physiological response (glucose control) across the entire participant cohort.
 ' as contents_md;
 
--- Display uniform_resource table with pagination
+
+-- Tab Declarations: The first tab is set as active by default if $tab is null
+SELECT 'tab' AS component;
+
+SELECT
+    'CGM Tracing' AS title,
+    'chart-line' AS icon,
+     $tab = 'CGM' AS active, -- Active if no tab is selected, or $tab='CGM'
+    '?tab=CGM' AS link;
+
+SELECT
+    'Meal Data' AS title,
+    'soup' AS icon,
+    $tab = 'Meal' AS active,
+    '?tab=Meal' AS link;
+
+SELECT
+    'Fitness Data' AS title,
+    'run' AS icon,
+    $tab = 'Fitness' AS active,
+    '?tab=Fitness' AS link;
+
+
+
+SELECT 'text' as component
+WHERE  $tab = 'CGM'; -- Only show if CGM tab is active
+
+SELECT
+    'text' as component,
+    'The **CGM Tracing** tab lists every recorded glucose value. This raw data is the foundation for all time-in-range and glucose variability metrics.' as contents_md
+WHERE  $tab = 'CGM';
+
+-- The table and pagination for CGM Tracing are wrapped in a conditional check
 SELECT 'table' AS component,
     TRUE AS sort,
-    TRUE AS search;
-SELECT * FROM combined_cgm_tracing 
-${pagination.limit}; 
-${pagination.navigation};
+    TRUE AS search
+WHERE  $tab = 'CGM';
 
+
+SELECT
+    tenant_id AS "Tenant ID",
+    study_id AS "Study ID",
+    participant_id AS "Participant ID",
+    Date_Time AS "Date Time",
+    CGM_Value AS "CGM Value (mg/dL)"
+FROM combined_cgm_tracing
+WHERE  $tab = 'CGM'
+
+
+
+
+
+-- Content for Tab 2: Meal Data
+SELECT 'text' as component
+WHERE $tab = 'Meal'; -- Only show if Meal tab is active
+
+SELECT
+    'text' as component,
+    'The **Meal Data** tab contains records of all logged dietary events, including meal type and calorie information, linked by participant ID.' as contents_md
+WHERE $tab = 'Meal';
+
+
+SELECT 'text' AS component,
+    '**Total Meal Records:** ' || (SELECT COUNT(*) FROM combined_meal_metadata_cached )
+    AS contents_md
+WHERE $tab = 'Meal';
+
+-- The table and pagination for Meal Data are wrapped in a conditional check
+
+SELECT 
+    'alert' AS component,
+    'Error' AS color,
+    '✅ No Meal data found for the current study cohort.' AS title,
+    'The Meal data table is empty.' AS description
+WHERE (SELECT COUNT(*) FROM combined_meal_metadata_cached ) = 0 and $tab = 'Meal';
+
+SELECT 'table' AS component,
+    TRUE AS sort,
+    TRUE AS search
+WHERE (SELECT COUNT(*) FROM combined_meal_metadata_cached ) > 0 and  $tab = 'Meal';
+
+-- ${paginate("combined_meal_metadata_cached")}
+SELECT
+    *
+FROM
+    combined_meal_metadata_cached 
+where 
+(SELECT COUNT(*) FROM combined_meal_metadata_cached ) > 0 and  $tab = 'Meal'
+-- ${pagination.limit};
+
+
+
+-- Content for Tab 3: Fitness Data
+SELECT 'text' as component
+WHERE $tab = 'Fitness'; -- Only show if Fitness tab is active
+
+SELECT
+    'text' as component,
+    'The **Fitness Data** tab summarizes physical activity metrics (steps, heart rate, distance) captured by tracking devices for all participants.' as contents_md
+WHERE $tab = 'Fitness';
+
+
+SELECT 'text' AS component,
+    '**Total Fitness Records:** ' || (SELECT COUNT(*) FROM combined_Fitness_metadata_cached )
+    AS contents_md
+WHERE $tab = 'Fitness';
+
+-- The table and pagination for Fitness Data are wrapped in a conditional check
+
+SELECT 
+    'alert' AS component,
+    'Error' AS color,
+    '✅ No Fitness data found for the current study cohort.' AS title,
+    'The Fitness data table is empty.' AS description
+WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached ) = 0 AND $tab = 'Fitness';
+
+SELECT 'table' AS component,
+    TRUE AS sort,
+    TRUE AS search
+WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached) > 0 AND $tab = 'Fitness';
+
+-- ${paginate("combined_fitness_metadata_cached")}
+SELECT
+    * FROM
+    combined_fitness_metadata_cached
+WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached) > 0 AND $tab = 'Fitness'
+-- ${pagination.limit};
+
+-- ${pagination.navigation};
 
 ```
 
