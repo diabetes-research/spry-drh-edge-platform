@@ -412,6 +412,126 @@ ${pagination.navigation}
 
 ```
                                                                                                    
+## Study Participant Dashboard
+
+```sql drh/study-participant-dashboard.sql{ route: { caption: "Study Participant Dashboard" } }
+-- @route.description "The dashboard presents key study details and participant-specific metrics in a clear, organized table format"
+
+
+${paginate("participant_dashboard_cached")}
+
+SELECT
+'datagrid' AS component; 
+
+SELECT
+    'Study Name' AS title,
+    '' || study_name || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+SELECT
+    'Start Date' AS title,
+    '' || start_date || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+SELECT
+    'End Date' AS title,
+    '' || end_date || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+SELECT
+    'NCT Number' AS title,
+    '' || nct_number || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+
+
+
+SELECT
+   'card'     as component,
+   '' as title,
+    4         as columns;
+
+SELECT
+   'Total Number Of Participants' AS title,
+   '' || total_number_of_participants || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+SELECT
+
+    'Total CGM Files' AS title,
+   '' || number_of_cgm_raw_files || '' AS description
+FROM
+  drh_number_cgm_count;
+
+
+
+SELECT
+   '% Female' AS title,
+   '' || percentage_of_females || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+
+SELECT
+   'Average Age' AS title,
+   '' || average_age || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+
+
+
+SELECT
+'datagrid' AS component;
+
+
+SELECT
+    'Study Description' AS title,
+    '' || study_description || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+    SELECT
+    'Study Team' AS title,
+    '' || investigators || '' AS description
+FROM
+    drh_study_vanity_metrics_details;
+
+
+    SELECT
+   'card'     as component,
+   '' as title,
+    1         as columns;
+
+    SELECT
+    'Device Wise Raw CGM File Count' AS title,
+    GROUP_CONCAT(' ' || devicename || ': ' || number_of_files || '') AS description
+    FROM
+        drh_device_file_count_view;
+
+    
+    ${paginate("participant_dashboard_cached")}
+
+
+  
+  SELECT 'table' AS component,
+        'participant_id' as markdown,
+        TRUE AS sort,
+        TRUE AS search;        
+--   SELECT tenant_id,format('[%s]('||sqlpage.environment_variable('SQLPAGE_SITE_PREFIX') || '/drh/participant-info/index.sql?participant_id='||'%s)',
+    SELECT tenant_id,participant_id,gender,age,study_arm,baseline_hba1c,cgm_devices,cgm_files,tir,tar_vh,tar_h,tbr_l,tbr_vl,tar,tbr,gmi,percent_gv,gri,days_of_wear,data_start_date,data_end_date FROM participant_dashboard_cached    
+    order by participant_id
+${pagination.limit}; 
+
+
+${pagination.navigation}
+;
+```
                                                                                                                                                                                  
 
 ## Researcher and Associated Information
@@ -716,11 +836,11 @@ By aggregating these datasets, researchers can conduct integrated analyses to un
 -- Tab Declarations: The first tab is set as active by default if $tab is null
 SELECT 'tab' AS component;
 
--- SELECT
---     'CGM Tracing' AS title,
---     'chart-line' AS icon,
---     $tab IS NULL OR $tab = 'CGM' AS active, -- Active if no tab is selected, or $tab='CGM'
---     '?tab=CGM' AS link;
+SELECT
+    'CGM Tracing' AS title,
+    'chart-line' AS icon,
+     $tab = 'CGM' AS active, -- Active if no tab is selected, or $tab='CGM'
+    '?tab=CGM' AS link;
 
 SELECT
     'Meal Data' AS title,
@@ -736,33 +856,32 @@ SELECT
 
 
 
--- SELECT 'text' as component
--- WHERE $tab IS NULL OR $tab = 'CGM'; -- Only show if CGM tab is active
+SELECT 'text' as component
+WHERE  $tab = 'CGM'; -- Only show if CGM tab is active
 
--- SELECT
---     'text' as component,
---     'The **CGM Tracing** tab lists every recorded glucose value. This raw data is the foundation for all time-in-range and glucose variability metrics.' as contents_md
--- WHERE $tab IS NULL OR $tab = 'CGM';
+SELECT
+    'text' as component,
+    'The **CGM Tracing** tab lists every recorded glucose value. This raw data is the foundation for all time-in-range and glucose variability metrics.' as contents_md
+WHERE  $tab = 'CGM';
 
--- -- The table and pagination for CGM Tracing are wrapped in a conditional check
--- SELECT 'table' AS component,
---     TRUE AS sort,
---     TRUE AS search
--- WHERE $tab IS NULL OR $tab = 'CGM';
+-- The table and pagination for CGM Tracing are wrapped in a conditional check
+SELECT 'table' AS component,
+    TRUE AS sort,
+    TRUE AS search
+WHERE  $tab = 'CGM';
 
--- ${paginate('combined_cgm_tracing')}
--- SELECT
---     tenant_id AS "Tenant ID",
---     study_id AS "Study ID",
---     participant_id AS "Participant ID",
---     Date_Time AS "Date Time",
---     CGM_Value AS "CGM Value (mg/dL)"
--- FROM combined_cgm_tracing
--- WHERE $tab IS NULL OR $tab = 'CGM'
--- ${pagination.limit};
 
--- ${pagination.navigation}
--- WHERE $tab IS NULL OR $tab = 'CGM';
+SELECT
+    tenant_id AS "Tenant ID",
+    study_id AS "Study ID",
+    participant_id AS "Participant ID",
+    Date_Time AS "Date Time",
+    CGM_Value AS "CGM Value (mg/dL)"
+FROM combined_cgm_tracing
+WHERE  $tab = 'CGM'
+
+
+
 
 
 -- Content for Tab 2: Meal Data

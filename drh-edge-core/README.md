@@ -22,8 +22,7 @@ into a structured SQLite database and presents the content through a drill-down 
    Generate the SQLPage notebook from `Spryfile.md` and load it into the database to create entries in the `sqlpage_files` table:
 
    ```bash
-   ./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
-   ./create-raw-cgm-sql-files.sh 
+   ./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json 
    
    ```
 
