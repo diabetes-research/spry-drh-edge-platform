@@ -1,7 +1,7 @@
 -- ==============================================================================
--- DUCKDB ETL: DYNAMIC MEAL AND FITNESS DATA AGGREGATION (FINAL REVISION)
--- Fetches db_file_id from drh.file_meta_ingest_data.
--- Dynamically constructs INSERT statements to traverse raw meal and fitness data tables based on file_name.
+-- DUCKDB ETL: DYNAMIC PARTICIPANT DATA AGGREGATION (FINAL REVISION)
+-- Aggregates all meal and fitness data/metadata into a single row for each 
+-- participant_display_id using a two-step dynamic SQL generation process.
 -- ==============================================================================
 
 INSTALL sqlite;
@@ -46,17 +46,14 @@ CREATE TABLE IF NOT EXISTS participant_meal_fitness_data (
 );
 
 ---------------------------------------
--- 2. Prepare Combined Metadata View
+-- 2. Prepare Combined Metadata View (Raw file-level metadata)
 ---------------------------------------
 CREATE OR REPLACE TEMPORARY VIEW combined_meal_fitness_metadata AS
 -- 2a. MEAL METADATA
 SELECT
     T1.participant_id AS participant_display_id,
     'meal' AS data_type,
-    T1.file_name,
-    -- Generates the raw data table name: e.g., 'uniform_resource_meal_log.csv' -> 'uniform_resource_meal_log'
     'uniform_resource_' || REPLACE(REGEXP_REPLACE(TRIM(LOWER(T1.file_name)), '\\.[^\\.]+$', '', 'g'), '-', '_') AS raw_data_table_name,
-    -- Metadata JSON object for this file
     JSON_OBJECT(
         'meal_meta_id', T1.meal_meta_id,
         'file_name', T1.file_name,
@@ -71,7 +68,6 @@ UNION ALL
 SELECT
     T2.participant_id AS participant_display_id,
     'fitness' AS data_type,
-    T2.file_name,
     'uniform_resource_' || REPLACE(REGEXP_REPLACE(TRIM(LOWER(T2.file_name)), '\\.[^\\.]+$', '', 'g'), '-', '_') AS raw_data_table_name,
     JSON_OBJECT(
         'fitness_meta_id', T2.fitness_meta_id,
@@ -81,14 +77,59 @@ SELECT
     ) AS metadata_json_object
 FROM drh.uniform_resource_fitness_file_metadata AS T2;
 
-
-select count(*) from combined_meal_fitness_metadata;
-
+---------------------------------------
+-- 3. Group by Participant and Aggregate Table Names/Metadata
+---------------------------------------
+CREATE OR REPLACE TEMPORARY VIEW participant_data_grouping AS
+SELECT
+    participant_display_id,
+    ARRAY_AGG(raw_data_table_name) FILTER (WHERE data_type = 'meal') AS meal_tables,
+    ARRAY_AGG(raw_data_table_name) FILTER (WHERE data_type = 'fitness') AS fitness_tables,
+    
+    -- Aggregate metadata JSON objects into single JSON arrays (string format)
+    '[' || STRING_AGG(REPLACE(metadata_json_object::VARCHAR, '''', ''''''), ',') FILTER (WHERE data_type = 'meal') || ']' AS aggregated_meal_metadata_json,
+    '[' || STRING_AGG(REPLACE(metadata_json_object::VARCHAR, '''', ''''''), ',') FILTER (WHERE data_type = 'fitness') || ']' AS aggregated_fitness_metadata_json
+FROM combined_meal_fitness_metadata
+GROUP BY 1;
 
 ---------------------------------------
--- 3. Generate the Dynamic Insert Query (QUOTING FIXED)
+-- 4. Generate Dynamic SQL Fragments (Meal/Fitness Data)
 ---------------------------------------
-CREATE OR REPLACE TEMPORARY VIEW json_insert_generator AS
+CREATE OR REPLACE TEMPORARY VIEW json_insert_fragments AS
+SELECT
+    T4.participant_display_id,
+    T4.aggregated_meal_metadata_json,
+    T4.aggregated_fitness_metadata_json,
+
+    -- meal_data: Generate the subquery string or literal '[]'
+    CASE WHEN ARRAY_LENGTH(T4.meal_tables) > 0 THEN
+        ' (SELECT ''['' || STRING_AGG(TO_JSON(T2), '','') || '']'' FROM ('
+        || ARRAY_TO_STRING(
+            ARRAY_TRANSFORM(T4.meal_tables, table_name -> 'SELECT * FROM drh."' || table_name || '"'), 
+            ' UNION ALL '
+        )
+        || ') AS T2) '
+    ELSE
+        '''[]''' 
+    END AS meal_data_sql,
+
+    -- fitness_data: Generate the subquery string or literal '[]'
+    CASE WHEN ARRAY_LENGTH(T4.fitness_tables) > 0 THEN
+        ' (SELECT ''['' || STRING_AGG(TO_JSON(T3), '','') || '']'' FROM ('
+        || ARRAY_TO_STRING(
+            ARRAY_TRANSFORM(T4.fitness_tables, table_name -> 'SELECT * FROM drh."' || table_name || '"'),
+            ' UNION ALL '
+        )
+        || ') AS T3) '
+    ELSE
+        '''[]''' 
+    END AS fitness_data_sql
+FROM participant_data_grouping AS T4;
+
+---------------------------------------
+-- 5. Generate the Final Dynamic Insert Query (Combining all fragments)
+---------------------------------------
+CREATE OR REPLACE TEMPORARY VIEW final_insert_query_generator AS
 SELECT
 'INSERT INTO participant_meal_fitness_data (db_file_id, tenant_id, study_display_id, fitness_meal_id, participant_display_id, meal_data, fitness_data, meal_file_metadata, fitness_file_metadata) '
 || STRING_AGG(
@@ -99,56 +140,47 @@ SELECT
     || '''' || gen_ulid() || ''' AS fitness_meal_id, '
     || '''' || T4.participant_display_id || ''' AS participant_display_id, '
     
-    || 'CASE WHEN ''' || T4.data_type || ''' = ''meal'' THEN '
-    || ' (SELECT ''['' || STRING_AGG(TO_JSON(T2), '','') || '']'' FROM drh."' || T4.raw_data_table_name || '" AS T2) '
-    || ' ELSE ''[]'' END AS meal_data, '
-
+    || T4.meal_data_sql || ' AS meal_data, '
+    || T4.fitness_data_sql || ' AS fitness_data, '
     
-    || 'CASE WHEN ''' || T4.data_type || ''' =''fitness'' THEN '
-    || ' (SELECT ''['' || STRING_AGG(TO_JSON(T3), '','') || '']'' FROM drh."' || T4.raw_data_table_name || '" AS T3) '
-    || ' ELSE ''[]'' END AS fitness_data, '
-
-    
-    || 'CASE WHEN ''' || T4.data_type || ''' =''fitness'' THEN ' 
-    || '''' || '[' || REPLACE(T4.metadata_json_object::VARCHAR, '''', '''''') || ']' || ''''
-    || ' ELSE ''[]'' END AS fitness_file_metadata, '
-    ---
-    || 'CASE WHEN ''' || T4.data_type || ''' = ''meal'' THEN '
-    || '''' || '[' || REPLACE(T4.metadata_json_object::VARCHAR, '''', '''''') || ']' || ''''
-    || ' ELSE ''[]'' END AS meal_file_metadata'
+    -- Metadata is already correctly formatted as escaped string literals
+    || '''' || T4.aggregated_meal_metadata_json || ''' AS meal_file_metadata, '
+    || '''' || T4.aggregated_fitness_metadata_json || ''' AS fitness_file_metadata'
 
 , ' UNION ALL '
 ) AS final_json_insert_query
-FROM combined_meal_fitness_metadata AS T4;
+FROM json_insert_fragments AS T4;
 
 ---------------------------------------
--- 4. Execute the Generated INSERT Statement
+-- 6. Execute the Generated INSERT Statement
 ---------------------------------------
 
 -- Write the generated SQL string to the specified path
 COPY (
-SELECT final_json_insert_query FROM json_insert_generator
+SELECT final_json_insert_query FROM final_insert_query_generator
 ) TO '04-participant-meal-fitness-data-dynamic.sql' (HEADER FALSE, DELIMITER '' , QUOTE '');
 
+-- Execute the generated SQL
 .read 04-participant-meal-fitness-data-dynamic.sql
 
 ---------------------------------------
--- 5. SUMMARY
+-- 7. SUMMARY
 ---------------------------------------
 SELECT COUNT(*) AS total_records_inserted_into_participant_meal_fitness_data
 FROM participant_meal_fitness_data;
 
 
 ---------------------------------------
--- 6. EXPORT TO SQLITE 
+-- 8. EXPORT TO SQLITE 
 ---------------------------------------
+-- Create or replace the table in the attached SQLite database
 CREATE OR REPLACE TABLE drh.participant_meal_fitness_data AS
 SELECT *
 FROM participant_meal_fitness_data
 ;
 
 ---------------------------------------
--- 10. SUMMARY
+-- 9. FINAL SUMMARY
 ---------------------------------------
 SELECT
  (SELECT COUNT(*) FROM participant_meal_fitness_data) AS total_records_in_participant_meal_fitness_data,
@@ -156,8 +188,10 @@ SELECT
 
 
 ---------------------------------------
--- 6. CLEANUP
+-- 10. CLEANUP
 ---------------------------------------
 DROP VIEW IF EXISTS constant_batch_ids;
-DROP VIEW IF EXISTS combined_metadata;
-DROP VIEW IF EXISTS json_insert_generator;
+DROP VIEW IF EXISTS combined_meal_fitness_metadata; 
+DROP VIEW IF EXISTS participant_data_grouping;
+DROP VIEW IF EXISTS json_insert_fragments;
+DROP VIEW IF EXISTS final_insert_query_generator;
