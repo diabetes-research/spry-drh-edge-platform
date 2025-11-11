@@ -19,12 +19,11 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 ## Setup
 
 **Instructions**
+
 - Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
 - Place the study data files in a **directory** in the same path as this `Spryfile.md`, then run the following command:
-  -  `spry.ts task prepare-db`
+  - `spry.ts task prepare-db`
 - When running the `prepare-db` task, provide the **study data folder path**, **tenant ID**, and **tenant name** as parameters.
-
-
 
 ```bash prepare-db --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/usr/bin/env -S bash
@@ -32,14 +31,12 @@ rm -f resource-surveillance.sqlite.db
 rm -f *.sql                     
 surveilr ingest files -r raw-data/synthetic-data/ --tenant-id FLCG --tenant-name "FLCG" && surveilr orchestrate transform-csv
 surveilr shell common-sql/drh-data-quality-prepare.sql
-# cat duckdb-etl-sql/drh-master-etl.sql | duckdb ":memory:"
-
-# surveilr shell  --engine duckdb duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql 
 cat duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql | duckdb ":memory:"
+# surveilr shell  --engine duckdb duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql 
 cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
 surveilr shell common-sql/drh-metrics-pipeline.sql
 cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
-
+cat duckdb-etl-sql/04-dynamic-participant-meal-fitness-data.sql | duckdb ":memory:"
 ```
 
 ## SQLPage Dev / Watch mode
@@ -83,7 +80,7 @@ single-database deployment can be used:
 
 ```bash deploy --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
 rm -rf dev-src.auto
-./spry.ts spc --package --conf sqlpage/sqlpage.json | sqlite3 DRH.studydata.sqlite.db
+./spry.ts spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db
 ```
 
 ## Raw SQL
@@ -282,7 +279,6 @@ SELECT
 
 ```
 
-
 ## Study Files Log Page
 
 ```sql drh/ingestion-log.sql { route: { caption: "Study Files Log" } }
@@ -411,7 +407,7 @@ ${pagination.limit};
 ${pagination.navigation}
 
 ```
-                                                                                                   
+
 ## Study Participant Dashboard
 
 ```sql drh/study-participant-dashboard.sql{ route: { caption: "Study Participant Dashboard" } }
@@ -532,7 +528,6 @@ ${pagination.limit};
 ${pagination.navigation}
 ;
 ```
-                                                                                                                                                                                 
 
 ## Researcher and Associated Information
 
@@ -573,7 +568,6 @@ SELECT * from drh_lab;
 
 
 ```
-
 
 ## Study ResearchSite Details
 
@@ -630,7 +624,6 @@ Research sites are locations where the studies are conducted. They include clini
 
 ## Participant Demographics
 
-
 ```sql drh/participant-related-data.sql{ route: { caption: "Participant Demographics" } }
 -- @route.description "This section provides detailed information about the the participants involved in the research study."
 
@@ -679,9 +672,7 @@ ${pagination.navigation}
 
 ```
 
-
 ## Author and Publication Details
-
 
 ```sql drh/author-pub-data.sql{ route: { caption: "Author and Publication Details" } }
 -- @route.description "Information about research publications and the authors involved in the studies are also collected, contributing to the broader understanding and dissemination of research findings."
@@ -731,9 +722,7 @@ This section provides information about the publications resulting from a study.
 
 ```
 
-
 ## CGM Meta Data and Associated information
-
 
 ```sql drh/cgm-associated-data.sql{ route: { caption: "CGM Meta Data and Associated information" } }
 -- @route.description "This section provides detailed information about the CGM device used, the relationship between the participant''s raw CGM tracing file and related metadata, and other pertinent information."
@@ -777,7 +766,6 @@ ${pagination.navigation}
 
 ```
 
-
 ## Raw CGM Data Description
 
 ```sql drh/cgm-data.sql{ route: { caption: "Raw CGM Data Description" } }
@@ -814,7 +802,7 @@ ORDER BY
 
 ```
 
-## Combined Participant Data 
+## Combined Participant Data
 
 ```sql drh/combined-participant-data.sql{ route: { caption: "Combined Participant Data" } }
 -- @route.description "Explore the comprehensive dataset including continuous glucose monitoring, Meal logging, and Fitness tracking data across all study participants for detailed, integrated analysis."
