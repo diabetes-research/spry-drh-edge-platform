@@ -2189,6 +2189,8 @@ GROUP BY
 ORDER BY
     number_of_files DESC;
 
+
+
 -------------Dynamically insert the sqlpages for CGM raw tables--------------------------
 -- Inserts a dynamic SQLPage file entry for each raw CGM table listed in drh_raw_cgm_table_lst.
 -- This generates a self-contained SQL file for display/pagination of each raw table in a web interface.

@@ -1,9 +1,9 @@
 ---
 sqlpage-conf:
-  database_url: "sqlite://resource-surveillance.sqlite.db?mode=rwc"
+  database_url: ${env.SPRY_DB}
   web_root: "./dev-src.auto"
   allow_exec: true
-  port: 9227
+  port: ${env.PORT}
 ---
 
 # Diabetes Research Hub (DRH) SQLPage Application
@@ -21,6 +21,7 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 **Instructions**
 
 - Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
+- Use [latest surveilr](https://github.com/surveilr/packages/releases)
 - Place the study data files in a **directory** in the same path as this `Spryfile.md`, then run the following command:
   - `spry.ts task prepare-db`
 - When running the `prepare-db` task, provide the **study data folder path**, **tenant ID**, and **tenant name** as parameters.
@@ -38,6 +39,46 @@ surveilr shell common-sql/drh-metrics-pipeline.sql
 cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
 cat duckdb-etl-sql/04-dynamic-participant-meal-fitness-data.sql | duckdb ":memory:"
 ```
+
+## Environment variables and .envrc
+
+This project reads configuration from environment variables. Two variables you will commonly set in development are:
+
+- `SPRY_DB` — the database connection URL used by SQLPage and Spry. Example value used here:
+  `sqlite://resource-surveillance.sqlite.db?mode=rwc`
+  - Scheme: `sqlite://` followed by a path (relative or absolute) to the SQLite file.
+  - Query `mode=rwc` tells SQLite/DuckDB to open the file for read/write and create it if missing.
+  - If you prefer a path under a `data/` directory, set e.g. `sqlite://./data/resource-surveillance.sqlite.db?mode=rwc`.
+
+- `PORT` — the TCP port the local SQLPage server or other local web component should listen on (example: `9227`).
+
+Recommended practice is to keep these values in a local, directory-scoped environment file. If you use direnv (recommended), create a file named `.envrc` in this directory.
+
+POSIX-style example (bash/zsh):
+
+```envrc prepare-env -C ./.envrc --gitignore --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
+export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
+export PORT=9227
+```
+
+Then run `direnv allow` in this project directory to load the `.envrc` into your shell environment. direnv will evaluate `.envrc` only after you explicitly allow it.
+
+## Security and repository hygiene
+
+- Never commit secrets or production credentials into `.envrc`. Treat `.envrc` like a local-only file.
+- Add `.envrc` to your local `.gitignore` if you keep secrets there. Alternatively commit a `.envrc.example` or `.envrc.sample` with safe, non-secret defaults to document expected variables.
+- The SQLite file (e.g. `resource-surveillance.sqlite.db`) is a binary database file — you will usually not check this into version control. Add that filename or the `data/` directory to `.gitignore` as well.
+
+Why these variables matter here
+
+- The YAML header at the top of this `Spryfile.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
+- If `SPRY_DB` is not set, the tooling may fail to find the database or fall back to defaults; explicitly setting it ensures predictable, repeatable dev runs.
+
+Quick troubleshooting
+
+- If the server does not start on the expected port, verify `echo $PORT` (or `echo $SPRY_DB`) in your shell to confirm values are loaded.
+- If direnv appears not to load `.envrc`, re-run `direnv allow` and ensure your shell config contains the direnv hook.
+
 
 ## SQLPage Dev / Watch mode
 
