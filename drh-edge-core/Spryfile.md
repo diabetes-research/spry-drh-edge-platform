@@ -18,7 +18,7 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 
 ## Setup
 
-**Instructions**
+### Instructions
 
 - Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
 - Use [latest surveilr](https://github.com/surveilr/packages/releases)
@@ -78,7 +78,6 @@ Quick troubleshooting
 
 - If the server does not start on the expected port, verify `echo $PORT` (or `echo $SPRY_DB`) in your shell to confirm values are loaded.
 - If direnv appears not to load `.envrc`, re-run `direnv allow` and ensure your shell config contains the direnv hook.
-
 
 ## SQLPage Dev / Watch mode
 
@@ -237,7 +236,7 @@ SELECT
 SELECT
       'card'                  as component,
       'Features ' as title,
-      10                     as columns;
+      11                     as columns;
 
 
 SELECT
@@ -304,19 +303,26 @@ SELECT
 
 
 SELECT
-                'Combined CGM Tracing' AS title,
-                '/drh/cgm-combined-data.sql' AS link,
-                'Explore the comprehensive CGM dataset, integrating glucose monitoring data from all participants for in-depth analysis of glycemic patterns and trends across the study.' AS description,
-                'book'                as icon,
-                'red'                    as color;                   
+   'Combined CGM Tracing' AS title,
+    '/drh/cgm-combined-data.sql' AS link,
+    'Explore the comprehensive CGM dataset, integrating glucose monitoring data from all participants for in-depth analysis of glycemic patterns and trends across the study.' AS description,
+    'book'                as icon,
+    'red'                    as color;                   
 
 SELECT
- 'Combined Participant Data' AS title,
- '/drh/combined-participant-data.sql' AS link,
- 'View all integrated study data, including detailed Continuous Glucose Monitoring tracing, Meal logs, and Fitness tracking data for all participants in a single, tabbed dashboard. This is the central hub for raw study data analysis.' AS description,
- 'database'    as icon,
- 'red'     as color;
+ 'Combined Meal Data' AS title,
+ '/drh/combined-meal-data.sql' AS link,
+ 'Detailed logs of dietary intake across all study participants. This dataset includes meal type, calorie information, and precise timestamps, providing essential contextual data for analyzing post-prandial glucose responses.' AS description,
+ 'soup' as icon,
+ 'red' as color;
 
+
+SELECT
+ 'Combined Fitness Data' AS title,
+ '/drh/combined-fitness-data.sql' AS link,
+ 'Aggregated summary of physical activity metrics captured by participant tracking devices. This includes daily steps, duration of activity, heart rate data, and distance, crucial for assessing the impact of exercise on metabolic outcomes.' AS description,
+ 'run' as icon,
+ 'red' as color;
 
 SELECT
     'PHI De-Identification Results' AS title,
@@ -887,155 +893,101 @@ ORDER BY
 
 ```
 
-## Combined Participant Data
+## Meal Data
 
-```sql drh/combined-participant-data.sql{ route: { caption: "Combined Participant Data" } }
--- @route.description "Explore the comprehensive dataset including continuous glucose monitoring, Meal logging, and Fitness tracking data across all study participants for detailed, integrated analysis."
+```sql drh/combined-meal-data.sql{ route: { caption: "Combined Meal Data" } }
+-- @page.description "Detailed logs of dietary intake across all study participants, including meal type and calorie information."
+
 SELECT 'text' AS component, $page_title AS title;
 
 SELECT
 'text' as component,
 '
-This dashboard provides a consolidated view of the three primary data streams collected during the study:
-
-1.  **Continuous Glucose Monitoring (CGM) Tracing:** The core physiological data, showing blood glucose levels over time.
-2.  **Meal Data:** Logs of dietary intake, providing context for glucose fluctuations.
-3.  **Fitness Data:** Records of physical activity, serving as another key behavioral factor influencing metabolism.
-
-By aggregating these datasets, researchers can conduct integrated analyses to understand the complex interplay between behavior (diet, activity) and physiological response (glucose control) across the entire participant cohort.
+This page provides a consolidated, static view of the **Meal Data** stream collected during the study. These logs of dietary intake provide crucial context for understanding and analyzing continuous glucose fluctuations.
 ' as contents_md;
 
 
--- Tab Declarations: The first tab is set as active by default if $tab is null
-SELECT 'tab' AS component;
-
-SELECT
-    'CGM Tracing' AS title,
-    'chart-line' AS icon,
-     $tab = 'CGM' AS active, -- Active if no tab is selected, or $tab='CGM'
-    '?tab=CGM' AS link;
-
-SELECT
-    'Meal Data' AS title,
-    'soup' AS icon,
-    $tab = 'Meal' AS active,
-    '?tab=Meal' AS link;
-
-SELECT
-    'Fitness Data' AS title,
-    'run' AS icon,
-    $tab = 'Fitness' AS active,
-    '?tab=Fitness' AS link;
-
-
-
-SELECT 'text' as component
-WHERE  $tab = 'CGM'; -- Only show if CGM tab is active
-
 SELECT
     'text' as component,
-    'The **CGM Tracing** tab lists every recorded glucose value. This raw data is the foundation for all time-in-range and glucose variability metrics.' as contents_md
-WHERE  $tab = 'CGM';
-
--- The table and pagination for CGM Tracing are wrapped in a conditional check
-SELECT 'table' AS component,
-    TRUE AS sort,
-    TRUE AS search
-WHERE  $tab = 'CGM';
-
-
-SELECT
-    tenant_id AS "Tenant ID",
-    study_id AS "Study ID",
-    participant_id AS "Participant ID",
-    Date_Time AS "Date Time",
-    CGM_Value AS "CGM Value (mg/dL)"
-FROM combined_cgm_tracing
-WHERE  $tab = 'CGM'
-
-
-
-
-
--- Content for Tab 2: Meal Data
-SELECT 'text' as component
-WHERE $tab = 'Meal'; -- Only show if Meal tab is active
-
-SELECT
-    'text' as component,
-    'The **Meal Data** tab contains records of all logged dietary events, including meal type and calorie information, linked by participant ID.' as contents_md
-WHERE $tab = 'Meal';
+    'The **Meal Data** section contains records of all logged dietary events, including meal type and calorie information, linked by participant ID.' as contents_md;
 
 
 SELECT 'text' AS component,
     '**Total Meal Records:** ' || (SELECT COUNT(*) FROM combined_meal_metadata_cached )
-    AS contents_md
-WHERE $tab = 'Meal';
+    AS contents_md;
 
--- The table and pagination for Meal Data are wrapped in a conditional check
 
-SELECT 
+SELECT
     'alert' AS component,
     'Error' AS color,
     '✅ No Meal data found for the current study cohort.' AS title,
     'The Meal data table is empty.' AS description
-WHERE (SELECT COUNT(*) FROM combined_meal_metadata_cached ) = 0 and $tab = 'Meal';
+WHERE (SELECT COUNT(*) FROM combined_meal_metadata_cached ) = 0;
 
 SELECT 'table' AS component,
     TRUE AS sort,
     TRUE AS search
-WHERE (SELECT COUNT(*) FROM combined_meal_metadata_cached ) > 0 and  $tab = 'Meal';
+WHERE (SELECT COUNT(*) FROM combined_meal_metadata_cached ) > 0;
 
--- ${paginate("combined_meal_metadata_cached")}
+${paginate("combined_meal_metadata_cached")}
 SELECT
     *
 FROM
-    combined_meal_metadata_cached 
-where 
-(SELECT COUNT(*) FROM combined_meal_metadata_cached ) > 0 and  $tab = 'Meal'
--- ${pagination.limit};
+    combined_meal_metadata_cached
+where
+(SELECT COUNT(*) FROM combined_meal_metadata_cached ) > 0;
+${pagination.limit};
+${pagination.navigation};
 
+```
 
+## Fitness Data
 
--- Content for Tab 3: Fitness Data
-SELECT 'text' as component
-WHERE $tab = 'Fitness'; -- Only show if Fitness tab is active
+```sql drh/combined-fitness-data.sql{ route: { caption: "Combined Fitness Data" } }
+-- @page.description "Summary of physical activity metrics (steps, heart rate, distance) captured by tracking devices for all participants."
+
+SELECT 'text' AS component, $page_title AS title;
+
+SELECT
+'text' as component,
+'
+This page provides a consolidated, static view of the **Fitness Data** stream collected during the study. These records of physical activity are a key behavioral factor influencing metabolism and glucose control.
+
+' as contents_md;
+
 
 SELECT
     'text' as component,
-    'The **Fitness Data** tab summarizes physical activity metrics (steps, heart rate, distance) captured by tracking devices for all participants.' as contents_md
-WHERE $tab = 'Fitness';
+    'The **Fitness Data** section summarizes physical activity metrics (steps, heart rate, distance) captured by tracking devices for all participants.' as contents_md;
 
 
 SELECT 'text' AS component,
-    '**Total Fitness Records:** ' || (SELECT COUNT(*) FROM combined_Fitness_metadata_cached )
-    AS contents_md
-WHERE $tab = 'Fitness';
+    '**Total Fitness Records:** ' || (SELECT COUNT(*) FROM combined_fitness_metadata_cached )
+    AS contents_md;
 
--- The table and pagination for Fitness Data are wrapped in a conditional check
 
-SELECT 
+SELECT
     'alert' AS component,
     'Error' AS color,
     '✅ No Fitness data found for the current study cohort.' AS title,
     'The Fitness data table is empty.' AS description
-WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached ) = 0 AND $tab = 'Fitness';
+WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached ) = 0;
 
 SELECT 'table' AS component,
     TRUE AS sort,
     TRUE AS search
-WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached) > 0 AND $tab = 'Fitness';
+WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached) > 0;
 
--- ${paginate("combined_fitness_metadata_cached")}
+${paginate("combined_fitness_metadata_cached")}
 SELECT
     * FROM
     combined_fitness_metadata_cached
-WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached) > 0 AND $tab = 'Fitness'
--- ${pagination.limit};
-
--- ${pagination.navigation};
+WHERE (SELECT COUNT(*) FROM combined_fitness_metadata_cached) > 0;
+${pagination.limit};
+${pagination.navigation};
 
 ```
+
 
 ## PHI De-Identification Results
 
