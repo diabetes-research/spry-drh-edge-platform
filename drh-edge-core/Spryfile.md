@@ -89,6 +89,8 @@ While you're developing, Spry's `dev-src.auto` generator should be used:
 
 ```bash clean --descr "Clean up the project directory's generated artifacts"
 rm -rf dev-src.auto
+rm -f resource-surveillance.sqlite.db 
+rm -f *.sql   
 ```
 
 In development mode, here’s the `--watch` convenience you can use so that
