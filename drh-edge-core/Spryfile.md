@@ -163,21 +163,56 @@ SELECT 'shell' AS component,
        'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/sql.min.js' AS javascript,
        'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/handlebars.min.js' AS javascript,
        'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/json.min.js' AS javascript,
-        '/static//d3-aide.js' AS javascript,
-        '/js/chart-component.js' AS javascript,  
+        'https://app.devl.drh.diabetestechnology.org/js/d3-aide.js' AS javascript,
+        '/d3-aide-component.js' AS javascript,  
         '{"link":"https://drh.diabetestechnology.org/","title":"DRH Home","target": "__blank"}' AS menu_item, 
         '{"link":"https://www.diabetestechnology.org/index.shtml","title":"DTS Home","target": "__blank"}' AS menu_item,         
-       '/static/stacked-bar-chart.js' AS javascript_module,
-       '/static/gri-chart.js' AS javascript_module,
-       '/static/dgp-chart.js' AS javascript_module,
-       '/static/agp-chart.js' AS javascript_module,
-       '/static/formula-component.js' AS javascript_module
+       '/js/wc/d3/stacked-bar-chart.js' AS javascript_module,
+       '/js/wc/d3/gri-chart.js' AS javascript_module,
+       '/js/wc/d3/dgp-chart.js' AS javascript_module,
+       '/js/wc/d3/agp-chart.js' AS javascript_module,
+       '/js/wc/formula-component.js' AS javascript_module
        ;
 
 SET resource_json = sqlpage.read_file_as_text('spry.d/auto/resource/${path}.auto.json');
 SET page_title  = json_extract($resource_json, '$.route.caption');
 -- END: PARTIAL global-layout.sql
 -- this is the `${cell.info}` cell on line ${cell.startLine}
+```
+
+```sql PARTIAL api-head.sql --inject ./drh/api/**
+-- BEGIN: PARTIAL api-head.sql
+-- END: PARTIAL api-head.sql
+```
+
+```sql PARTIAL chart-head.sql --inject ./drh/chart/**
+-- BEGIN: PARTIAL chart-head.sql
+-- END: PARTIAL chart-head.sql
+```
+
+```sql PARTIAL handlebars.sql --inject ../sqlpage/**
+{{!-- BEGIN: PARTIAL handlebars.sql 
+/*-- END: PARTIAL handlebars.sql*/}}
+```
+
+```import --base https://app.devl.drh.diabetestechnology.org/
+uff8 https://app.devl.drh.diabetestechnology.org/js/d3-aide.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/stacked-bar-chart.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/gri-chart.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/dgp-chart.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/agp-chart.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/formula-component.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/axis-D3QohQNI.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/line-Co2p4suz.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/lit-element-CA3xe_EJ.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/state-DQ3nVIzR.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/transform-CPUYrfNj.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/custom-W6OohYNa.js --spc
+uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js --spc
+```
+
+```import
+uff8 ./d3-aide-component.js --spc
 ```
 
 Get the brand assets and store them into the SQLPage content stream. They will
@@ -716,8 +751,24 @@ Participants are individuals who volunteer to take part in CGM research studies.
     -- Display uniform_resource table with pagination
     SELECT 'table' AS component,
           TRUE AS sort,
+          'participant_id' as  markdown,
           TRUE AS search;
-    SELECT * FROM drh_participant
+    SELECT     
+    ${md.link("participant_id", [`'participant-info/index.sql?participant_id='`, "participant_id"])} as participant_id,
+    study_id,
+    site_id,
+    diagnosis_icd,
+    med_rxnorm,
+    treatment_modality,
+    gender,
+    race_ethnicity,
+    age,
+    bmi,
+    baseline_hba1c,
+    diabetes_type,
+    study_arm,
+    tenant_id 
+    FROM drh_participant
     ${pagination.limit}; 
 
 
@@ -1005,4 +1056,777 @@ SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_ro
 SELECT input_text as "deidentified column", orch_started_at,orch_finished_at ,diagnostics_md from drh_vw_orchestration_deidentify;
 
 
+```
+## api
+
+```sql drh/api/ambulatory-glucose-profile/index.sql
+SELECT 'json' AS component, 
+        JSON_OBJECT(
+            'ambulatoryGlucoseProfile', (
+                        WITH glucose_data AS (
+              SELECT
+                  participant_id,
+                  strftime('%H', Date_Time) AS hourValue,
+                  CGM_Value AS glucose_level
+              FROM
+                  combined_cgm_tracing
+              WHERE
+                  participant_id = $participant_id
+              AND Date_Time BETWEEN $start_date AND $end_date
+          ),
+          percentiles AS (
+              SELECT
+                  participant_id,
+                  hourValue AS hour,
+                  MAX(CASE WHEN row_num = CAST(0.05 * total_count AS INT) THEN glucose_level END) AS p5,
+                  MAX(CASE WHEN row_num = CAST(0.25 * total_count AS INT) THEN glucose_level END) AS p25,
+                  MAX(CASE WHEN row_num = CAST(0.50 * total_count AS INT) THEN glucose_level END) AS p50,
+                  MAX(CASE WHEN row_num = CAST(0.75 * total_count AS INT) THEN glucose_level END) AS p75,
+                  MAX(CASE WHEN row_num = CAST(0.95 * total_count AS INT) THEN glucose_level END) AS p95
+              FROM (
+                  SELECT
+                      participant_id,
+                      hourValue,
+                      glucose_level,
+                      ROW_NUMBER() OVER (PARTITION BY participant_id, hourValue ORDER BY glucose_level) AS row_num,
+                      COUNT(*) OVER (PARTITION BY participant_id, hourValue) AS total_count
+                  FROM
+                      glucose_data
+              ) ranked_data
+              GROUP BY
+                  participant_id, hourValue
+          )
+          SELECT JSON_GROUP_ARRAY(
+                    JSON_OBJECT(
+                        'participant_id', participant_id,
+                        'hour', hour,
+                        'p5', COALESCE(p5, 0),
+                        'p25', COALESCE(p25, 0),
+                        'p50', COALESCE(p50, 0),
+                        'p75', COALESCE(p75, 0),
+                        'p95', COALESCE(p95, 0)
+                    )
+                ) AS result
+          FROM
+              percentiles
+          GROUP BY
+              participant_id
+   
+
+            )
+        ) AS contents;
+```
+
+```sql drh/api/time_range_stacked_metrics/index.sql
+SELECT 'json' AS component, 
+        JSON_OBJECT(
+            'timeMetrics', (
+                SELECT 
+                    JSON_OBJECT(
+                        'participant_id', participant_id, 
+                        'timeBelowRangeLow', CAST(COALESCE(SUM(CASE WHEN CGM_Value BETWEEN 54 AND 69 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 0) AS INTEGER),                        
+                        'timeBelowRangeVeryLow', CAST(COALESCE(SUM(CASE WHEN CGM_Value < 54 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 0) AS INTEGER),                        
+                        'timeInRange', CAST(COALESCE(SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 0) AS INTEGER),                        
+                        'timeAboveRangeVeryHigh', CAST(COALESCE(SUM(CASE WHEN CGM_Value > 250 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 0) AS INTEGER),                        
+                        'timeAboveRangeHigh', CAST(COALESCE(SUM(CASE WHEN CGM_Value BETWEEN 181 AND 250 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 0) AS INTEGER) 
+                    )
+                FROM 
+                    combined_cgm_tracing
+                WHERE 
+                    participant_id = $participant_id    
+                AND Date_Time BETWEEN $start_date AND $end_date
+            )
+        ) AS contents; 
+```
+
+```sql drh/api/daily-glcuose-profile/index.sql
+SELECT 'json' AS component, 
+        JSON_OBJECT(
+            'daily_glucose_profile', (
+                SELECT JSON_GROUP_ARRAY(
+                    JSON_OBJECT(
+                        'date_time', Date_Time, 
+                        'date', strftime('%Y-%m-%d', Date_Time), 
+                        'hour', strftime('%H', Date_Time),                        
+                        'glucose', CGM_Value                     
+                    )
+                ) 
+                  FROM
+                    combined_cgm_tracing
+                  WHERE
+                    participant_id = $participant_id
+                  AND Date_Time BETWEEN $start_date AND $end_date
+            )
+        ) AS contents;   
+```
+
+```sql drh/api/glycemic_risk_indicator/index.sql
+SELECT 'json' AS component, 
+        JSON_OBJECT(
+            'glycemicRiskIndicator', (
+                SELECT JSON_OBJECT(
+                        'time_above_VH_percentage', ROUND(COALESCE((SUM(CASE WHEN cgm_value > 250 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 0), 2),
+                        'time_above_H_percentage', ROUND(COALESCE((SUM(CASE WHEN cgm_value BETWEEN 181 AND 250 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 0), 2),
+                        'time_in_range_percentage', ROUND(COALESCE((SUM(CASE WHEN cgm_value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 0), 2),
+                        'time_below_low_percentage', ROUND(COALESCE((SUM(CASE WHEN cgm_value BETWEEN 54 AND 69 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 0), 2),
+                        'time_below_VL_percentage', ROUND(COALESCE((SUM(CASE WHEN cgm_value < 54 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 0), 2),
+                        'Hypoglycemia_Component', ROUND(COALESCE((SUM(CASE WHEN cgm_value < 54 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) + 
+                                                              (0.8 * (SUM(CASE WHEN cgm_value BETWEEN 54 AND 69 THEN 1 ELSE 0 END) * 100.0 / COUNT(*))), 0), 2),
+                        'Hyperglycemia_Component', ROUND(COALESCE((SUM(CASE WHEN cgm_value > 250 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) + 
+                                                                  (0.5 * (SUM(CASE WHEN cgm_value BETWEEN 181 AND 250 THEN 1 ELSE 0 END) * 100.0 / COUNT(*))), 0), 2),
+                        'GRI', ROUND(COALESCE((3.0 * ((SUM(CASE WHEN cgm_value < 54 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) + 
+                                                    (0.8 * (SUM(CASE WHEN cgm_value BETWEEN 54 AND 69 THEN 1 ELSE 0 END) * 100.0 / COUNT(*))))) + 
+                                        (1.6 * ((SUM(CASE WHEN cgm_value > 250 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) + 
+                                                (0.5 * (SUM(CASE WHEN cgm_value BETWEEN 181 AND 250 THEN 1 ELSE 0 END) * 100.0 / COUNT(*))))), 0), 2)
+                ) 
+                  FROM
+                    combined_cgm_tracing
+                  WHERE
+                    participant_id = $participant_id 
+                  AND Date_Time BETWEEN $start_date AND $end_date
+            )
+        ) AS contents;   
+```
+
+```sql drh/api/advanced_metrics/index.sql
+SELECT 'json' AS component, 
+        JSON_OBJECT(
+            'advancedMetrics', (
+                SELECT JSON_OBJECT(
+                        'time_in_tight_range_percentage', round(time_in_tight_range_percentage,3) 
+                ) 
+                  FROM 
+                    drh_advanced_metrics
+                  WHERE
+                    participant_id = $participant_id 
+            )
+        ) AS contents;  
+```
+
+```sql ../sqlpage/templates/gri_component.handlebars
+{{!--
+  GRI Component (Static)
+  Usage: {{> gri_component}}
+--}}
+
+<style>
+  svg {
+    display: block;
+    margin: auto;
+  }
+</style>
+
+<div class="fs-3 p-1 fw-bold"
+     style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">
+  Glycemia Risk Index
+  <div style="display: flex; justify-content: flex-end; align-items: center;">
+    <formula-component content="Hypoglycemia Component = VLow + (0.8 × Low)
+      Hyperglycemia Component = VHigh + (0.5 × High)
+      GRI = (3.0 × Hypoglycemia Component) + (1.6 × Hyperglycemia Component)
+      Equivalently,
+      GRI = (3.0 × VLow) + (2.4 × Low) + (1.6 × VHigh) + (0.8 × High)">
+    </formula-component>
+  </div>
+</div>
+
+<div class="px-4 pb-4">
+  <gri-chart></gri-chart>
+
+  <table class="w-full text-center border mt-3">
+    <thead>
+      <tr class="bg-gray-900 text-white">
+        <th>TIR</th>
+        <th>TAR(VH)</th>
+        <th>TAR(H)</th>
+        <th>TBR(L)</th>
+        <th>TBR(VL)</th>
+        <th>TITR</th>
+        <th>GRI</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="TIR"></td>
+        <td class="TAR_VH"></td>
+        <td class="TAR_H"></td>
+        <td class="TBR_L"></td>
+        <td class="TBR_VL"></td>
+        <td class="timeInTightRangeCdata"></td>
+        <td class="GRI"></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+```
+
+```sql drh/chart/glycemic_risk_indicator/index.sql
+  SELECT 'gri_component' AS component; 
+```
+
+```sql drh/participant-info/index.sql
+-- @route.caption "Participant Information"
+-- @route.description "The Participants Detail page is a comprehensive report that includes glucose statistics, such as the Ambulatory Glucose Profile (AGP), Glycemia Risk Index (GRI), Daily Glucose Profile, and all other metrics data."
+SELECT
+     'card'     as component,
+     '' as title,
+      1         as columns;
+    SELECT 
+     'The Participants Detail page is a comprehensive report that includes glucose statistics, such as the Ambulatory Glucose Profile (AGP), Glycemia Risk Index (GRI), Daily Glucose Profile, and all other metrics data.' as description;
+  
+     
+
+    SELECT 
+        'form'            as component,
+        'Filter by Date Range'   as title,
+        'Submit' as validate,    
+        'Clear'           as reset;
+    SELECT 
+        'start_date' as name,
+        'Start Date' as label,
+         strftime('%Y-%m-%d', MIN(Date_Time))  as value, 
+        'date'       as type,
+        6            as width,
+        'mt-1' as class
+    FROM     
+        combined_cgm_tracing        
+    WHERE 
+        participant_id = $participant_id;  
+    SELECT 
+        'end_date' as name,
+        'End Date' as label,
+         strftime('%Y-%m-%d', MAX(Date_Time))  as value, 
+        'date'       as type,
+         6             as width,
+         'mt-1' as class
+    FROM     
+        combined_cgm_tracing        
+    WHERE 
+        participant_id = $participant_id; 
+
+
+
+  SELECT
+    'datagrid' AS component;
+  SELECT
+      'MRN: ' || participant_id || '' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      'Study: ' || study_arm || '' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  
+  SELECT
+      'Age: '|| age || ' Years' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      'hba1c: ' || baseline_hba1c || '' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      'BMI: '|| bmi || '' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      'Diabetes Type: '|| diabetes_type || ''  AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      strftime('Generated: %Y-%m-%d %H:%M:%S', 'now') AS title,
+      ' ' AS description
+ 
+  SELECT    
+    'html' as component,
+      '<input type="hidden" name="participant_id" class="participant_id" value="'|| $participant_id ||'">' as html;      
+      
+    SELECT 
+    'card' as component,    
+    2      as columns;
+SELECT 
+    '' AS title,
+    'white' As background_color,
+    "/drh/chart/glucose-statistics-and-targets/index.sql?_sqlpage_embed&participant_id=" || $participant_id ||
+    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
+    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed
+FROM 
+    (SELECT participant_id, 
+            MIN(Date_Time) AS cgm_start_date, 
+            MAX(Date_Time) AS cgm_end_date
+     FROM combined_cgm_tracing
+     GROUP BY participant_id) AS participant_cgm_dates
+WHERE 
+    participant_cgm_dates.participant_id = $participant_id;  
+
+         
+SELECT 
+    '' as title,
+    'white' As background_color,    
+    "/drh/chart/goals-for-type-1-and-type-2-diabetes/index.sql?_sqlpage_embed&participant_id=" || $participant_id ||
+    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
+    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed
+FROM 
+    (SELECT participant_id, 
+            MIN(Date_Time) AS cgm_start_date, 
+            MAX(Date_Time) AS cgm_end_date
+     FROM combined_cgm_tracing
+     GROUP BY participant_id) AS participant_cgm_dates
+WHERE 
+    participant_cgm_dates.participant_id = $participant_id;  
+
+SELECT 
+    '' as title,
+    'white' As background_color,    
+    "/drh/chart/ambulatory-glucose-profile/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
+SELECT 
+    '' as title,
+    'white' As background_color,
+     "/drh/chart/daily-gluecose-profile/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
+SELECT 
+    '' as title,
+    'white' As background_color,
+     "/drh/chart/glycemic_risk_indicator/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
+  SELECT 
+    '' as title,
+    'white' As background_color,
+    "/drh/chart/advanced_metrics/index.sql?_sqlpage_embed&participant_id=" || $participant_id  || 
+    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
+    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed 
+    FROM 
+        (SELECT participant_id, 
+                MIN(Date_Time) AS cgm_start_date, 
+                MAX(Date_Time) AS cgm_end_date
+        FROM combined_cgm_tracing
+        GROUP BY participant_id) AS participant_cgm_dates
+    WHERE 
+        participant_cgm_dates.participant_id = $participant_id;  
+```
+
+```sql drh/chart/glucose-statistics-and-targets/index.sql
+SELECT  
+    'html' as component;
+    SELECT '<div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black;">GLUCOSE STATISTICS AND TARGETS</div><div class="px-4">' as html;
+    SELECT  
+      '<div class="card-content my-1">'|| strftime('%Y-%m-%d', MIN(Date_Time)) || ' - ' ||  strftime('%Y-%m-%d', MAX(Date_Time)) || ' <span style="float: right;">'|| CAST(julianday(MAX(Date_Time)) - julianday(MIN(Date_Time)) AS INTEGER) ||' days</span></div>' as html
+    FROM  
+        combined_cgm_tracing
+    WHERE 
+        participant_id = $participant_id
+     AND Date_Time BETWEEN $start_date AND $end_date;   
+
+    SELECT  
+      '<div class="card-content my-1" style="display: flex; flex-direction: row; justify-content: space-between;"><b>Time CGM Active</b> <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;"><b>' || ROUND(
+        (COUNT(DISTINCT DATE(Date_Time)) / 
+        ROUND((julianday(MAX(Date_Time)) - julianday(MIN(Date_Time)) + 1))
+        ) * 100, 2) || '</b> % <formula-component content="This metric calculates the percentage of time during a specific period (e.g., a day, week, or month) that the CGM device is actively collecting data. It takes into account the total duration of the monitoring period and compares it to the duration during which the device was operational and recording glucose readings."></formula-component></div></div></div>' as html
+    FROM
+      combined_cgm_tracing  
+    WHERE 
+      participant_id = $participant_id
+    AND Date_Time BETWEEN $start_date AND $end_date;    
+
+    SELECT  
+      '<div class="card-content my-1" style="display: flex; flex-direction: row; justify-content: space-between;"><b>Number of Days CGM Worn</b> <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;"><b>'|| COUNT(DISTINCT DATE(Date_Time)) ||'</b> days<formula-component content="This metric represents the total number of days the CGM device was worn by the user over a monitoring period. It helps in assessing the adherence to wearing the device as prescribed."></formula-component></div></div></div>' as html
+    FROM
+        combined_cgm_tracing  
+    WHERE 
+        participant_id = $participant_id
+    AND Date_Time BETWEEN $start_date AND $end_date;
+
+    SELECT  
+      '<div class="card-body" style="background-color: #E3E3E2;border: 1px solid black;">
+                      <div class="table-responsive">
+                        <table class="table">                           
+                           <tbody class="table-tbody list">
+                           <tr>
+                                <th colspan="2" style="text-align: center;">
+                                  Ranges And Targets For Type 1 or Type 2 Diabetes
+                                </th>
+                              </tr>
+                              <tr> 
+                                <th>
+                                  Glucose Ranges
+                                </th>
+                                <th>
+                                  Targets % of Readings (Time/Day)
+                                </th>
+                              </tr>
+                              <tr>
+                                <td>Target Range 70-180 mg/dL</td>
+                                <td>Greater than 70% (16h 48min)</td>
+                              </tr>
+                              <tr>
+                                <td>Below 70 mg/dL</td>
+                                <td>Less than 4% (58min)</td>
+                              </tr>
+                              <tr>
+                                <td>Below 54 mg/dL</td>
+                                <td>Less than 1% (14min)</td>
+                              </tr>
+                              <tr>
+                                <td>Above 180 mg/dL</td>
+                                <td>Less than 25% (6h)</td>
+                              </tr>
+                              <tr>
+                                <td>Above 250 mg/dL</td>
+                                <td>Less than 5% (1h 12min)</td>
+                              </tr>
+                              <tr>
+                                <td colspan="2">Each 5% increase in time in range (70-180 mg/dL) is clinically beneficial.</td>                                
+                              </tr>
+                           </tbody>
+                        </table>
+                      </div>
+                    </div>' as html; 
+
+    SELECT  
+      '<div class="card-content my-1" style="display: flex; flex-direction: row; justify-content: space-between;"><b>Mean Glucose</b> <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;"><b>'|| ROUND(AVG(CGM_Value), 2) ||'</b> mg/dL<formula-component content="Mean glucose reflects the average glucose level over the monitoring period, serving as an indicator of overall glucose control. It is a simple yet powerful measure in glucose management."></formula-component></div></div></div>' as html
+    FROM
+      combined_cgm_tracing  
+    WHERE 
+      participant_id = $participant_id
+    AND Date_Time BETWEEN $start_date AND $end_date;
+
+    SELECT  
+      '<div class="card-content my-1" style="display: flex; flex-direction: row; justify-content: space-between;"><b>Glucose Management Indicator (GMI)</b> <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;"><b>'|| ROUND(AVG(CGM_Value) * 0.155 + 95, 2) ||'</b> %<formula-component content="GMI provides an estimated A1C level based on mean glucose, which can be used as an indicator of long-term glucose control. GMI helps in setting and assessing long-term glucose goals."></formula-component></div></div></div>' as html
+    FROM
+      combined_cgm_tracing  
+    WHERE 
+      participant_id = $participant_id
+    AND Date_Time BETWEEN $start_date AND $end_date;
+      
+    SELECT  
+      '<div class="card-content my-1" style="display: flex; flex-direction: row; justify-content: space-between;"><b>Glucose Variability</b> <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;"><b>'|| ROUND((SQRT(AVG(CGM_Value * CGM_Value) - AVG(CGM_Value) * AVG(CGM_Value)) / AVG(CGM_Value)) * 100, 2) ||'</b> %<formula-component content="Glucose variability measures fluctuations in glucose levels over time, calculated as the coefficient of variation (%CV). A lower %CV indicates more stable glucose control."></formula-component></div></div></div>' as html   
+    FROM
+      combined_cgm_tracing  
+    WHERE 
+      participant_id = $participant_id
+    AND Date_Time BETWEEN $start_date AND $end_date;  
+      
+    SELECT  
+      '<div class="card-content my-1">Defined as percent coefficient of variation (%CV); target ≤36%</div></div>' as html; 
+```
+
+```sql drh/chart/goals-for-type-1-and-type-2-diabetes/index.sql
+SELECT 'html' as component,
+    '<input type="hidden" name="start_date" class="start_date" value="'|| $start_date ||'">
+    <input type="hidden" name="end_date" class="end_date" value="'|| $end_date ||'">
+    <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">Goals for Type 1 and Type 2 Diabetes <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="Goals for Type 1 and Type 2 Diabetes Chart provides a comprehensive view of a participant&#39;s glucose readings categorized into different ranges over a specified period."></formula-component></div></div>
+    <stacked-bar-chart class="p-5"></stacked-bar-chart>
+    ' as html; 
+```
+
+```sql  drh/chart/ambulatory-glucose-profile/index.sql
+SELECT 'html' as component,
+    '<style>
+        .text-\\[11px\\] { 
+            font-size: 11px;  
+        }
+    </style>
+    <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">AMBULATORY GLUCOSE PROFILE (AGP) <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="The Ambulatory Glucose Profile (AGP) summarizes glucose monitoring data over a specified period, typically 14 to 90 days. It provides a visual representation of glucose levels, helping to identify patterns and variability in glucose management."></formula-component></div></div>
+    <agp-chart class="p-5"></agp-chart>
+    ' as html;
+```
+
+```sql drh/chart/daily-gluecose-profile/index.sql 
+SELECT 'html' as component,
+        '<style>
+    .line {
+        fill: none;
+        stroke: lightgrey;
+        stroke-width: 1px;
+    }
+
+    .highlight-area {
+        fill: lightgreen;
+        opacity: 1;
+    }
+
+    .highlight-line {
+        fill: none;
+        stroke: green;
+        stroke-width: 1px;
+    }
+
+    .highlight-glucose-h-line {
+        fill: none;
+        stroke: orange;
+        stroke-width: 1px;
+    }
+
+    .highlight-glucose-l-line {
+        fill: none;
+        stroke: red;
+        stroke-width: 1px;
+    }
+
+    .reference-line {
+        stroke: black;
+        stroke-width: 1px;
+    }
+
+    .vertical-line {
+        stroke: rgb(223, 223, 223);
+        stroke-width: 1px;
+    }
+
+    .day-label {
+        font-size: 10px;
+        fill: #000;
+    }
+
+    .day-label-top {
+        font-size: 12px;
+        text-anchor: middle;
+        fill: #000;
+    }
+
+    .axis path,
+    .axis line {
+        fill: none;
+        shape-rendering: crispEdges;
+    }
+
+    .mg-dl-label {
+        font-size: 14px;
+        font-weight: bold;
+        text-anchor: middle;
+        fill: #000;
+        transform: rotate(-90deg);
+        transform-origin: left center;
+    }
+
+    .horizontal-line {
+        stroke: rgb(223, 223, 223);
+        stroke-width: 1px;
+    }
+</style> 
+        <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">DAILY GLUCOSE PROFILE <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="The Ambulatory Glucose Profile (AGP) summarizes glucose monitoring data over a specified period, typically 14 to 90 days. It provides a visual representation of glucose levels, helping to identify patterns and variability in glucose management."></formula-component></div></div>
+        <dgp-chart></dgp-chart>
+        <p class="py-2 px-4 text-gray-800 font-normal text-xs hidden" id="dgp-note"><b>NOTE:</b> The Daily Glucose
+            Profile
+            plots the glucose levels of the last 14 days.</p>
+    ' as html;
+```
+
+```sql drh/chart/glycemic_risk_indicator/index.sql
+SELECT 'html' as component,
+        '<style>
+        svg {
+          display: block;
+          margin: auto;
+        }
+      </style>        
+        <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">Glycemia Risk Index <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="Hypoglycemia Component = VLow + (0.8 × Low)
+                    Hyperglycemia Component = VHigh + (0.5 × High)
+                    GRI = (3.0 × Hypoglycemia Component) + (1.6 × Hyperglycemia Component)
+                    Equivalently,
+                    GRI = (3.0 × VLow) + (2.4 × Low) + (1.6 × VHigh) + (0.8 × High)"></formula-component></div></div>
+        <div class="px-4 pb-4">
+        <gri-chart></gri-chart>' as html; 
+      SELECT '
+        <table class="w-full text-center border">
+        <thead>
+          <tr class="bg-gray-900">
+            <th >TIR</th>
+            <th >TAR(VH)</th>
+            <th >TAR(H)</th>
+            <th >TBR(L)</th>
+            <th >TBR(VL)</th>
+            <th >TITR</th>
+            <th >GRI</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="TIR"></td>
+            <td class="TAR_VH"></td>
+            <td class="TAR_H"></td>
+            <td class="TBR_L"></td>
+            <td class="TBR_VL"></td>
+            <td class="timeInTightRangeCdata"></td>
+            <td class="GRI"></td>
+          </tr>
+        </tbody> 
+      </table>
+      </div>
+    ' as html; 
+```
+
+```sql drh/chart/advanced_metrics/index.sql
+SELECT  
+    'html' as component;
+    SELECT
+      '<div class="px-4">' as html;
+    SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Liability Index <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| ROUND(CAST((SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) + SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END)) AS REAL) / COUNT(*), 2) ||' mg/dL<formula-component content="The Liability Index quantifies the risk associated with glucose variability, measured in mg/dL."></formula-component></div></div></div>
+      <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Hypoglycemic Episodes <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) ||'<formula-component content="This metric counts the number of occurrences when glucose levels drop below a specified hypoglycemic threshold, indicating potentially dangerous low blood sugar events."></formula-component></div></div></div>
+      <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Euglycemic Episodes <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) ||'<formula-component content="This metric counts the number of instances where glucose levels remain within the target range, indicating stable and healthy glucose control."></formula-component></div></div></div>
+      <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Hyperglycemic Episodes <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END) ||'<formula-component content="This metric counts the number of instances where glucose levels exceed a certain hyperglycemic threshold, indicating potentially harmful high blood sugar events."></formula-component></div></div></div>' as html 
+      FROM combined_cgm_tracing 
+                    WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date
+                    GROUP BY participant_id;
+     SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">M Value <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round((MAX(CGM_Value) - MIN(CGM_Value)) / 
+    ((strftime('%s', MAX(DATETIME(Date_Time))) - strftime('%s', MIN(DATETIME(Date_Time)))) / 60.0),3) ||' mg/dL<formula-component content="The M Value provides a measure of glucose variability, calculated from the mean of the absolute differences between consecutive CGM values over a specified period."></formula-component></div></div></div>' as html   
+      FROM combined_cgm_tracing 
+                    WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date
+                    GROUP BY participant_id;
+      SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Mean Amplitude <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(AVG(amplitude),3) ||'<formula-component content="Mean Amplitude quantifies the average degree of fluctuation in glucose levels over a given time frame, giving insight into glucose stability."></formula-component></div></div></div>' as html  
+      FROM (SELECT ABS(MAX(CGM_Value) - MIN(CGM_Value)) AS amplitude   
+      FROM combined_cgm_tracing  WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date   
+      GROUP BY DATE(Date_Time) 
+      );      
+
+      CREATE TEMPORARY TABLE DailyRisk AS 
+      SELECT 
+          participant_id, 
+          DATE(date_time) AS day, 
+          MAX(CGM_Value) - MIN(CGM_Value) AS daily_range 
+      FROM 
+          combined_cgm_tracing cct 
+      WHERE 
+          participant_id = $participant_id
+          AND DATE(date_time) BETWEEN DATE($start_date) AND DATE($end_date) 
+      GROUP BY 
+          participant_id, 
+          DATE(date_time);
+
+      CREATE TEMPORARY TABLE AverageDailyRisk AS 
+      SELECT 
+          participant_id, 
+          AVG(daily_range) AS average_daily_risk 
+      FROM 
+          DailyRisk 
+      WHERE 
+          participant_id = $participant_id
+      GROUP BY 
+          participant_id;    
+
+      SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Average Daily Risk Range <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(average_daily_risk,3) ||' mg/dL<formula-component content="This metric assesses the average risk associated with daily glucose variations, expressed in mg/dL."></formula-component></div></div></div>' as html  
+      FROM 
+          AverageDailyRisk 
+      WHERE 
+           participant_id = $participant_id;
+
+      DROP TABLE IF EXISTS DailyRisk;
+      DROP TABLE IF EXISTS AverageDailyRisk;
+
+      CREATE TEMPORARY TABLE glucose_stats AS 
+      SELECT
+          participant_id,
+          AVG(CGM_Value) AS mean_glucose,
+          (AVG(CGM_Value * CGM_Value) - AVG(CGM_Value) * AVG(CGM_Value)) AS variance_glucose
+      FROM
+          combined_cgm_tracing
+      WHERE
+          participant_id = $participant_id
+          AND DATE(Date_Time) BETWEEN DATE($start_date) AND DATE($end_date) 
+      GROUP BY
+          participant_id;
+
+      SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">J Index <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| ROUND(0.001 * (mean_glucose + SQRT(variance_glucose)) * (mean_glucose + SQRT(variance_glucose)), 2) ||' mg/dL<formula-component content="The J Index calculates glycemic variability using both high and low glucose readings, offering a comprehensive view of glucose fluctuations."></formula-component></div></div></div>' as html  
+      FROM
+        glucose_stats;
+      DROP TABLE IF EXISTS glucose_stats;
+
+    SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Low Blood Glucose Index <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| ROUND(SUM(CASE WHEN (CGM_Value - 2.5) / 2.5 > 0 
+                   THEN ((CGM_Value - 2.5) / 2.5) * ((CGM_Value - 2.5) / 2.5) 
+                   ELSE 0 
+              END) * 5, 2) ||'<formula-component content="This metric quantifies the risk associated with low blood glucose levels over a specified period, measured in mg/dL."></formula-component></div></div></div>
+      <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">High Blood Glucose Index <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| ROUND(SUM(CASE WHEN (CGM_Value - 9.5) / 9.5 > 0 
+                   THEN ((CGM_Value - 9.5) / 9.5) * ((CGM_Value - 9.5) / 9.5) 
+                   ELSE 0 
+              END) * 5, 2) ||'<formula-component content="This metric quantifies the risk associated with high blood glucose levels over a specified period, measured in mg/dL."></formula-component></div></div></div>' as html  
+      FROM 
+          combined_cgm_tracing
+      WHERE 
+          participant_id = $participant_id
+          AND DATE(Date_Time) BETWEEN $start_date AND $end_date;   
+
+      SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Glycaemic Risk Assessment Diabetes Equation (GRADE) <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(AVG(CASE
+            WHEN CGM_Value < 90 THEN 10 * (5 - (CGM_Value / 18.0)) * (5 - (CGM_Value / 18.0))
+            WHEN CGM_Value > 180 THEN 10 * ((CGM_Value / 18.0) - 10) * ((CGM_Value / 18.0) - 10)
+            ELSE 0
+        END),3) ||'<formula-component content="GRADE is a metric that combines various glucose metrics to assess overall glycemic risk in individuals with diabetes, calculated using multiple input parameters."></formula-component></div></div></div>' as html
+      FROM 
+          combined_cgm_tracing
+      WHERE 
+          participant_id = $participant_id
+          AND DATE(Date_Time) BETWEEN $start_date AND $end_date;
+
+
+      CREATE TEMPORARY TABLE lag_values AS 
+      SELECT 
+          participant_id,
+          Date_Time,
+          CGM_Value,
+          LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY Date_Time) AS lag_CGM_Value
+      FROM 
+          combined_cgm_tracing
+      WHERE
+         participant_id = $participant_id
+          AND DATE(Date_Time) BETWEEN $start_date AND $end_date;
+
+      CREATE TEMPORARY TABLE conga_hourly AS 
+      SELECT 
+          participant_id,
+          SQRT(
+              AVG(
+                  (CGM_Value - lag_CGM_Value) * (CGM_Value - lag_CGM_Value)
+              ) OVER (PARTITION BY participant_id ORDER BY Date_Time)
+          ) AS conga_hourly
+      FROM 
+          lag_values
+      WHERE 
+          lag_CGM_Value IS NOT NULL;    
+
+      SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Continuous Overall Net Glycemic Action (CONGA) <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(AVG(conga_hourly),3) ||'<formula-component content="CONGA quantifies the net glycemic effect over time by evaluating the differences between CGM values at specified intervals."></formula-component></div></div></div>' as html
+      FROM 
+        conga_hourly;
+
+        DROP TABLE IF EXISTS lag_values;  
+        DROP TABLE IF EXISTS conga_hourly;
+
+      SELECT  
+      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Mean of Daily Differences <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(AVG(daily_diff),3) ||'<formula-component content="This metric calculates the average of the absolute differences between daily CGM readings, giving insight into daily glucose variability. "></formula-component></div></div></div>' as html  
+      FROM (
+          SELECT
+              participant_id,
+              CGM_Value - LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY DATE(Date_Time)) AS daily_diff
+          FROM
+              combined_cgm_tracing
+          WHERE 
+              participant_id = $participant_id
+          AND DATE(Date_Time) BETWEEN $start_date AND $end_date
+      ) AS daily_diffs
+      WHERE
+          daily_diff IS NOT NULL;                          
+      SELECT
+      '</div>' as html;  
 ```
