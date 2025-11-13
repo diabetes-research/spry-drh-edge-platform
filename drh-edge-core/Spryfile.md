@@ -86,76 +86,13 @@ Quick troubleshooting
 ```bash prepare-db --dep prepare-env --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/usr/bin/env -S bash
 rm -f resource-surveillance.sqlite.db 
-rm -f *.sql                     
-# --- FIX: Robustly trim leading/trailing whitespace and newlines from the variable ---
-STUDY_DATA_PATH=$(echo "${STUDY_DATA_PATH}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-
-echo "--- 1. Starting Critical Bash Pre-Validation ---"
-if [ -z "${STUDY_DATA_PATH}" ] || [ -z "${TENANT_ID}" ] || [ -z "${TENANT_NAME}" ]; then
-    echo "CRITICAL ERROR: Missing required environment variables."
-    echo "Please ensure the following are set in your shell environment (e.g., via .envrc):"
-    echo " - STUDY_DATA_PATH"
-    echo " - TENANT_ID"
-    echo " - TENANT_NAME"
-    exit 1
-fi
-
-# =========================================================================
-# CRITICAL VALIDATION: FOLDER EXISTENCE AND DATA CONTENT
-# =========================================================================
-if [ ! -d "${STUDY_DATA_PATH}" ]; then
-    echo "CRITICAL ERROR: Input path '${STUDY_DATA_PATH}' does not exist or is not a directory."
-    exit 1
-fi
-
-# Check 1: Ensure the folder is not empty (contains at least one non-hidden file)
-if [ -z "$(find "${STUDY_DATA_PATH}" -maxdepth 1 -type f -print -quit 2>/dev/null)" ]; then
-    echo "CRITICAL ERROR: Input path '${STUDY_DATA_PATH}' is empty or contains no files. Please provide the path to the folder containing your CSV files."
-    exit 1
-fi
-
-# Check 2: Check for spaces (if you want to strictly prohibit them again)
-if [[ "${STUDY_DATA_PATH}" =~ \s ]]; then
-    echo "WARNING: Folder path '${STUDY_DATA_PATH}' contains spaces. This may cause issues on some systems."
-    # We will proceed, but flag this as a warning instead of a CRITICAL error.
-fi
-# =========================================================================
-
-echo "--- Found the following files in '${STUDY_DATA_PATH}':"
-find "${STUDY_DATA_PATH}" -maxdepth 1 -type f -print | sed "s|^${STUDY_DATA_PATH}/| - |"
-echo "--------------------------------------------------------"
-
-NON_CSV_FILES=$(find "${STUDY_DATA_PATH}" -maxdepth 1 -type f \
-    ! -name "*.csv" ! -name ".*" -print -quit)
-if [ -n "$NON_CSV_FILES" ]; then
-    echo "CRITICAL ERROR: Found non-CSV files in '${STUDY_DATA_PATH}'. Only .csv files are allowed at the top level."
-    echo "Offending item (first found): $NON_CSV_FILES"
-    exit 1
-fi
-
-REQUIRED_FILE="${STUDY_DATA_PATH}/cgm_file_metadata.csv"
-if [ ! -f "$REQUIRED_FILE" ]; then
-    echo "CRITICAL ERROR: Required file '${REQUIRED_FILE}' **not found**. The pipeline cannot proceed without this mandatory metadata file."
-    exit 1
-fi
-echo "SUCCESS: Required file 'cgm_file_metadata.csv' is present."
-
-FIRST_DATA_LINE=$(head -n 2 "$REQUIRED_FILE" | tail -n 1)
-if ! echo "$FIRST_DATA_LINE" | grep -q ','; then
-    echo "CRITICAL ERROR: Delimiter check failed for '$REQUIRED_FILE'."
-    echo "The first data row does not appear to contain a comma (',') delimiter. Pipeline halted."
-    exit 1
-fi
-echo "SUCCESS: All Bash Pre-Validations passed. Proceeding to Ingestion."
-
-rm -f resource-surveillance.sqlite.db
-rm -f *.sql
+rm -f *.sql    
 surveilr ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}" && surveilr orchestrate transform-csv
 if [ $? -ne 0 ]; then
-    echo "CRITICAL ERROR: Surveilr ingestion failed (check file format/delimiter/encoding). Pipeline halted."
+    echo "CRITICAL ERROR: Surveilr ingestion failed.Pipeline halted."
     exit 1
 fi
-echo "SUCCESS: Ingestion complete. Running SQL Data Quality Validation..."
+echo "SUCCESS: Ingestion and CSV transformation complete. Running SQL Data Quality Validation..."
 surveilr shell common-sql/drh-data-validation.sql || exit 1
 echo "SUCCESS: SQL Validation passed. Starting complex ETL transformations..."
 surveilr shell common-sql/drh-anonymize-prepare.sql
@@ -171,7 +108,7 @@ echo "--- ETL Complete. Database generated successfully. ---"
 
 While you're developing, Spry's `dev-src.auto` generator should be used:
 
-```bash  --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
+```bash prepare-sqlpage-dev --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
 ./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
 ```
 
@@ -207,7 +144,7 @@ If you're running SQLPage in another terminal window, use:
 After development is complete, the `dev-src.auto` can be removed and
 single-database deployment can be used:
 
-```bash build-deploy --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
+```bash build-to-db --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
 rm -rf dev-src.auto
 ./spry.ts spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
 ```
@@ -262,6 +199,9 @@ SET page_title  = json_extract($resource_json, '$.route.caption');
 
 ```sql PARTIAL api-head.sql --inject ./drh/api/**
 -- BEGIN: PARTIAL api-head.sql
+select
+   'http_header' as component,
+   'application/json' as "Content-Type";
 -- END: PARTIAL api-head.sql
 ```
 
@@ -272,7 +212,7 @@ SET page_title  = json_extract($resource_json, '$.route.caption');
 
 ```sql PARTIAL handlebars.sql --inject ../sqlpage/**
 {{!-- BEGIN: PARTIAL handlebars.sql 
-/*-- END: PARTIAL handlebars.sql*/}}
+-- END: PARTIAL handlebars.sql--}}
 ```
 
 ```import --base https://app.devl.drh.diabetestechnology.org/
@@ -1268,10 +1208,6 @@ SELECT 'json' AS component,
 ```
 
 ```sql ../sqlpage/templates/gri_component.handlebars
-{{!--
-  GRI Component (Static)
-  Usage: {{> gri_component}}
---}}
 
 <style>
   svg {
@@ -1417,12 +1353,11 @@ SELECT
 
   SELECT
       strftime('Generated: %Y-%m-%d %H:%M:%S', 'now') AS title,
-      ' ' AS description
- 
-  SELECT    
-    'html' as component,
-      '<input type="hidden" name="participant_id" class="participant_id" value="'|| $participant_id ||'">' as html;      
+      ' ' AS description;
       
+
+   SELECT 'participant_hidden_input' as component, $participant_id as participant_id;
+
     SELECT 
     'card' as component,    
     2      as columns;
@@ -1591,29 +1526,217 @@ SELECT
 ```
 
 ```sql drh/chart/goals-for-type-1-and-type-2-diabetes/index.sql
-SELECT 'html' as component,
-    '<input type="hidden" name="start_date" class="start_date" value="'|| $start_date ||'">
-    <input type="hidden" name="end_date" class="end_date" value="'|| $end_date ||'">
-    <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">Goals for Type 1 and Type 2 Diabetes <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="Goals for Type 1 and Type 2 Diabetes Chart provides a comprehensive view of a participant&#39;s glucose readings categorized into different ranges over a specified period."></formula-component></div></div>
-    <stacked-bar-chart class="p-5"></stacked-bar-chart>
-    ' as html; 
+SELECT 'stacked_bar_chart' AS component, $start_date AS start_date,$end_date AS end_date;
 ```
 
 ```sql  drh/chart/ambulatory-glucose-profile/index.sql
-SELECT 'html' as component,
-    '<style>
+    SELECT 'agp-chart' AS component;
+```
+
+```sql drh/chart/daily-gluecose-profile/index.sql
+    SELECT 'dgp-chart' AS component;
+```
+
+```sql drh/chart/glycemic_risk_indicator/index.sql
+    SELECT 'gri-chart' AS component;
+```
+
+```sql drh/chart/advanced_metrics/index.sql
+SELECT 'advanced_metrics' as component;
+
+-- Liability Index and Episode Counts
+SELECT
+    'Liability Index' as label,
+    ROUND(CAST((SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) + SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END)) AS REAL) / COUNT(*), 2) || ' mg/dL' as value,
+    'The Liability Index quantifies the risk associated with glucose variability, measured in mg/dL.' as formula
+FROM combined_cgm_tracing
+WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date;
+
+SELECT
+    'Hypoglycemic Episodes' as label,
+    SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) as value,
+    'This metric counts the number of occurrences when glucose levels drop below a specified hypoglycemic threshold, indicating potentially dangerous low blood sugar events.' as formula
+FROM combined_cgm_tracing
+WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date;
+
+SELECT
+    'Euglycemic Episodes' as label,
+    SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) as value,
+    'This metric counts the number of instances where glucose levels remain within the target range, indicating stable and healthy glucose control.' as formula
+FROM combined_cgm_tracing
+WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date;
+
+SELECT
+    'Hyperglycemic Episodes' as label,
+    SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END) as value,
+    'This metric counts the number of instances where glucose levels exceed a certain hyperglycemic threshold, indicating potentially harmful high blood sugar events.' as formula
+FROM combined_cgm_tracing
+WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date;
+
+-- M Value
+SELECT
+    'M Value' as label,
+    ROUND((MAX(CGM_Value) - MIN(CGM_Value)) / ((strftime('%s', MAX(DATETIME(Date_Time))) - strftime('%s', MIN(DATETIME(Date_Time)))) / 60.0), 3) || ' mg/dL' as value,
+    'The M Value provides a measure of glucose variability, calculated from the mean of the absolute differences between consecutive CGM values over a specified period.' as formula
+FROM combined_cgm_tracing
+WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date;
+
+-- Mean Amplitude
+SELECT
+    'Mean Amplitude' as label,
+    ROUND(AVG(amplitude), 3) as value,
+    'Mean Amplitude quantifies the average degree of fluctuation in glucose levels over a given time frame, giving insight into glucose stability.' as formula
+FROM (
+    SELECT ABS(MAX(CGM_Value) - MIN(CGM_Value)) AS amplitude
+    FROM combined_cgm_tracing
+    WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date
+    GROUP BY DATE(Date_Time)
+);
+
+-- Average Daily Risk Range
+SELECT
+    'Average Daily Risk Range' as label,
+    ROUND(AVG(daily_range), 3) || ' mg/dL' as value,
+    'This metric assesses the average risk associated with daily glucose variations, expressed in mg/dL.' as formula
+FROM (
+    SELECT
+        MAX(CGM_Value) - MIN(CGM_Value) AS daily_range
+    FROM combined_cgm_tracing
+    WHERE participant_id = $participant_id AND DATE(date_time) BETWEEN DATE($start_date) AND DATE($end_date)
+    GROUP BY DATE(date_time)
+);
+
+-- J Index
+SELECT
+    'J Index' as label,
+    ROUND(0.001 * (mean_glucose + SQRT(variance_glucose)) * (mean_glucose + SQRT(variance_glucose)), 2) || ' mg/dL' as value,
+    'The J Index calculates glycemic variability using both high and low glucose readings, offering a comprehensive view of glucose fluctuations.' as formula
+FROM (
+    SELECT
+        AVG(CGM_Value) AS mean_glucose,
+        (AVG(CGM_Value * CGM_Value) - AVG(CGM_Value) * AVG(CGM_Value)) AS variance_glucose
+    FROM combined_cgm_tracing
+    WHERE participant_id = $participant_id AND DATE(Date_Time) BETWEEN DATE($start_date) AND DATE($end_date)
+);
+
+-- Low Blood Glucose Index
+SELECT
+    'Low Blood Glucose Index' as label,
+    ROUND(SUM(CASE WHEN (CGM_Value - 2.5) / 2.5 > 0
+              THEN ((CGM_Value - 2.5) / 2.5) * ((CGM_Value - 2.5) / 2.5)
+              ELSE 0 END) * 5, 2) as value,
+    'This metric quantifies the risk associated with low blood glucose levels over a specified period, measured in mg/dL.' as formula
+FROM combined_cgm_tracing
+WHERE participant_id = $participant_id AND DATE(Date_Time) BETWEEN $start_date AND $end_date;
+
+-- High Blood Glucose Index
+SELECT
+    'High Blood Glucose Index' as label,
+    ROUND(SUM(CASE WHEN (CGM_Value - 9.5) / 9.5 > 0
+              THEN ((CGM_Value - 9.5) / 9.5) * ((CGM_Value - 9.5) / 9.5)
+              ELSE 0 END) * 5, 2) as value,
+    'This metric quantifies the risk associated with high blood glucose levels over a specified period, measured in mg/dL.' as formula
+FROM combined_cgm_tracing
+WHERE participant_id = $participant_id AND DATE(Date_Time) BETWEEN $start_date AND $end_date;
+
+-- GRADE (Glycaemic Risk Assessment Diabetes Equation)
+SELECT
+    'Glycaemic Risk Assessment Diabetes Equation (GRADE)' as label,
+    ROUND(AVG(CASE
+        WHEN CGM_Value < 90 THEN 10 * (5 - (CGM_Value / 18.0)) * (5 - (CGM_Value / 18.0))
+        WHEN CGM_Value > 180 THEN 10 * ((CGM_Value / 18.0) - 10) * ((CGM_Value / 18.0) - 10)
+        ELSE 0
+    END), 3) as value,
+    'GRADE is a metric that combines various glucose metrics to assess overall glycemic risk in individuals with diabetes, calculated using multiple input parameters.' as formula
+FROM combined_cgm_tracing
+WHERE participant_id = $participant_id AND DATE(Date_Time) BETWEEN $start_date AND $end_date;
+
+-- CONGA (Continuous Overall Net Glycemic Action)
+      CREATE TEMPORARY TABLE lag_values AS 
+      SELECT 
+          participant_id,
+          Date_Time,
+          CGM_Value,
+          LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY Date_Time) AS lag_CGM_Value
+      FROM 
+          combined_cgm_tracing
+      WHERE
+         participant_id = $participant_id
+          AND DATE(Date_Time) BETWEEN $start_date AND $end_date;
+
+      CREATE TEMPORARY TABLE conga_hourly AS 
+      SELECT 
+          participant_id,
+          SQRT(
+              AVG(
+                  (CGM_Value - lag_CGM_Value) * (CGM_Value - lag_CGM_Value)
+              ) OVER (PARTITION BY participant_id ORDER BY Date_Time)
+          ) AS conga_hourly
+      FROM 
+          lag_values
+      WHERE 
+          lag_CGM_Value IS NOT NULL; 
+
+    SELECT
+        'Continuous Overall Net Glycemic Action (CONGA)' as label,
+        round(AVG(conga_hourly),3) as value,
+        'CONGA quantifies the net glycemic effect over time by evaluating the differences between CGM values at specified intervals.' as formula
+    FROM 
+            conga_hourly;
+
+  DROP TABLE IF EXISTS lag_values;  
+  DROP TABLE IF EXISTS conga_hourly;
+
+-- Mean of Daily Differences
+SELECT
+    'Mean of Daily Differences' as label,
+    ROUND(AVG(daily_diff), 3) as value,
+    'This metric calculates the average of the absolute differences between daily CGM readings, giving insight into daily glucose variability.' as formula
+FROM (
+    SELECT
+        CGM_Value - LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY DATE(Date_Time)) AS daily_diff
+    FROM combined_cgm_tracing
+    WHERE participant_id = $participant_id AND DATE(Date_Time) BETWEEN $start_date AND $end_date
+) AS daily_diffs
+WHERE daily_diff IS NOT NULL;
+
+```
+
+```sql ../sqlpage/templates/stacked_bar_chart.handlebars
+
+<input type="hidden" name="start_date" class="start_date" value="{{ start_date }}">
+<input type="hidden" name="end_date" class="end_date" value="{{ end_date }}">
+
+<div class="fs-3 p-1 fw-bold"
+     style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">
+  Goals for Type 1 and Type 2 Diabetes
+  <div style="display: flex; justify-content: flex-end; align-items: center;">
+    <formula-component
+      content="Goals for Type 1 and Type 2 Diabetes Chart provides a comprehensive view of a participant&#39;s glucose readings categorized into different ranges over a specified period.">
+    </formula-component>
+  </div>
+</div>
+
+<stacked-bar-chart class="p-5"></stacked-bar-chart>
+
+```
+
+```sql ../sqlpage/templates/participant_hidden_input.handlebars
+ <input type="hidden" name="participant_id" class="participant_id" value="{{ participant_id }}">
+```
+
+```sql ../sqlpage/templates/agp-chart.handlebars
+<style>
         .text-\\[11px\\] { 
             font-size: 11px;  
         }
     </style>
     <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">AMBULATORY GLUCOSE PROFILE (AGP) <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="The Ambulatory Glucose Profile (AGP) summarizes glucose monitoring data over a specified period, typically 14 to 90 days. It provides a visual representation of glucose levels, helping to identify patterns and variability in glucose management."></formula-component></div></div>
     <agp-chart class="p-5"></agp-chart>
-    ' as html;
 ```
 
-```sql drh/chart/daily-gluecose-profile/index.sql 
-SELECT 'html' as component,
-        '<style>
+```sql ../sqlpage/templates/dgp-chart.handlebars
+<style>
     .line {
         fill: none;
         stroke: lightgrey;
@@ -1689,12 +1812,10 @@ SELECT 'html' as component,
         <p class="py-2 px-4 text-gray-800 font-normal text-xs hidden" id="dgp-note"><b>NOTE:</b> The Daily Glucose
             Profile
             plots the glucose levels of the last 14 days.</p>
-    ' as html;
 ```
 
-```sql drh/chart/glycemic_risk_indicator/index.sql
-SELECT 'html' as component,
-        '<style>
+```sql ../sqlpage/templates/gri-chart.handlebars
+<style>
         svg {
           display: block;
           margin: auto;
@@ -1706,8 +1827,8 @@ SELECT 'html' as component,
                     Equivalently,
                     GRI = (3.0 × VLow) + (2.4 × Low) + (1.6 × VHigh) + (0.8 × High)"></formula-component></div></div>
         <div class="px-4 pb-4">
-        <gri-chart></gri-chart>' as html; 
-      SELECT '
+        <gri-chart></gri-chart>
+      
         <table class="w-full text-center border">
         <thead>
           <tr class="bg-gray-900">
@@ -1732,165 +1853,21 @@ SELECT 'html' as component,
           </tr>
         </tbody> 
       </table>
-      </div>
-    ' as html; 
+      </div> 
 ```
 
-```sql drh/chart/advanced_metrics/index.sql
-SELECT  
-    'html' as component;
-    SELECT
-      '<div class="px-4">' as html;
-    SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Liability Index <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| ROUND(CAST((SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) + SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END)) AS REAL) / COUNT(*), 2) ||' mg/dL<formula-component content="The Liability Index quantifies the risk associated with glucose variability, measured in mg/dL."></formula-component></div></div></div>
-      <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Hypoglycemic Episodes <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) ||'<formula-component content="This metric counts the number of occurrences when glucose levels drop below a specified hypoglycemic threshold, indicating potentially dangerous low blood sugar events."></formula-component></div></div></div>
-      <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Euglycemic Episodes <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) ||'<formula-component content="This metric counts the number of instances where glucose levels remain within the target range, indicating stable and healthy glucose control."></formula-component></div></div></div>
-      <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Hyperglycemic Episodes <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END) ||'<formula-component content="This metric counts the number of instances where glucose levels exceed a certain hyperglycemic threshold, indicating potentially harmful high blood sugar events."></formula-component></div></div></div>' as html 
-      FROM combined_cgm_tracing 
-                    WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date
-                    GROUP BY participant_id;
-     SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">M Value <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round((MAX(CGM_Value) - MIN(CGM_Value)) / 
-    ((strftime('%s', MAX(DATETIME(Date_Time))) - strftime('%s', MIN(DATETIME(Date_Time)))) / 60.0),3) ||' mg/dL<formula-component content="The M Value provides a measure of glucose variability, calculated from the mean of the absolute differences between consecutive CGM values over a specified period."></formula-component></div></div></div>' as html   
-      FROM combined_cgm_tracing 
-                    WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date
-                    GROUP BY participant_id;
-      SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Mean Amplitude <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(AVG(amplitude),3) ||'<formula-component content="Mean Amplitude quantifies the average degree of fluctuation in glucose levels over a given time frame, giving insight into glucose stability."></formula-component></div></div></div>' as html  
-      FROM (SELECT ABS(MAX(CGM_Value) - MIN(CGM_Value)) AS amplitude   
-      FROM combined_cgm_tracing  WHERE participant_id = $participant_id AND Date(Date_Time) BETWEEN $start_date AND $end_date   
-      GROUP BY DATE(Date_Time) 
-      );      
-
-      CREATE TEMPORARY TABLE DailyRisk AS 
-      SELECT 
-          participant_id, 
-          DATE(date_time) AS day, 
-          MAX(CGM_Value) - MIN(CGM_Value) AS daily_range 
-      FROM 
-          combined_cgm_tracing cct 
-      WHERE 
-          participant_id = $participant_id
-          AND DATE(date_time) BETWEEN DATE($start_date) AND DATE($end_date) 
-      GROUP BY 
-          participant_id, 
-          DATE(date_time);
-
-      CREATE TEMPORARY TABLE AverageDailyRisk AS 
-      SELECT 
-          participant_id, 
-          AVG(daily_range) AS average_daily_risk 
-      FROM 
-          DailyRisk 
-      WHERE 
-          participant_id = $participant_id
-      GROUP BY 
-          participant_id;    
-
-      SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Average Daily Risk Range <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(average_daily_risk,3) ||' mg/dL<formula-component content="This metric assesses the average risk associated with daily glucose variations, expressed in mg/dL."></formula-component></div></div></div>' as html  
-      FROM 
-          AverageDailyRisk 
-      WHERE 
-           participant_id = $participant_id;
-
-      DROP TABLE IF EXISTS DailyRisk;
-      DROP TABLE IF EXISTS AverageDailyRisk;
-
-      CREATE TEMPORARY TABLE glucose_stats AS 
-      SELECT
-          participant_id,
-          AVG(CGM_Value) AS mean_glucose,
-          (AVG(CGM_Value * CGM_Value) - AVG(CGM_Value) * AVG(CGM_Value)) AS variance_glucose
-      FROM
-          combined_cgm_tracing
-      WHERE
-          participant_id = $participant_id
-          AND DATE(Date_Time) BETWEEN DATE($start_date) AND DATE($end_date) 
-      GROUP BY
-          participant_id;
-
-      SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">J Index <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| ROUND(0.001 * (mean_glucose + SQRT(variance_glucose)) * (mean_glucose + SQRT(variance_glucose)), 2) ||' mg/dL<formula-component content="The J Index calculates glycemic variability using both high and low glucose readings, offering a comprehensive view of glucose fluctuations."></formula-component></div></div></div>' as html  
-      FROM
-        glucose_stats;
-      DROP TABLE IF EXISTS glucose_stats;
-
-    SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Low Blood Glucose Index <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| ROUND(SUM(CASE WHEN (CGM_Value - 2.5) / 2.5 > 0 
-                   THEN ((CGM_Value - 2.5) / 2.5) * ((CGM_Value - 2.5) / 2.5) 
-                   ELSE 0 
-              END) * 5, 2) ||'<formula-component content="This metric quantifies the risk associated with low blood glucose levels over a specified period, measured in mg/dL."></formula-component></div></div></div>
-      <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">High Blood Glucose Index <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| ROUND(SUM(CASE WHEN (CGM_Value - 9.5) / 9.5 > 0 
-                   THEN ((CGM_Value - 9.5) / 9.5) * ((CGM_Value - 9.5) / 9.5) 
-                   ELSE 0 
-              END) * 5, 2) ||'<formula-component content="This metric quantifies the risk associated with high blood glucose levels over a specified period, measured in mg/dL."></formula-component></div></div></div>' as html  
-      FROM 
-          combined_cgm_tracing
-      WHERE 
-          participant_id = $participant_id
-          AND DATE(Date_Time) BETWEEN $start_date AND $end_date;   
-
-      SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Glycaemic Risk Assessment Diabetes Equation (GRADE) <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(AVG(CASE
-            WHEN CGM_Value < 90 THEN 10 * (5 - (CGM_Value / 18.0)) * (5 - (CGM_Value / 18.0))
-            WHEN CGM_Value > 180 THEN 10 * ((CGM_Value / 18.0) - 10) * ((CGM_Value / 18.0) - 10)
-            ELSE 0
-        END),3) ||'<formula-component content="GRADE is a metric that combines various glucose metrics to assess overall glycemic risk in individuals with diabetes, calculated using multiple input parameters."></formula-component></div></div></div>' as html
-      FROM 
-          combined_cgm_tracing
-      WHERE 
-          participant_id = $participant_id
-          AND DATE(Date_Time) BETWEEN $start_date AND $end_date;
-
-
-      CREATE TEMPORARY TABLE lag_values AS 
-      SELECT 
-          participant_id,
-          Date_Time,
-          CGM_Value,
-          LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY Date_Time) AS lag_CGM_Value
-      FROM 
-          combined_cgm_tracing
-      WHERE
-         participant_id = $participant_id
-          AND DATE(Date_Time) BETWEEN $start_date AND $end_date;
-
-      CREATE TEMPORARY TABLE conga_hourly AS 
-      SELECT 
-          participant_id,
-          SQRT(
-              AVG(
-                  (CGM_Value - lag_CGM_Value) * (CGM_Value - lag_CGM_Value)
-              ) OVER (PARTITION BY participant_id ORDER BY Date_Time)
-          ) AS conga_hourly
-      FROM 
-          lag_values
-      WHERE 
-          lag_CGM_Value IS NOT NULL;    
-
-      SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Continuous Overall Net Glycemic Action (CONGA) <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(AVG(conga_hourly),3) ||'<formula-component content="CONGA quantifies the net glycemic effect over time by evaluating the differences between CGM values at specified intervals."></formula-component></div></div></div>' as html
-      FROM 
-        conga_hourly;
-
-        DROP TABLE IF EXISTS lag_values;  
-        DROP TABLE IF EXISTS conga_hourly;
-
-      SELECT  
-      '<div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">Mean of Daily Differences <div style="display: flex; justify-content: flex-end; align-items: center;"><div style="display: flex;align-items: center;gap: 0.1rem;">'|| round(AVG(daily_diff),3) ||'<formula-component content="This metric calculates the average of the absolute differences between daily CGM readings, giving insight into daily glucose variability. "></formula-component></div></div></div>' as html  
-      FROM (
-          SELECT
-              participant_id,
-              CGM_Value - LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY DATE(Date_Time)) AS daily_diff
-          FROM
-              combined_cgm_tracing
-          WHERE 
-              participant_id = $participant_id
-          AND DATE(Date_Time) BETWEEN $start_date AND $end_date
-      ) AS daily_diffs
-      WHERE
-          daily_diff IS NOT NULL;                          
-      SELECT
-      '</div>' as html;  
+```sql ../sqlpage/templates/advanced_metrics.handlebars
+<div class="px-4">
+  {{#each_row}}
+  <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">
+    {{label}} 
+    <div style="display: flex; justify-content: flex-end; align-items: center;">
+        <div style="display: flex;align-items: center;gap: 0.1rem;">
+         {{value}}
+          <formula-component content="{{formula}}"></formula-component>
+        </div>
+    </div>
+  </div>
+  {{/each_row}}
+</div>
 ```
