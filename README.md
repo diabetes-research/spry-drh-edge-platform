@@ -14,7 +14,7 @@ The goal is to provide a centralized platform for managing and analyzing continu
 
 The platform performs a complete workflow for converting raw diabetes research data (CGM, meal, fitness) into a structured SQLite database and presenting it via a rich, interactive web UI.
 
-* **Pre-Validation:** Performs minimal pre-validation (folder name, file verification, etc.). It includes a validation SQL check to capture the existence and entries of CGM, meal, and fitness metadata files. **If validation fails, the ETL pipeline shall not proceed.**
+
 * **Data Conversion:** Automates the ingestion and conversion of raw study files (e.g., CSV) into a structured format using the `surveilr` tool.
 * **DuckDB ETL:** Utilizes **DuckDB** for complex data transformation and integration, including combining CGM tracings and generating derived meal and fitness metadata.
 * **SQLPage UI:** Generates a modern, interactive data dashboard using **SQLPage** powered by the resulting SQLite database.
