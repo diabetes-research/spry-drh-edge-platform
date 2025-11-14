@@ -85,20 +85,54 @@ Quick troubleshooting
 
 ```bash prepare-db --dep prepare-env --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/usr/bin/env -S bash
-rm -f resource-surveillance.sqlite.db 
-rm -f *.sql    
-surveilr ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}" && surveilr orchestrate transform-csv
-if [ $? -ne 0 ]; then
-    echo "CRITICAL ERROR: Surveilr ingestion failed.Pipeline halted."
-    exit 1
-fi
-echo "SUCCESS: Ingestion and CSV transformation complete. Running SQL Data Quality Validation..."
-surveilr shell common-sql/drh-data-validation.sql || exit 1
+# ----------------------------------------------------
+# 1. EXECUTION INTEGRITY SETUP
+# CRITICAL: Halts the script immediately on any command failure (non-zero exit code).
+# This enforces Sequential Dependency and Critical Failure Handling for all steps.
+set -e
+# ----------------------------------------------------
+
+# Define variables for clarity (assuming they are set by Spry/environment)
+STUDY_DATA_PATH="${STUDY_DATA_PATH}"
+TENANT_ID="${TENANT_ID}"
+TENANT_NAME="${TENANT_NAME}"
+TOOL_CMD="surveilr"
+
+# 2. Cleanup
+rm -f resource-surveillance.sqlite.db
+rm -f *.sql
+echo "--- Starting Pipeline: Cleanup Complete ---"
+
+# 3. CRITICAL PRE-VALIDATION GATE
+# Executes the modified drhctl.ts. If any validation fails, drhctl.ts exits 1,
+# which 'set -e' catches, halting the entire pipeline.
+echo "--- Running Data Pre-Validation Gate (Structure, Metadata, Dependencies, Completeness) ---"
+deno run -A  drh-pre-validation.ts "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
+echo "SUCCESS: Data Pre-Validation passed."
+# ----------------------------------------------------
+
+# 4. CORE INGESTION AND INITIAL TRANSFORMATION
+# Sequential Dependency: The '&&' ensures transform-csv runs only if ingest succeeds.
+# If either fails, 'set -e' halts the process.
+echo "--- Starting Ingestion and Initial Transformation ---"
+"${TOOL_CMD}" ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}" && "${TOOL_CMD}" orchestrate transform-csv
+echo "SUCCESS: Ingestion and CSV transformation complete."
+# ----------------------------------------------------
+
+# 5. SQL DATA QUALITY VALIDATION (Post-Ingestion Check)
+# Critical Failure: 'set -e' ensures immediate halt if this surveilr command fails.
+echo "--- Running Post-Ingestion SQL Data Quality Validation ---"
+"${TOOL_CMD}" shell common-sql/drh-data-validation.sql
 echo "SUCCESS: SQL Validation passed. Starting complex ETL transformations..."
-surveilr shell common-sql/drh-anonymize-prepare.sql
+# ----------------------------------------------------
+
+# 6. COMPLEX ETL TRANSFORMATIONS
+# Sequential Dependency & Critical Failure: All steps run sequentially and halt on any failure ('set -e').
+echo "--- Running Complex ETL Pipelines (Anonymization, Tracing, Metrics, etc.) ---"
+"${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql
 cat duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql | duckdb ":memory:"
 cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
-surveilr shell common-sql/drh-metrics-pipeline.sql
+"${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql
 cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
 cat duckdb-etl-sql/04-dynamic-participant-meal-fitness-data.sql | duckdb ":memory:"
 echo "--- ETL Complete. Database generated successfully. ---"
