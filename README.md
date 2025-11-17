@@ -14,6 +14,7 @@ The goal is to provide a centralized platform for managing and analyzing continu
 
 The platform performs a complete workflow for converting raw diabetes research data (CGM, meal, fitness) into a structured SQLite database and presenting it via a rich, interactive web UI.
 
+
 * **Data Conversion:** Automates the ingestion and conversion of raw study files (e.g., CSV) into a structured format using the `surveilr` tool.
 * **DuckDB ETL:** Utilizes **DuckDB** for complex data transformation and integration, including combining CGM tracings and generating derived meal and fitness metadata.
 * **SQLPage UI:** Generates a modern, interactive data dashboard using **SQLPage** powered by the resulting SQLite database.
@@ -52,7 +53,7 @@ Ensure you have the following installed to run the platform:
 
 Follow these steps to install the required tools on a Linux system.
 
-#### 1\. Install Deno
+#### 1. Install Deno
 
 Deno is required to run the Spry CLI.
 
@@ -63,7 +64,7 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 # Example: export PATH="$HOME/.deno/bin:$PATH"
 ```
 
-#### 2\. Install DuckDB (v1.4.1+)
+#### 2. Install DuckDB (v1.4.1+)
 
 DuckDB is used for complex ETL and data transformations.
 
@@ -75,7 +76,7 @@ chmod +x duckdb
 sudo mv duckdb /usr/local/bin/
 ```
 
-#### 3\. Install SQLite
+#### 3. Install SQLite
 
 SQLite is the final structured database used by SQLPage. On most systems, it can be installed via the package manager.
 
@@ -138,7 +139,7 @@ direnv allow
 
 The project's workflow involves two main steps: preparing the database (ETL) and running the web server (UI).
 
-### 1\. Prepare the Database (`prepare-db`)
+### 1. Prepare the Database (`prepare-db`)
 
 This task executes the full ETL pipeline to ingest and transform the raw data into the structured SQLite database.
 
@@ -152,7 +153,7 @@ This task executes the full ETL pipeline to ingest and transform the raw data in
 
     This script removes any previous database, executes the validation checks, and then uses `surveilr` and **DuckDB** to process the data and generate the final database structure.
 
-### 2\. Run the SQLPage Server (`build-run-server`)
+### 2. Run the SQLPage Server (`build-run-server`)
 
 This command builds the necessary files for the SQLPage application and starts the local web server.
 
