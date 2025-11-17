@@ -787,3 +787,25 @@ SELECT
     json_extract(metric_info, '$.axes') AS "Axes Details"    
 FROM 
     metric_definitions;
+
+
+
+DROP TABLE IF EXISTS participant; 
+CREATE TABLE participant AS
+SELECT
+    CAST((SELECT db_file_id FROM file_meta_ingest_data LIMIT 1) AS TEXT) AS db_file_id, 
+    p.participant_id as participant_display_id,
+    p.study_id as study_display_id,
+    p.tenant_id,
+    p.site_id,
+    p.diagnosis_icd,
+    p.med_rxnorm,
+    p.treatment_modality,
+    p.gender,
+    p.race_ethnicity,
+    p.age,
+    p.bmi,
+    p.baseline_hba1c,
+    p.diabetes_type,
+    p.study_arm  
+FROM drh_participant p;

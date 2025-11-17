@@ -48,6 +48,58 @@ Ensure you have the following installed to run the platform:
 3. **DuckDB**: Used within the data preparation scripts for ETL operations.
 4. **direnv**: Recommended for managing environment variables easily.
 
+### ⚙️ Installation Steps
+
+Follow these steps to install the required tools on a Linux system.
+
+#### 1\. Install Deno
+
+Deno is required to run the Spry CLI.
+
+```bash
+# Using the recommended installation script
+curl -fsSL https://deno.land/x/install/install.sh | sh
+# Ensure Deno is added to your PATH (the script usually suggests the line)
+# Example: export PATH="$HOME/.deno/bin:$PATH"
+```
+
+#### 2\. Install DuckDB (v1.4.1+)
+
+DuckDB is used for complex ETL and data transformations.
+
+```bash
+# Download and install the latest stable version
+wget https://github.com/duckdb/duckdb/releases/download/v1.4.1/duckdb_cli-linux-amd64.zip
+unzip duckdb_cli-linux-amd64.zip
+chmod +x duckdb
+sudo mv duckdb /usr/local/bin/
+```
+
+#### 3\. Install SQLite
+
+SQLite is the final structured database used by SQLPage. On most systems, it can be installed via the package manager.
+
+```bash
+# For Debian/Ubuntu-based systems
+sudo apt update
+sudo apt install sqlite3 libsqlite3-dev
+```
+
+#### 4\. Install Surveilr
+
+Surveilr is the data-processing utility for file ingestion.The latest surveilr packages can be found [here.](https://github.com/surveilr/packages/releases)
+
+```bash
+# Download the latest stable release (e.g., v3.6.0)
+wget https://github.com/surveilr/packages/releases/download/3.6.0/surveilr_3.6.0_x86_64-unknown-linux-gnu.tar.gz
+
+# Extract it
+tar -xzf surveilr_3.6.0_x86_64-unknown-linux-gnu.tar.gz
+
+# Install it by moving the executable to a directory in your PATH
+sudo mv surveilr /usr/local/bin/
+```
+
 ### Environment Variables
 
 Configuration is handled through environment variables, ideally managed with **direnv** and stored in a local `.envrc` file.
