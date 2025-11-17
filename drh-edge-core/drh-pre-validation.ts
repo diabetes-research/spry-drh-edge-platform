@@ -4,6 +4,7 @@ import { $ } from "https://deno.land/x/dax@0.33.0/mod.ts";
 import { existsSync } from "https://deno.land/std/fs/mod.ts";
 import * as colors from "https://deno.land/std@0.224.0/fmt/colors.ts";
 import { ensureDir } from "https://deno.land/std@0.201.0/fs/mod.ts";
+import { parse } from "https://deno.land/std/csv/mod.ts"; // CORRECTED: Using Deno's CSV parser for metadata validation
 
 // Constants
 const requiredExtension = ".csv";
@@ -104,19 +105,7 @@ const schemas: Record<string, FileSchema> = {
       { name: "study_id", required: true },
     ],
   },
-  // Optional Files (Conditional existence check in App.run)
-  "meal_data": {
-    fileName: "meal_data.csv",
-    required: false,
-    multiple: true,
-    columns: [
-      { name: "meal_id", required: true },
-      { name: "participant_id", required: true },
-      { name: "meal_time", required: true },
-      { name: "calories", required: false },
-      { name: "meal_type", required: false },
-    ],
-  },
+  // Optional Metadata Files
   "meal_file_metadata": {
     fileName: "meal_file_metadata.csv",
     required: false,
@@ -127,21 +116,6 @@ const schemas: Record<string, FileSchema> = {
       { name: "file_name", required: true },
       { name: "source", required: false },
       { name: "file_format", required: false },
-    ],
-  },
-  "fitness_data": {
-    fileName: "fitness_data.csv",
-    required: false,
-    multiple: true,
-    columns: [
-      { name: "fitness_id", required: true },
-      { name: "participant_id", required: true },
-      { name: "date", required: true },
-      { name: "steps", required: false },
-      { name: "exercise_minutes", required: false },
-      { name: "calories_burned", required: false },
-      { name: "distance", required: false },
-      { name: "heart_rate", required: false },
     ],
   },
   "fitness_file_metadata": {
@@ -427,11 +401,6 @@ class Validator {
 
   /**
    * 6. Check file_name column in cgm_file_metadata.csv for emptiness.
-   * @param dirPath - Path to the directory.
-   * @returns List of CGM raw file names found in the metadata.
-   */
-  /**
-   * 6. Check file_name column in cgm_file_metadata.csv for emptiness.
    * @returns List of CGM raw file names found in the metadata (BASE NAME, without extension).
    */
   static async validateCgmMetadataFilenames(
@@ -494,8 +463,7 @@ class Validator {
   }
 
   /**
-   * 7. Check if cgm raw files (from metadata) are present in folder. (Req 7).
-   * FIX: Appends the mandatory .csv extension to the base name before checking the folder.
+   * 7. Check if cgm raw files (from metadata) are present in folder.
    * @param cgmRawBaseNames - List of CGM file base names from cgm_file_metadata.
    * @param allFileNames - List of all files (with extensions) in the folder.
    */
@@ -510,7 +478,6 @@ class Validator {
 
     for (const baseFileName of uniqueRawBaseNames) {
       // Construct the full file name, assuming .csv is mandatory (Req 2)
-      // This fixes the issue where metadata stores "cgm_tracing" but the file is "cgm_tracing.csv"
       const fullFileName = baseFileName.endsWith(requiredExtension)
         ? baseFileName
         : baseFileName + requiredExtension;
@@ -588,12 +555,11 @@ class Validator {
     );
   }
 
-  // Assuming 'parse' from "https://deno.land/std/csv/mod.ts" is imported.
 
 /**
- * Reads a metadata CSV, ensures all columns are non-empty, and extracts the list
- * of dependent files from the 'file_name' column.
- * Exits on any content validation failure.
+ * Reads a metadata CSV, ensures all required columns are non-empty, and extracts the list
+ * of dependent files from the 'file_name' column using a robust parsing method.
+ * **This function is used by both meal and fitness validation logic.**
  */
 static async _validateAndExtractMetadata(
     folderName: string,
@@ -602,16 +568,31 @@ static async _validateAndExtractMetadata(
     const fullPath = `${folderName}/${metadataFileName}`;
     let records: Record<string, string>[] = [];
 
+    // 1. Get and validate headers robustly (trimmed by getFileHeaders)
+    const headers = await getFileHeaders(fullPath);
+    const expectedHeader = "file_name";
+
+    // Safety check for the critical header
+    if (!headers.includes(expectedHeader)) {
+        console.error(
+            colors.red(
+                `Error in '${metadataFileName}': Required column '${expectedHeader}' is missing from the headers: [${headers.join(', ')}]`,
+            ),
+        );
+        Deno.exit(1);
+    }
+    
+    // 2. Read content and parse data using the validated and trimmed headers
     try {
         const csvContent = await Deno.readTextFile(fullPath);
         
-        // Use your preferred CSV parser here. Example uses Deno's std/csv utility:
-        // Note: Set 'skipFirstRow' to false if the first row is headers.
+        // Use Deno's std/csv utility. Explicitly setting headers and skipping the first row.
         records = parse(csvContent, { 
-            skipFirstRow: false, 
-            headers: true, 
+            skipFirstRow: true, // Skip the header row we already read/validated
+            headers: headers, // Use the trimmed headers we retrieved
             separator: ',',
         }) as Record<string, string>[];
+
     } catch (error) {
         console.error(
             colors.red(`Error reading or parsing metadata file '${metadataFileName}': ${error.message}`),
@@ -619,11 +600,11 @@ static async _validateAndExtractMetadata(
         Deno.exit(1);
     }
     
-    // Check if file_name column exists
-    if (!records.length || !Object.keys(records[0]).includes("file_name")) {
+    // Check 3: Ensure there is data after parsing
+    if (records.length === 0) {
         console.error(
             colors.red(
-                `Error in '${metadataFileName}': Required column 'file_name' is missing from the headers.`,
+                `Error in '${metadataFileName}': File is empty or contains only headers. Must contain data rows.`,
             ),
         );
         Deno.exit(1);
@@ -631,128 +612,175 @@ static async _validateAndExtractMetadata(
 
     const dependentFileNames: string[] = [];
     
-    // Check 1: Non-Empty Columns and Extract Dependent File Names
+    // Check 4: Non-Empty Columns and Extract Dependent File Names
     records.forEach((row, index) => {
-        const rowNumber = index + 1; // 1-based index for data row
+        const rowNumber = index + 2; // 1-based index for data row (1 for header, 1 for index)
         
-        for (const [key, value] of Object.entries(row)) {
+        for (const key of headers) { // Iterate over the known good headers
+            const value = row[key]; // Access using the known good key
+            
             // Check if column value is null, undefined, or empty string (after trimming)
-            if (!value || String(value).trim().length === 0) {
-                console.error(
-                    colors.red(
-                        `Error in '${metadataFileName}' (Data Row ${rowNumber}): Column '${key}' cannot be empty.`,
-                    ),
-                );
-                Deno.exit(1);
+            // Note: If the file has a missing column entry (e.g., ,, in CSV), the parser might return "" or undefined.
+            if (value === null || value === undefined || String(value).trim().length === 0) {
+                // Determine if this column is required based on the schema (meal_file_metadata and fitness_file_metadata)
+                const schema = schemas[metadataFileName.replace(".csv", "")];
+                const isRequired = schema.columns.some(col => col.name === key && col.required);
+
+                if (isRequired) {
+                    console.error(
+                        colors.red(
+                            `Error in '${metadataFileName}' (Data Row ${rowNumber}): Required column '${key}' cannot be empty.`,
+                        ),
+                    );
+                    Deno.exit(1);
+                }
+                // NOTE: We only check required columns for emptiness in this step.
             }
         }
         
         // Extract dependent file names
-        dependentFileNames.push(row.file_name.trim());
+        dependentFileNames.push(row[expectedHeader].trim());
     });
 
     return dependentFileNames;
 }
 
+
   /**
    * 9. Conditional existence check for meal/fitness data and metadata.
+   * **Focuses solely on the metadata file as the trigger for both meal and fitness.**
+   * @param folderName - Path to the directory.
    * @param allFileNames - List of all files in the folder.
    */
   static async validateOptionalFileExistence(folderName: string, allFileNames: string[]): Promise<void> {
     console.log(
-      colors.cyan("Conditional check for meal/fitness data and metadata."),
+      colors.cyan("Conditional check for meal/fitness data and metadata (Metadata-driven)."),
     );
 
-    const mealDataFileName = "meal_data.csv";
     const mealMetadataFileName = "meal_file_metadata.csv";
-    const fitnessDataFileName = "fitness_data.csv";
     const fitnessMetadataFileName = "fitness_file_metadata.csv";
 
-    const mealDataPresent = allFileNames.includes(mealDataFileName);
     const mealMetadataPresent = allFileNames.includes(mealMetadataFileName);
-    const fitnessDataPresent = allFileNames.includes(fitnessDataFileName);
     const fitnessMetadataPresent = allFileNames.includes(
       fitnessMetadataFileName,
     );
     
-    // --- MEAL CHECKS ---
+    // -------------------- MEAL CHECKS --------------------
     
-    // 1. Dependency Rule: Check if data/metadata files exist together
-    if (mealDataPresent !== mealMetadataPresent) {
-      const missingFile = mealDataPresent ? mealMetadataFileName : mealDataFileName;
-      const presentFile = mealDataPresent ? mealDataFileName : mealMetadataFileName;
-      console.error(
-        colors.red(
-          `Error : Dependency failure: '${presentFile}' is present, but required companion file '${missingFile}' is missing.`,
-        ),
-      );
-      Deno.exit(1);
-    }
-
-    // 2. Content & File Presence Check (If metadata exists)
+    // Trigger validation only if the MEAL metadata file is present.
     if (mealMetadataPresent) {
-        console.log(colors.dim(`  -> Validating content of '${mealMetadataFileName}'...`));
-        const dependentMealFiles = await Validator._validateAndExtractMetadata(
-            folderName,
-            mealMetadataFileName,
-        );
-        
-        // 3. Dependent File Presence Check
-        const listedDataFileBaseNames = dependentMealFiles.map(f => f.split('/').pop() || f); 
-        for (const listedFile of listedDataFileBaseNames) {
-            if (!allFileNames.includes(listedFile)) {
-                console.error(
-                    colors.red(
-                        `Error : File '${listedFile}' listed in '${mealMetadataFileName}' is missing from the data folder.`,
-                    ),
-                );
-                Deno.exit(1); // Halt immediately on missing dependent file
-            }
-        }
-        console.log(colors.dim(`  -> All dependent meal files found.`));
-    }
-    
-    // --- FITNESS CHECKS ---
-    
-    // 1. Dependency Rule: Check if data/metadata files exist together
-    if (fitnessDataPresent !== fitnessMetadataPresent) {
-        const missingFile = fitnessDataPresent ? fitnessMetadataFileName : fitnessDataFileName;
-        const presentFile = fitnessDataPresent ? fitnessDataFileName : fitnessMetadataFileName;
+      console.log(colors.dim(` -> Validating content of '${mealMetadataFileName}'...`));
+      
+      // Step 1: Validate metadata content and extract dependent file names
+      const dependentMealFiles = await Validator._validateAndExtractMetadata(
+        folderName,
+        mealMetadataFileName,
+      );
+      
+      const listedDataFileBaseNames = [...new Set(dependentMealFiles.map(f => f.split('/').pop() || f))]; 
+      
+      if(listedDataFileBaseNames.length === 0){
         console.error(
           colors.red(
-            `Error : Dependency failure: '${presentFile}' is present, but required companion file '${missingFile}' is missing.`,
+            `Error : '${mealMetadataFileName}' is present but contains no data entries (file_name is empty).`,
           ),
         );
         Deno.exit(1);
-    }
+      }
 
-    // 2. Content & File Presence Check (If metadata exists)
-    if (fitnessMetadataPresent) {
-        console.log(colors.dim(`  -> Validating content of '${fitnessMetadataFileName}'...`));
-        const dependentFitnessFiles = await Validator._validateAndExtractMetadata(
-            folderName,
-            fitnessMetadataFileName,
-        );
-        
-        // 3. Dependent File Presence Check
-        const listedDataFileBaseNames = dependentFitnessFiles.map(f => f.split('/').pop() || f); 
-        for (const listedFile of listedDataFileBaseNames) {
-            if (!allFileNames.includes(listedFile)) {
-                console.error(
-                    colors.red(
-                        `Error : File '${listedFile}' listed in '${fitnessMetadataFileName}' is missing from the data folder.`,
-                    ),
-                );
-                Deno.exit(1); // Halt immediately on missing dependent file
-            }
+      // Step 2: Check existence and headers for ALL dependent raw files listed
+      for (const listedFileBaseName of listedDataFileBaseNames) {
+        // Determine the full file name with the required extension (THIS IS THE FIX)
+        const fullFileName = listedFileBaseName.endsWith(requiredExtension)
+          ? listedFileBaseName
+          : listedFileBaseName + requiredExtension;
+
+        // Check existence in the folder
+        if (!allFileNames.includes(fullFileName)) {
+          console.error(
+            colors.red(
+              // Error message now reflects the expected full file name
+              `Error : File '${listedFileBaseName}' listed in '${mealMetadataFileName}' is missing from the data folder (expected filename: ${fullFileName}).`,
+            ),
+          );
+          Deno.exit(1);
         }
-        console.log(colors.dim(`  -> All dependent fitness files found.`));
+
+        // Check if the dependent raw file has headers (non-empty)
+        const filePath = `${folderName}/${fullFileName}`;
+        const headers = await getFileHeaders(filePath);
+        if (headers.length === 0) {
+          console.error(
+            colors.red(
+              `Error: Dependent meal data file "${fullFileName}" (listed in metadata) is empty or has no headers.`,
+            ),
+          );
+          Deno.exit(1);
+        }
+      }
+      console.log(colors.dim(` -> All dependent meal files found and are not empty.`)); 
+    }
+    
+    // -------------------- FITNESS CHECKS --------------------
+    
+    // Trigger validation only if the FITNESS metadata file is present.
+    if (fitnessMetadataPresent) {
+      console.log(colors.dim(` -> Validating content of '${fitnessMetadataFileName}'...`));
+      
+      // Step 1: Validate metadata content and extract dependent file names
+      const dependentFitnessFiles = await Validator._validateAndExtractMetadata(
+        folderName,
+        fitnessMetadataFileName,
+      );
+      
+      const listedDataFileBaseNames = [...new Set(dependentFitnessFiles.map(f => f.split('/').pop() || f))]; 
+
+      if(listedDataFileBaseNames.length === 0){
+        console.error(
+          colors.red(
+            `Error : '${fitnessMetadataFileName}' is present but contains no data entries (file_name is empty).`,
+          ),
+        );
+        Deno.exit(1);
+      }
+      
+      // Step 2: Check existence and headers for ALL dependent raw files listed
+      for (const listedFileBaseName of listedDataFileBaseNames) {
+        // Determine the full file name with the required extension (THIS IS THE FIX)
+        const fullFileName = listedFileBaseName.endsWith(requiredExtension)
+          ? listedFileBaseName
+          : listedFileBaseName + requiredExtension;
+
+        // Check existence in the folder
+        if (!allFileNames.includes(fullFileName)) {
+          console.error(
+            colors.red(
+              // Error message now reflects the expected full file name
+              `Error : File '${listedFileBaseName}' listed in '${fitnessMetadataFileName}' is missing from the data folder (expected filename: ${fullFileName}).`,
+            ),
+          );
+          Deno.exit(1);
+        }
+
+        // Check if the dependent raw file has headers (non-empty)
+        const filePath = `${folderName}/${fullFileName}`;
+        const headers = await getFileHeaders(filePath);
+        if (headers.length === 0) {
+          console.error(
+            colors.red(
+              `Error: Dependent fitness data file "${fullFileName}" (listed in metadata) is empty or has no headers.`,
+            ),
+          );
+          Deno.exit(1);
+        }
+      }
+      console.log(colors.dim(` -> All dependent fitness files found and are not empty.`)); 
     }
     
     console.log(
-        colors.green("✅ Optional file existence, dependency, and content integrity check passed."),
+      colors.green("✅ Optional file existence, dependency, and content integrity check passed."),
     );
-}
+  }
 }
 
 
@@ -824,8 +852,8 @@ class App {
             // 8. Metadata: Validate mapping fields in cgm_file_metadata
             await Validator.validateCgmMetadataMappingFields(this.folderName);
 
-            // 9. Dependencies: Conditional existence check for meal/fitness data/metadata
-            Validator.validateOptionalFileExistence(this.folderName, allFileNames);
+            // 9. Dependencies: Conditional existence, content, and file presence check for meal/fitness
+            await Validator.validateOptionalFileExistence(this.folderName, allFileNames);
 
             timeEnd("Data Validation", startTime);
             console.log(
