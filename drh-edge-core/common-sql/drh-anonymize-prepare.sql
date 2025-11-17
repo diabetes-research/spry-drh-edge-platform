@@ -314,13 +314,6 @@ SELECT
     party.party_id AS tenant_id
 FROM uniform_resource_participant p
 CROSS JOIN (SELECT party_id FROM party LIMIT 1) party;
-
--- Create participant table if not exists (This syntax is SQLite compatible)
--- Creates a persistent 'participant' table by materializing the data from drh_participant view.
--- This might be used for downstream processing or performance.
-CREATE TABLE IF NOT EXISTS participant AS
-SELECT * FROM drh_participant;
-
 -- VIEW 2: drh_study
 -- Drops and recreates the view for study-related metadata, adding a 'tenant_id'.
 DROP VIEW IF EXISTS drh_study;

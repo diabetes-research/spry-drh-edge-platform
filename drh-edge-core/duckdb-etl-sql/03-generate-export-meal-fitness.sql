@@ -87,12 +87,12 @@ FROM metadata_meal_local;
 ---------------------------------------
 COPY (
   SELECT final_union_query FROM union_query_meal_generator
-) TO '04-execute-meal-tracing.sql' (HEADER FALSE, DELIMITER '\t', QUOTE '');
+) TO '03-execute-meal-tracing.sql' (HEADER FALSE, DELIMITER '\t', QUOTE '');
 
 ---------------------------------------
 -- 7M. EXECUTE THE GENERATED MEAL SQL (via .read)
 ---------------------------------------
-.read 04-execute-meal-tracing.sql
+.read 03-execute-meal-tracing.sql
 
 ---------------------------------------
 -- 8M. CHECK RECORD COUNT IN COMBINED MEAL VIEW
@@ -183,12 +183,12 @@ FROM metadata_fitness_local;
 ---------------------------------------
 COPY (
   SELECT final_union_query FROM union_query_fitness_generator
-) TO '05-execute-fitness-tracing.sql' (HEADER FALSE, DELIMITER '\t', QUOTE '');
+) TO '03-execute-fitness-tracing.sql' (HEADER FALSE, DELIMITER '\t', QUOTE '');
 
 ---------------------------------------
 -- 7F. EXECUTE THE GENERATED FITNESS SQL (via .read)
 ---------------------------------------
-.read 05-execute-fitness-tracing.sql
+.read 03-execute-fitness-tracing.sql
 
 ---------------------------------------
 -- 8F. CHECK RECORD COUNT IN COMBINED FITNESS VIEW

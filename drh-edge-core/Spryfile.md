@@ -186,8 +186,17 @@ rm -rf dev-src.auto
 ## SQLPage Build and Server Execution
 
 ```bash build-run-server  --descr "Build and run starts execution"
+#!/usr/bin/env -S bash
 ./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
 SQLPAGE_SITE_PREFIX="" sqlpage   
+if [ $? -eq 0 ]; then
+    # Execution succeeded
+    echo "[DRH EDGE UI]](http://localhost:9227/) is up and running..."
+else
+    # Execution failed (likely due to port conflict)
+    echo "ERROR: SQLPage failed to start (check port 9227 conflict)."
+    exit 1
+fi
 ```
 
 ## Layout
@@ -395,7 +404,7 @@ SELECT
    'Combined CGM Tracing' AS title,
     '/drh/cgm-combined-data.sql' AS link,
     'Explore the comprehensive CGM dataset, integrating glucose monitoring data from all participants for in-depth analysis of glycemic patterns and trends across the study.' AS description,
-    'book'                as icon,
+    'chart-line'                as icon,
     'red'                    as color;                   
 
 SELECT
