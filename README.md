@@ -172,7 +172,7 @@ Before executing, you can view the dependency graph and sequence of tasks define
 
 Execute the three main tasks in order. Use the `-m` flag to explicitly reference the Spryfile if it's not the default `Spryfile.md`.
 
-### Step 1: Run ETL (Cleanup, Data validation, Data Preparation and Transformation)
+#### Step 1: Run ETL (Cleanup, Data validation, Data Preparation and Transformation)
 
 This script performs cleanup, validation, ingestion, and the complete complex ETL sequence.
 
@@ -186,7 +186,7 @@ If you need to explicitly reference the Spryfile, use the `-m` flag:
 ./spry.ts task -m drh-edge-spry.md prepare-db
 ```
 
-### Step 2: Build the SQLPage Site (Presentation Layer)
+#### Step 2: Build the SQLPage Site (Presentation Layer)
 
 This command executes the **`build-to-db`** task, which compiles the SQLPage content files, generates the necessary SQL, and pushes the entire application structure into the `$SPRY_DB` database.
 
@@ -194,7 +194,7 @@ This command executes the **`build-to-db`** task, which compiles the SQLPage con
 ./spry.ts task -m drh-edge-spry.md build-to-db
 ```
 
-### Step 3: Start the Local SQLPage Server
+#### Step 3: Start the Local SQLPage Server
 
 This executes the **`run-server`** task, which launches the web application.
 
@@ -216,11 +216,11 @@ Since the tasks are designed to be executed sequentially, you can run the entire
 
 -----
 
-## 4. Customization and Modification Guide
+## Customization and Modification Guide
 
 To modify the pipeline's behavior, you must edit the source files that control the specific logic, as defined in **`drh-edge-spry.md`**.
 
-### 4.1. Modifying Pre-Validation Logic
+### Modifying Pre-Validation Logic
 
 This logic dictates the rules for checking data integrity and dependencies *before* ETL starts.
 
@@ -229,36 +229,41 @@ This logic dictates the rules for checking data integrity and dependencies *befo
 | **Pre-Validation Rules** | `drh-pre-etl-validation.ts` |
 | **Validation Execution** | The `deno run` command within the **`prepare-db`** task in **`drh-edge-spry.md`**. |
 
-### 4.2. Modifying ETL and Data Quality Logic
+### Modifying ETL and Data Quality Logic
 
-These files contain the SQL that performs transformations and validation checks on the ingested data.
+All SQL files are segregated into dedicated directories for modularity.
 
-| ETL Component | Files to Modify | Description |
+| ETL Component | Directory | Purpose |
 | :--- | :--- | :--- |
-| **Post-Ingestion Validation** | `common-sql/drh-data-validation.sql` | SQL queries checking data anomalies *after* ingestion. |
-| **Complex CGM/Tracing** | `duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql` | SQL defining the combined CGM data and time-series tracing logic. |
-| **Metrics Pipeline** | `common-sql/drh-metrics-pipeline.sql` | SQL logic for calculating summary statistics (TIR, GRI, etc.). |
+| **Complex DuckDB Transformations** | `duckdb-etl-sql/` | Contains scripts for resource-intensive operations like combined CGM tracing and advanced data processing. |
+| **Common SQL / Validation** | `common-sql/` | Contains common SQL used for post-ingestion data quality checks and utility views. |
+
+**To customize the transformation logic for a new dataset:**
+
+1. Create a new SQL file within the appropriate directory (`duckdb-etl-sql/` or `common-sql/`).
+2. Reference this new file in your custom Spryfile (Section 5).
 
 -----
 
-## 5. Handling Multiple Datasets (Custom Pipelines)
+## Handling Multiple Datasets (Custom Pipelines)
 
-If a new dataset requires a **unique sequence of ETL steps**, the most maintainable approach is to create a dedicated **custom Spryfile**.
+If a new dataset requires a **unique sequence of ETL steps** or specialized transformations, the most maintainable approach is to create a dedicated **custom Spryfile**.
 
 ### Strategy: Use a Custom `Spryfile`
 
 1. **Duplicate the Base File:** Copy the main Spryfile and rename it (e.g., `cp drh-edge-spry.md study-x-etl.spry.md`).
-2. **Customize the Logic:** Modify the task steps within **`study-x-etl.spry.md`** to reference your custom validation scripts or custom SQL files.
-3. **Execute the Custom Pipeline:** Use the `-f` flag to point Spry to your custom definition. The task name (`prepare-db`) remains consistent.
+2. **Customize the Logic:** Modify the task steps within **`study-x-etl.spry.md`**. You can replace existing SQL steps with calls to your newly created custom SQL files (from Section `Modifying ETL and Data Quality Logic`) to bring the data views into the required DRH format.
+3. **Execute the Custom Pipeline:** Use the `-f` flag to point Spry to your custom definition for both the ETL and the build steps.
 
 | Action | Command |
 | :--- | :--- |
-| **Run Standard ETL** | `./spry.ts task prepare-db` |
-| **Run Custom ETL** | `./spry.ts -f study-x-etl.spry.md task prepare-db` |
+| **Run Custom ETL** | `./spry.ts -m study-x-etl.spry.md task prepare-db` |
+| **Build Custom Site** | `./spry.ts -m study-x-etl.spry.md task build-to-db` |
+| **Run Server** | `./spry.ts -m study-x-etl.spry.md task run-server` |
 
 -----
 
-## ⚠️ 6. Security and Hygiene (`.gitignore` Summary)
+## Security and Hygiene (`.gitignore` Summary)
 
 The following files and directories are typically generated during the workflow and should **NEVER** be committed to Git, as they are large binary outputs, derived code, or contain sensitive configuration.
 
