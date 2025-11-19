@@ -241,7 +241,7 @@ All SQL files are segregated into dedicated directories for modularity.
 **To customize the transformation logic for a new dataset:**
 
 1. Create a new SQL file within the appropriate directory (`duckdb-etl-sql/` or `common-sql/`).
-2. Reference this new file in your custom Spryfile (Section 5).
+2. Reference this new file in your custom Spryfile .
 
 -----
 
