@@ -77,13 +77,22 @@ Quick troubleshooting
 
 ### Instructions
 
-- Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
-- Use [latest surveilr](https://github.com/surveilr/packages/releases)
-- Place the study data files in a **directory** in the same path as this `Spryfile.md`, then run the following command:
-  - `./spry.ts task prepare-db`
-- The `prepare-db` task, requires the **study data folder path**, **tenant ID**, and **tenant name** as parameters which are provided through env.
+### 2. Prepare Study Data and Dependencies
 
-```bash prepare-db --dep prepare-env --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
+- Prepare your research data files according to the formats described on the **official DRH Website**: [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
+- Ensure your study data files are placed in the directory specified by **`$STUDY_DATA_PATH`**.
+- Install the required tools and dependencies:
+  - **deno** (latest)
+  - **surveilr** (latest release): [https://github.com/surveilr/packages/releases](https://github.com/surveilr/packages/releases)
+  - **DuckDB**: Used by `surveilr` for complex in-memory ETL and data transformation.
+  - **SQLite3**: The final destination database engine used for persistence and serving data via SQLPage (the file path is specified by `$SPRY_DB`).
+
+- Place the study data files in a **directory** in the same path as this markdown, then run the following command:
+  - `./spry.ts task prepare-db`
+- The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
+- This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
+
+```bash prepare-db --dep prepare-env --descr "Performs pre-etl-validation ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/bin/bash
 # Exit immediately if a command exits with a non-zero status (except for the Deno check)
 # set -e
@@ -99,12 +108,11 @@ TOOL_CMD="surveilr"
 # 2. Cleanup
 rm -f resource-surveillance.sqlite.db
 rm -f *.sql
-rm -f dev-src.auto
-rm -f validation-reports
-echo "--- Starting Pipeline: Cleanup Complete ---"
+rm -rf dev-src.auto validation-reports
+echo "Starting the pipeline......."
 
 # 3. CRITICAL PRE-VALIDATION GATE
-echo "--- Running Data Pre-Validation Gate (Structure, Metadata, Dependencies, Completeness) ---"
+echo "Executing the Data Pre-Validation Gate (Structure, Metadata, Dependencies, Completeness)....."
 deno run -A drh-pre-etl-validation.ts "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
 VALIDATION_EXIT_CODE=$?
 
@@ -117,32 +125,32 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
     # Using 'set -e' locally to ensure these chained steps halt immediately on failure
     (
         set -e
-        echo "--- Starting Ingestion and Initial Transformation ---"
+        echo "Starting Ingestion and Initial Transformation......... "
         "${TOOL_CMD}" ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}"
         "${TOOL_CMD}" orchestrate transform-csv
-        echo "SUCCESS: Ingestion and CSV transformation complete."
+        echo "SUCCESS: Ingestion and CSV transformation complete........."
     )
     # Check if the ingestion/transformation subshell failed
     if [ $? -ne 0 ]; then
-        echo "FAILURE: Ingestion or Initial Transformation failed. Halting pipeline."
+        echo "FAILURE: Ingestion or Initial Transformation failed. Halting pipeline........."
         exit 1
     fi
     # ----------------------------------------------------
 
     # 5. SQL DATA QUALITY VALIDATION (Post-Ingestion Check)
-    echo "--- Running Post-Ingestion SQL Data Quality Validation ---"
+    echo "Running Post-Ingestion SQL Data Quality Validation...."
     "${TOOL_CMD}" shell common-sql/drh-data-validation.sql
     
     # Check SQL Validation success
     if [ $? -ne 0 ]; then
-        echo "FAILURE: Post-Ingestion SQL Validation failed. Halting complex ETL."
+        echo "FAILURE: Post-Ingestion SQL Validation failed. Halting complex ETL........."
         exit 1
     fi
-    echo "SUCCESS: SQL Validation passed. Starting complex ETL transformations..."
+    echo "SUCCESS: SQL Validation passed. Starting complex ETL transformations........."
     # ----------------------------------------------------
 
     # 6. COMPLEX ETL TRANSFORMATIONS
-    echo "--- Running Complex ETL Pipelines (Anonymization, Tracing, Metrics, etc.) ---"
+    echo "Running Complex ETL Pipelines (Anonymization, Tracing, Metrics, etc.)........."
     
     # Run all complex ETL steps, halting immediately on any failure
     (
@@ -153,6 +161,7 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
         "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql
         cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
         cat duckdb-etl-sql/04-dynamic-participant-meal-fitness-data.sql | duckdb ":memory:"
+        echo "ETL process complete. Database generated successfully......... "
     )
     
     if [ $? -ne 0 ]; then
@@ -160,12 +169,12 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
         exit 1
     fi
 
-    echo "--- ETL Complete. Database generated successfully. ---"
+    
 
 else
     # This block executes if VALIDATION_EXIT_CODE is 1 (FAIL or WARNING)
     echo "FAILURE: Data Pre-Validation failed or returned a WARNING status (Exit Code 1)."
-    echo "Skipping all subsequent Ingestion and ETL steps."
+    echo "Skipping all subsequent Ingestion and ETL steps........."
     exit 1
 fi
 ```
@@ -174,8 +183,8 @@ fi
 
 While you're developing, Spry's `dev-src.auto` generator should be used:
 
-```bash prepare-sqlpage-dev --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
+```bash  --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
+./spry.ts spc -m drh-edge-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json  
 ```
 
 ```bash  --descr "Clean up the project directory's generated artifacts"
@@ -188,7 +197,7 @@ whenever you update `Spryfile.md`, it regenerates the SQLPage `dev-src.auto`,
 which is then picked up automatically by the SQLPage server:
 
 ```bash
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch --with-sqlpage
+./spry.ts spc -m drh-edge-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch --with-sqlpage
 ```
 
 - `--watch` turns on watching all `--md` files passed in (defaults to `Spryfile.md`)
@@ -202,7 +211,7 @@ window.
 If you're running SQLPage in another terminal window, use:
 
 ```bash
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
+./spry.ts spc -m drh-edge-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
 ```
 
 ## SQLPage single database deployment mode
@@ -212,14 +221,13 @@ single-database deployment can be used:
 
 ```bash build-to-db --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
 rm -rf dev-src.auto
-./spry.ts spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
+./spry.ts spc -m drh-edge-spry.md --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
 ```
 
-## SQLPage Build and Server Execution
+## SQLPage Server Execution
 
-```bash build-run-server  --descr "Build and run starts execution"
+```bash run-server  --descr "Starts server"
 #!/usr/bin/env -S bash
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
 SQLPAGE_SITE_PREFIX="" sqlpage   
 if [ $? -eq 0 ]; then
     # Execution succeeded
@@ -334,9 +342,35 @@ SELECT
       'The Diabetes Research Hub (DRH) addresses a growing need for a centralized platform to manage and analyze continuous glucose monitor (CGM) data.Our primary focus is to collect data from studies conducted by various researchers. Initially, we are concentrating on gathering CGM data, with plans to collect additional types of data in the future.' as description,
       'home'                 as icon;
 
+SELECT
+      'card'                  as component,
+      'Study Data Diagnostics' as title,      
+      1                     as columns;
+
+SELECT
+    'alert' AS component,
+    -- Color logic based on status
+    CASE overall_status
+        WHEN 'FAIL' THEN 'red'
+        WHEN 'WARNING' THEN 'orange'
+        WHEN 'PASS' THEN 'green'
+        ELSE 'blue'
+    END AS color,
+    'Latest System & Data Diagnostics Report' AS title,
+    -- Corrected syntax, date format (dd-mm-yy hh:mm:ss) and HTML bolding
+    'Overall Status: ' || overall_status || '' AS description
+FROM 
+    validation_reports
+WHERE 
+    overall_status IS NOT NULL
+ORDER BY
+    timestamp DESC
+LIMIT 1;
+
+
 select 
     'list'                 as component,
-    'Data and Dependency Diagnostics Report' as title,
+    'Data and Dependency Diagnostics Report' as title,    
     TRUE                   as compact;  
 select     
     CASE json_extract(j.value, '$.status')
@@ -371,10 +405,11 @@ ORDER BY
         ELSE 3 
     END;
 
+
 SELECT
       'card'                  as component,
-      'Files Log' as title,
-      1                     as columns;
+      'File Detailed Diagnostics' as title,
+      2                    as columns;
 
 
 SELECT
@@ -384,12 +419,9 @@ SELECT
     'book'                as icon,
     'red'                    as color;
 
-;
 
-SELECT
-      'card'                  as component,
-      'File Verification Results' as title,
-      1                     as columns;
+
+
 
 SELECT
     'Verification Log' AS title,
@@ -589,10 +621,10 @@ SELECT
 
 
 SELECT
-  'Execute the automated script again' AS title,
+  'Execute the run book again' AS title,
   'retry' AS icon,
   '#' AS link,
-  'Run the command again to perform file conversion.' AS description;
+  'Execute the run book again.' AS description;
 
 
 SELECT

@@ -673,14 +673,14 @@ class Validator {
 
 /** * Initializes the Surveilr RSSD schema in the database. (Step 3) */
 async function initializeSurveilrDB(dbPath: string): Promise<void> {
-    console.log(colors.cyan(`\n--- 3. Initializing Surveilr RSSD Database (${dbPath}) ---`));
+    // console.log(colors.cyan(`\n--- 3. Initializing Surveilr RSSD Database (${dbPath}) ---`));
     try {
         const result = await $`surveilr admin init -d ${dbPath}`.noThrow().stdout("inherit").stderr("inherit");
         
         if (result.code !== 0) {
             throw new Error(`Surveilr command failed with exit code ${result.code}.`);
         }
-        console.log(colors.green("✅ Surveilr RSSD Initialized successfully."));
+        // console.log(colors.green("✅ Surveilr RSSD Initialized successfully."));
     } catch (e) {
         throw new Error(`Surveilr initialization failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -690,8 +690,8 @@ async function initializeSurveilrDB(dbPath: string): Promise<void> {
  * reading from a temporary SQL file, fulfilling the request to emit SQL to a file. 
  */
 async function insertReportToDB(dbPath: string, report: FinalReport): Promise<void> {
-    console.log(colors.cyan("\n--- 4. Inserting Validation Report to DB via 'surveilr shell' CLI (Using SQL File) ---"));
-    console.log(colors.dim(`Actual DB path: ${dbPath}`)); 
+    // console.log(colors.cyan("\n--- 4. Inserting Validation Report to DB via 'surveilr shell' CLI (Using SQL File) ---"));
+    // console.log(colors.dim(`Actual DB path: ${dbPath}`)); 
 
     // 1. Define DDL SQL
     const createTableSql = `
@@ -735,13 +735,13 @@ async function insertReportToDB(dbPath: string, report: FinalReport): Promise<vo
     try {
         // 3. Emit SQL to file
         await Deno.writeTextFile(sqlFilePath, combinedSql);
-        console.log(colors.yellow(`\n📝 SQL statements emitted to file: ${sqlFilePath}`));
+        // console.log(colors.yellow(`\n📝 SQL statements emitted to file: ${sqlFilePath}`));
         
-        // Print the emitted content for user verification
-        console.log(colors.dim("\n--- Content of Emitted SQL File (Truncated) ---\n" + combinedSql.trim().split('\n').slice(0, 8).join('\n') + "\n... (omitting full JSON content)\n"));
+        // // Print the emitted content for user verification
+        // console.log(colors.dim("\n--- Content of Emitted SQL File (Truncated) ---\n" + combinedSql.trim().split('\n').slice(0, 8).join('\n') + "\n... (omitting full JSON content)\n"));
         
         // 4. Execute SQL file using surveilr shell
-        console.log(colors.dim(`Executing: surveilr shell ${sqlFilePath}`));
+        // console.log(colors.dim(`Executing: surveilr shell ${sqlFilePath}`));
 
         const result = await $`surveilr shell   ${sqlFilePath}`.noThrow().stdout("inherit").stderr("inherit");
         
@@ -749,7 +749,7 @@ async function insertReportToDB(dbPath: string, report: FinalReport): Promise<vo
              throw new Error(`surveilr shell execution failed with exit code ${result.code}.`);
         }
         
-        console.log(colors.green(`✅ Validation Report inserted into ${dbPath} using 'surveilr shell' reading from SQL file.`));
+        //console.log(colors.green(`✅ Validation Report inserted into ${dbPath} using 'surveilr shell' reading from SQL file.`));
 
     } catch (e) {
         throw new Error(`'surveilr shell' execution failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -757,7 +757,7 @@ async function insertReportToDB(dbPath: string, report: FinalReport): Promise<vo
         // 5. Clean up the temporary SQL file
         if (existsSync(sqlFilePath)) {
             await Deno.remove(sqlFilePath);
-            console.log(colors.dim(`Cleaned up temporary file: ${sqlFilePath}`));
+            //console.log(colors.dim(`Cleaned up temporary file: ${sqlFilePath}`));
         }
     }
 }
