@@ -4,9 +4,9 @@
 
 ## Overview
 
-The **Diabetes Research Hub (DRH) SQLPage Application** is an ETL (Extract, Transform, Load) pipeline and web interface designed to process and visualize raw diabetes research data. This project automates the conversion of raw study files (e.g., CSV, Parquet) into a structured **SQLite database** and uses the **Spry** framework to generate a dynamic user interface powered by **SQLPage**.
+The **Diabetes Research Hub (DRH) SQLPage Application** is an ETL (Extract, Transform, Load) pipeline and web interface designed to process and visualize raw diabetes research data. This project automates the conversion of raw study files (e.g., CSV) into a structured **SQLite database** and uses the **Spry** framework to generate a user interface powered by **SQLPage**.
 
-The goal is to provide a centralized platform for managing and analyzing continuous glucose monitor (CGM) data from various research studies.
+The goal is to provide a centralized platform for managing and analyzing continuous glucose monitor (CGM) data from research study.
 
 -----
 
@@ -14,7 +14,7 @@ The goal is to provide a centralized platform for managing and analyzing continu
 
 The platform performs a complete workflow for converting raw diabetes research data (CGM, meal, fitness) into a structured SQLite database and presenting it via a rich, interactive web UI.
 
-
+* **Pre-Validation Gate:** Checks file structure, metadata, and dependencies (Deno, surveilr). The pipeline halts if this step fails.
 * **Data Conversion:** Automates the ingestion and conversion of raw study files (e.g., CSV) into a structured format using the `surveilr` tool.
 * **DuckDB ETL:** Utilizes **DuckDB** for complex data transformation and integration, including combining CGM tracings and generating derived meal and fitness metadata.
 * **SQLPage UI:** Generates a modern, interactive data dashboard using **SQLPage** powered by the resulting SQLite database.
@@ -47,7 +47,8 @@ Ensure you have the following installed to run the platform:
 1. **[Deno](https://deno.land/):** Used to run the Spry CLI tool (`spry.ts`).
 2. **[Surveilr](https://github.com/surveilr/packages/releases):** The data-processing utility for file ingestion and orchestration.
 3. **DuckDB**: Used within the data preparation scripts for ETL operations.
-4. **direnv**: Recommended for managing environment variables easily.
+4. **SQLITE**: The final destination database engine used for data persistence and serving via SQLPage (specified by `$SPRY_DB`).
+5. **direnv**: Recommended for managing environment variables easily.
 
 ### ⚙️ Installation Steps
 
@@ -86,16 +87,17 @@ sudo apt update
 sudo apt install sqlite3 libsqlite3-dev
 ```
 
-#### 4\. Install Surveilr
+#### 4. Install Surveilr
 
 Surveilr is the data-processing utility for file ingestion.The latest surveilr packages can be found [here.](https://github.com/surveilr/packages/releases)
+Surveilr has inbuilt duckdb and sqlite features.but it would be advisable to install them.
 
 ```bash
-# Download the latest stable release (e.g., v3.6.0)
-wget https://github.com/surveilr/packages/releases/download/3.6.0/surveilr_3.6.0_x86_64-unknown-linux-gnu.tar.gz
+# Download the latest stable release (e.g., v3.7.0) . check in https://github.com/surveilr/packages/releases
+wget https://github.com/surveilr/packages/releases/download/3.7.0/surveilr_3.7.0_x86_64-unknown-linux-gnu.tar.gz
 
 # Extract it
-tar -xzf surveilr_3.6.0_x86_64-unknown-linux-gnu.tar.gz
+tar -xzf surveilr_3.7.0_x86_64-unknown-linux-gnu.tar.gz
 
 # Install it by moving the executable to a directory in your PATH
 sudo mv surveilr /usr/local/bin/
@@ -133,64 +135,139 @@ direnv allow
 
 > ⚠️ **Security Note:** Never commit secrets or production credentials into `.envrc`. Ensure `.envrc` and the generated database file (e.g., `resource-surveillance.sqlite.db`) are added to your `.gitignore`.
 
------
+## Core Pipeline Overview
 
-## 🚀 Usage
+The entire data preparation workflow is defined by the **`drh-edge-spry.md`** file, executed through the `prepare-db` task.
 
-The project's workflow involves two main steps: preparing the database (ETL) and running the web server (UI).
-
-### 1. Prepare the Database (`prepare-db`)
-
-This task executes the full ETL pipeline to ingest and transform the raw data into the structured SQLite database.
-
-1. **Organize Data:** Place your research data files in the directory specified by **`STUDY_DATA_PATH`**.
-
-2. **Run Ingestion:** Execute the main task script from your terminal:
-
-    ```bash
-    ./spry.ts task prepare-db
-    ```
-
-    This script removes any previous database, executes the validation checks, and then uses `surveilr` and **DuckDB** to process the data and generate the final database structure.
-
-### 2. Run the SQLPage Server (`build-run-server`)
-
-This command builds the necessary files for the SQLPage application and starts the local web server.
-
-```bash
-./spry.ts task build-run-server
-```
-
-You can now access the **Diabetes Research Hub Edge UI** in your browser at the address specified by your **`PORT`** environment variable (e.g., `http://localhost:9227`).
+| Stage | Tool | Description |
+| :--- | :--- | :--- |
+| 1. **Pre-Validation Gate** | Deno Script | Checks dependencies, file structure, and metadata quality. **Pipeline halts if this fails.** |
+| 2. **Ingestion** | `surveilr` | Converts raw files into the standardized **RSSD** (Resource Surveillance Study Data) format. |
+| 3. **SQL Validation** | `surveilr` Shell | Runs data quality checks against the newly ingested data. |
+| 4. **Complex ETL** | DuckDB | Performs advanced transformations: tracing, combining CGM data, anonymization, and calculating metrics. |
+| 5. **Persistence** | DuckDB → SQLite | Exports all final, processed tables into the SQLite database (`$SPRY_DB`). |
+| 6. **Presentation** | SQLPage | Reads the SQLite database to render the web dashboard. |
 
 -----
 
-## 🛠️ Development & Deployment
+### Prepare Study Data
 
-### Development / Watch Mode
+* Organize your raw research data files according to the formats listed at the official DRH website: [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
+* Place the data directory at the path specified by the **`$STUDY_DATA_PATH`** environment variable.
 
-For active development, the watch mode automatically regenerates the SQLPage application whenever the `Spryfile.md` or other watched files are updated.
+-----
 
-```bash
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch --with-sqlpage
-```
+## Standard Workflow Instructions
 
-* `--watch`: Monitors `Spryfile.md` for changes.
-* `--with-sqlpage`: Automatically starts and restarts the SQLPage server after each successful build.
+### Inspect the Pipeline Structure (Runbook)
 
-### Single-Database Deployment (Production)
-
-To package the entire SQLPage application into the SQLite database itself (for simpler deployment without a `dev-src.auto` directory):
+Before executing, you can view the dependency graph and sequence of tasks defined in **`drh-edge-spry.md`** using the Spry `runbook` command.
 
 ```bash
-./spry.ts task build-to-db
-# This command first removes the dev directory, then packages all SQLPage files into the database.
+# View the runbook as a dependency tree (ASCII visualization)
+./spry.ts runbook -m drh-edge-spry.md --visualize ascii-tree
 ```
 
-### Cleanup
+### Option A: Execute All Steps Sequentially (Recommended for Development)
 
-To remove generated artifacts like the development source directory and temporary SQL files:
+Execute the three main tasks in order. Use the `-m` flag to explicitly reference the Spryfile if it's not the default `Spryfile.md`.
+
+### Step 1: Run ETL (Cleanup, Data validation, Data Preparation and Transformation)
+
+This script performs cleanup, validation, ingestion, and the complete complex ETL sequence.
 
 ```bash
-./spry.ts task clean
+./spry.ts task prepare-db
 ```
+
+If you need to explicitly reference the Spryfile, use the `-m` flag:
+
+```bash
+./spry.ts task -m drh-edge-spry.md prepare-db
+```
+
+### Step 2: Build the SQLPage Site (Presentation Layer)
+
+This command executes the **`build-to-db`** task, which compiles the SQLPage content files, generates the necessary SQL, and pushes the entire application structure into the `$SPRY_DB` database.
+
+```bash
+./spry.ts task -m drh-edge-spry.md build-to-db
+```
+
+### Step 3: Start the Local SQLPage Server
+
+This executes the **`run-server`** task, which launches the web application.
+
+```bash
+./spry.ts task -m drh-edge-spry.md run-server
+# Access the site at http://localhost:$PORT
+```
+
+> **Note:** If the `run-server` task is not defined in your Spryfile, you can run the server directly using:
+> `SQLPAGE_SITE_PREFIX="" sqlpage`
+
+### Option B: Execute the Entire Workflow via Runbook
+
+Since the tasks are designed to be executed sequentially, you can run the entire workflow in a single command using `runbook`. This executes Step 1, then Step 2, then Step 3.
+
+```bash
+# This command runs prepare-db, build-to-db, and run-server in sequence
+./spry.ts runbook -m drh-edge-spry.md
+```
+
+-----
+
+## 4. Customization and Modification Guide
+
+To modify the pipeline's behavior, you must edit the source files that control the specific logic, as defined in **`drh-edge-spry.md`**.
+
+### 4.1. Modifying Pre-Validation Logic
+
+This logic dictates the rules for checking data integrity and dependencies *before* ETL starts.
+
+| Logic | File to Modify |
+| :--- | :--- |
+| **Pre-Validation Rules** | `drh-pre-etl-validation.ts` |
+| **Validation Execution** | The `deno run` command within the **`prepare-db`** task in **`drh-edge-spry.md`**. |
+
+### 4.2. Modifying ETL and Data Quality Logic
+
+These files contain the SQL that performs transformations and validation checks on the ingested data.
+
+| ETL Component | Files to Modify | Description |
+| :--- | :--- | :--- |
+| **Post-Ingestion Validation** | `common-sql/drh-data-validation.sql` | SQL queries checking data anomalies *after* ingestion. |
+| **Complex CGM/Tracing** | `duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql` | SQL defining the combined CGM data and time-series tracing logic. |
+| **Metrics Pipeline** | `common-sql/drh-metrics-pipeline.sql` | SQL logic for calculating summary statistics (TIR, GRI, etc.). |
+
+-----
+
+## 5. Handling Multiple Datasets (Custom Pipelines)
+
+If a new dataset requires a **unique sequence of ETL steps**, the most maintainable approach is to create a dedicated **custom Spryfile**.
+
+### Strategy: Use a Custom `Spryfile`
+
+1. **Duplicate the Base File:** Copy the main Spryfile and rename it (e.g., `cp drh-edge-spry.md study-x-etl.spry.md`).
+2. **Customize the Logic:** Modify the task steps within **`study-x-etl.spry.md`** to reference your custom validation scripts or custom SQL files.
+3. **Execute the Custom Pipeline:** Use the `-f` flag to point Spry to your custom definition. The task name (`prepare-db`) remains consistent.
+
+| Action | Command |
+| :--- | :--- |
+| **Run Standard ETL** | `./spry.ts task prepare-db` |
+| **Run Custom ETL** | `./spry.ts -f study-x-etl.spry.md task prepare-db` |
+
+-----
+
+## ⚠️ 6. Security and Hygiene (`.gitignore` Summary)
+
+The following files and directories are typically generated during the workflow and should **NEVER** be committed to Git, as they are large binary outputs, derived code, or contain sensitive configuration.
+
+| Path/File | Reason for Exclusion |
+| :--- | :--- |
+| **`.envrc`** | Contains local environment variables and potentially secrets. |
+| **`drh-edge-core/resource-surveillance.sqlite.db`** | The large, binary database file generated by the pipeline. |
+| **`drh-edge-core/*.sql`** | Temporary SQL files generated during the ETL process. |
+| **`dev-src.auto`** | The generated directory used by SQLPage to serve content in development mode. |
+| **`validation-reports`** | Output reports from the pre-validation gate. |
+| **`sqlpage/`** | contains the handlebars and sqlpage.json |

@@ -1,0 +1,6 @@
+drh-edge-core/resource-surveillance.sqlite.db
+sqlpage/
+drh-edge-core/*.sql
+.envrc
+dev-src.auto
+validation-reports

@@ -20,7 +20,7 @@ FileMetadata AS (
         patient_id, 
         file_name, 
         'cgm' AS resource_type, 
-        'uniform_resource_cgm_' || REPLACE(REGEXP_REPLACE(TRIM(LOWER(file_name)), '\.[^\.]+$', ''), '-', '_') AS expected_table_name 
+        'uniform_resource_' || REPLACE(REGEXP_REPLACE(TRIM(LOWER(file_name)), '\.[^\.]+$', ''), '-', '_') AS expected_table_name 
     FROM 
         uniform_resource_cgm_file_metadata
     
@@ -31,7 +31,7 @@ FileMetadata AS (
         participant_id as patient_id, 
         file_name, 
         'fitness' AS resource_type, 
-        'uniform_resource_fitness_' || REPLACE(REGEXP_REPLACE(TRIM(LOWER(file_name)), '\.[^\.]+$', ''), '-', '_') AS expected_table_name 
+        'uniform_resource_' || REPLACE(REGEXP_REPLACE(TRIM(LOWER(file_name)), '\.[^\.]+$', ''), '-', '_') AS expected_table_name 
     FROM 
         uniform_resource_fitness_file_metadata
     
@@ -42,7 +42,7 @@ FileMetadata AS (
         participant_id as patient_id,
         file_name, 
         'meal' AS resource_type, 
-        'uniform_resource_meal_' || REPLACE(REGEXP_REPLACE(TRIM(LOWER(file_name)), '\.[^\.]+$', ''), '-', '_') AS expected_table_name 
+        'uniform_resource_' || REPLACE(REGEXP_REPLACE(TRIM(LOWER(file_name)), '\.[^\.]+$', ''), '-', '_') AS expected_table_name 
     FROM 
         uniform_resource_meal_file_metadata
 ),
