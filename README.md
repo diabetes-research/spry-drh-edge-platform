@@ -200,7 +200,6 @@ This executes the **`run-server`** task, which launches the web application.
 
 ```bash
 ./spry.ts task -m drh-edge-spry.md run-server
-# Access the site at http://localhost:$PORT
 ```
 
 > **Note:** If the `run-server` task is not defined in your Spryfile, you can run the server directly using:
