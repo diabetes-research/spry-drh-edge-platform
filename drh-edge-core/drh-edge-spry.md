@@ -66,7 +66,7 @@ Then run `direnv allow` in this project directory to load the `.envrc` into your
 
 Why these variables matter here
 
-- The YAML header at the top of this `Spryfile.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
+- The YAML header at the top of this `drh-edge-spry.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
 - The `prepare-db` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
 - If `SPRY_DB` is not set, the tooling may fail to find the database or fall back to defaults; explicitly setting it ensures predictable, repeatable dev runs.
 
@@ -77,7 +77,7 @@ Quick troubleshooting
 
 ### Instructions
 
-### 2. Prepare Study Data and Dependencies
+### Prepare Study Data and Dependencies
 
 - Prepare your research data files according to the formats described on the **official DRH Website**: [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
 - Ensure your study data files are placed in the directory specified by **`$STUDY_DATA_PATH`**.
@@ -88,7 +88,7 @@ Quick troubleshooting
   - **SQLite3**: The final destination database engine used for persistence and serving data via SQLPage (the file path is specified by `$SPRY_DB`).
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
-  - `./spry.ts task prepare-db`
+  - ` ./spry.ts task -m drh-edge-spry.md prepare-db `
 - The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
@@ -193,7 +193,7 @@ rm -f *.sql
 ```
 
 In development mode, here’s the `--watch` convenience you can use so that
-whenever you update `Spryfile.md`, it regenerates the SQLPage `dev-src.auto`,
+whenever you update `drh-edge-spry.md`, it regenerates the SQLPage `dev-src.auto`,
 which is then picked up automatically by the SQLPage server:
 
 ```bash

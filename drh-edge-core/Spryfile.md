@@ -77,20 +77,27 @@ Quick troubleshooting
 
 ### Instructions
 
-- Prepare your research data files according to the supported formats listed at [drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
-- Use [latest surveilr](https://github.com/surveilr/packages/releases)
-- Place the study data files in a **directory** in the same path as this `Spryfile.md`, then run the following command:
-  - `./spry.ts task prepare-db`
-- The `prepare-db` task, requires the **study data folder path**, **tenant ID**, and **tenant name** as parameters which are provided through env.
+### Prepare Study Data and Dependencies
 
-```bash prepare-db --dep prepare-env --descr "Validates ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
-#!/usr/bin/env -S bash
-# ----------------------------------------------------
-# 1. EXECUTION INTEGRITY SETUP
-# CRITICAL: Halts the script immediately on any command failure (non-zero exit code).
-# This enforces Sequential Dependency and Critical Failure Handling for all steps.
-set -e
-# ----------------------------------------------------
+- Prepare your research data files according to the formats described on the **official DRH Website**: [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
+- Ensure your study data files are placed in the directory specified by **`$STUDY_DATA_PATH`**.
+- Install the required tools and dependencies:
+  - **deno** (latest)
+  - **surveilr** (latest release): [https://github.com/surveilr/packages/releases](https://github.com/surveilr/packages/releases)
+  - **DuckDB**: Used by `surveilr` for complex in-memory ETL and data transformation.
+  - **SQLite3**: The final destination database engine used for persistence and serving data via SQLPage (the file path is specified by `$SPRY_DB`).
+
+- Place the study data files in a **directory** in the same path as this markdown, then run the following command:
+  - `./spry.ts task prepare-db`
+- The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
+- This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
+
+```bash prepare-db --dep prepare-env --descr "Performs pre-etl-validation ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
+#!/bin/bash
+# Exit immediately if a command exits with a non-zero status (except for the Deno check)
+# set -e
+# Treat unset variables as an error
+set -u
 
 # Define variables for clarity (assuming they are set by Spry/environment)
 STUDY_DATA_PATH="${STUDY_DATA_PATH}"
@@ -101,49 +108,83 @@ TOOL_CMD="surveilr"
 # 2. Cleanup
 rm -f resource-surveillance.sqlite.db
 rm -f *.sql
-echo "--- Starting Pipeline: Cleanup Complete ---"
+rm -rf dev-src.auto validation-reports
+echo "Starting the pipeline......."
 
 # 3. CRITICAL PRE-VALIDATION GATE
-# Executes the modified drhctl.ts. If any validation fails, drhctl.ts exits 1,
-# which 'set -e' catches, halting the entire pipeline.
-echo "--- Running Data Pre-Validation Gate (Structure, Metadata, Dependencies, Completeness) ---"
-deno run -A  drh-pre-validation.ts "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
-echo "SUCCESS: Data Pre-Validation passed."
-# ----------------------------------------------------
+echo "Executing the Data Pre-Validation Gate (Structure, Metadata, Dependencies, Completeness)....."
+deno run -A drh-pre-etl-validation.ts "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
+VALIDATION_EXIT_CODE=$?
 
-# 4. CORE INGESTION AND INITIAL TRANSFORMATION
-# Sequential Dependency: The '&&' ensures transform-csv runs only if ingest succeeds.
-# If either fails, 'set -e' halts the process.
-echo "--- Starting Ingestion and Initial Transformation ---"
-"${TOOL_CMD}" ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}" && "${TOOL_CMD}" orchestrate transform-csv
-echo "SUCCESS: Ingestion and CSV transformation complete."
-# ----------------------------------------------------
+# Check the Deno script's explicit exit code
+if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
+    echo "SUCCESS: Data Pre-Validation passed with overallStatus: PASS. Proceeding to ETL."
+    # ----------------------------------------------------
 
-# 5. SQL DATA QUALITY VALIDATION (Post-Ingestion Check)
-# Critical Failure: 'set -e' ensures immediate halt if this surveilr command fails.
-echo "--- Running Post-Ingestion SQL Data Quality Validation ---"
-"${TOOL_CMD}" shell common-sql/drh-data-validation.sql
-echo "SUCCESS: SQL Validation passed. Starting complex ETL transformations..."
-# ----------------------------------------------------
+    # 4. CORE INGESTION AND INITIAL TRANSFORMATION
+    # Using 'set -e' locally to ensure these chained steps halt immediately on failure
+    (
+        set -e
+        echo "Starting Ingestion and Initial Transformation......... "
+        "${TOOL_CMD}" ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}"
+        "${TOOL_CMD}" orchestrate transform-csv
+        echo "SUCCESS: Ingestion and CSV transformation complete........."
+    )
+    # Check if the ingestion/transformation subshell failed
+    if [ $? -ne 0 ]; then
+        echo "FAILURE: Ingestion or Initial Transformation failed. Halting pipeline........."
+        exit 1
+    fi
+    # ----------------------------------------------------
 
-# 6. COMPLEX ETL TRANSFORMATIONS
-# Sequential Dependency & Critical Failure: All steps run sequentially and halt on any failure ('set -e').
-echo "--- Running Complex ETL Pipelines (Anonymization, Tracing, Metrics, etc.) ---"
-"${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql
-cat duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql | duckdb ":memory:"
-cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
-"${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql
-cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
-cat duckdb-etl-sql/04-dynamic-participant-meal-fitness-data.sql | duckdb ":memory:"
-echo "--- ETL Complete. Database generated successfully. ---"
+    # 5. SQL DATA QUALITY VALIDATION (Post-Ingestion Check)
+    echo "Running Post-Ingestion SQL Data Quality Validation...."
+    "${TOOL_CMD}" shell common-sql/drh-data-validation.sql
+    
+    # Check SQL Validation success
+    if [ $? -ne 0 ]; then
+        echo "FAILURE: Post-Ingestion SQL Validation failed. Halting complex ETL........."
+        exit 1
+    fi
+    echo "SUCCESS: SQL Validation passed. Starting complex ETL transformations........."
+    # ----------------------------------------------------
+
+    # 6. COMPLEX ETL TRANSFORMATIONS
+    echo "Running Complex ETL Pipelines (Anonymization, Tracing, Metrics, etc.)........."
+    
+    # Run all complex ETL steps, halting immediately on any failure
+    (
+        set -e
+        "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql
+        cat duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql | duckdb ":memory:"
+        cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
+        "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql
+        cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
+        cat duckdb-etl-sql/04-dynamic-participant-meal-fitness-data.sql | duckdb ":memory:"
+        echo "ETL process complete. Database generated successfully......... "
+    )
+    
+    if [ $? -ne 0 ]; then
+        echo "FAILURE: Complex ETL failed. Halting pipeline."
+        exit 1
+    fi
+
+    
+
+else
+    # This block executes if VALIDATION_EXIT_CODE is 1 (FAIL or WARNING)
+    echo "FAILURE: Data Pre-Validation failed or returned a WARNING status (Exit Code 1)."
+    echo "Skipping all subsequent Ingestion and ETL steps........."
+    exit 1
+fi
 ```
 
 ## SQLPage Dev / Watch mode
 
 While you're developing, Spry's `dev-src.auto` generator should be used:
 
-```bash prepare-sqlpage-dev --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
+```bash  --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
+./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json  
 ```
 
 ```bash  --descr "Clean up the project directory's generated artifacts"
@@ -170,7 +211,7 @@ window.
 If you're running SQLPage in another terminal window, use:
 
 ```bash
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
+./spry.ts spc  --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
 ```
 
 ## SQLPage single database deployment mode
@@ -180,14 +221,13 @@ single-database deployment can be used:
 
 ```bash build-to-db --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
 rm -rf dev-src.auto
-./spry.ts spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
+./spry.ts spc  --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
 ```
 
-## SQLPage Build and Server Execution
+## SQLPage Server Execution
 
-```bash build-run-server  --descr "Build and run starts execution"
+```bash run-server  --descr "Starts server"
 #!/usr/bin/env -S bash
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json
 SQLPAGE_SITE_PREFIX="" sqlpage   
 if [ $? -eq 0 ]; then
     # Execution succeeded
@@ -304,8 +344,72 @@ SELECT
 
 SELECT
       'card'                  as component,
-      'Files Log' as title,
+      'Study Data Diagnostics' as title,      
       1                     as columns;
+
+SELECT
+    'alert' AS component,
+    -- Color logic based on status
+    CASE overall_status
+        WHEN 'FAIL' THEN 'red'
+        WHEN 'WARNING' THEN 'orange'
+        WHEN 'PASS' THEN 'green'
+        ELSE 'blue'
+    END AS color,
+    'Latest System & Data Diagnostics Report' AS title,
+    -- Corrected syntax, date format (dd-mm-yy hh:mm:ss) and HTML bolding
+    'Overall Status: ' || overall_status || '' AS description
+FROM 
+    validation_reports
+WHERE 
+    overall_status IS NOT NULL
+ORDER BY
+    timestamp DESC
+LIMIT 1;
+
+
+select 
+    'list'                 as component,
+    'Data and Dependency Diagnostics Report' as title,    
+    TRUE                   as compact;  
+select     
+    CASE json_extract(j.value, '$.status')
+        WHEN 'FAIL' THEN 'red'
+        WHEN 'WARNING' THEN 'orange'
+        WHEN 'PASS' THEN 'green'
+        ELSE 'blue'
+    END AS color,    
+    CASE 
+        WHEN json_extract(j.value, '$.check') LIKE '[Dependency]%' THEN 'settings' -- Dependency -> gear/settings
+        WHEN json_extract(j.value, '$.check') LIKE 'Folder%' THEN 'folder'         -- Folder -> folder icon
+        WHEN json_extract(j.value, '$.check') LIKE 'Schema%' THEN 'database'       -- Schema -> database icon
+        WHEN json_extract(j.value, '$.check') LIKE '%File%' OR json_extract(j.value, '$.check') LIKE '%Metadata%' THEN 'file' -- File/Metadata -> file icon
+        -- Fallback status icon
+        WHEN json_extract(j.value, '$.status') = 'FAIL' THEN 'ban'
+        WHEN json_extract(j.value, '$.status') = 'WARNING' THEN 'warning'
+        WHEN json_extract(j.value, '$.status') = 'PASS' THEN 'check'
+        ELSE 'info'
+    END AS icon,    
+    json_extract(j.value, '$.check') AS title,    
+    IFNULL(json_extract(j.value, '$.details'), 'No details provided.') AS description
+FROM 
+    (
+        SELECT report_json FROM validation_reports ORDER BY timestamp DESC LIMIT 1
+    ) AS t,
+    json_each(t.report_json, '$.results') AS j
+WHERE t.report_json IS NOT NULL
+ORDER BY 
+    CASE json_extract(j.value, '$.status')
+        WHEN 'FAIL' THEN 1 
+        WHEN 'WARNING' THEN 2 
+        ELSE 3 
+    END;
+
+
+SELECT
+      'card'                  as component,
+      'File Detailed Diagnostics' as title,
+      2                    as columns;
 
 
 SELECT
@@ -315,12 +419,9 @@ SELECT
     'book'                as icon,
     'red'                    as color;
 
-;
 
-SELECT
-      'card'                  as component,
-      'File Verification Results' as title,
-      1                     as columns;
+
+
 
 SELECT
     'Verification Log' AS title,
@@ -520,10 +621,10 @@ SELECT
 
 
 SELECT
-  'Execute the automated script again' AS title,
+  'Execute the run book again' AS title,
   'retry' AS icon,
   '#' AS link,
-  'Run the command again to perform file conversion.' AS description;
+  'Execute the run book again.' AS description;
 
 
 SELECT
