@@ -186,28 +186,33 @@ If you need to explicitly reference the Spryfile, use the `-m` flag:
 ./spry.ts task -m drh-edge-spry.md prepare-db
 ```
 
-#### Step 2: Build the SQLPage Site (Presentation Layer)
+#### Step 2: Integrated Build
 
-This command executes the **`build-to-db`** task, which compiles the SQLPage content files, generates the necessary SQL, and pushes the entire application structure into the `$SPRY_DB` database.
+This is the preferred method for running the application. This command executes the following pipeline: it performs the data build `build-server`, compiling the SQLPage content files, generating the necessary SQL, and pushing the entire application structure into the database `$SPRY_DB`.
 
 ```bash
-./spry.ts task -m drh-edge-spry.md build-to-db
+./spry.ts task -m drh-edge-spry.md build-server
 ```
 
-#### Step 3: Start the Local SQLPage Server
+Expected Result: The console will display messages for the application build, and finally, the URL where the server is running (e.g., <http://localhost:9227/>).
 
-This executes the **`run-server`** task, which launches the web application.
+#### Step 3: Start the Local SQLPage Server manually
+
+This task start the local SQLPage server automatically
 
 ```bash
 ./spry.ts task -m drh-edge-spry.md run-server
 ```
 
-> **Note:** If the `run-server` task is not defined in your Spryfile, you can run the server directly using:
-> `SQLPAGE_SITE_PREFIX="" sqlpage`
+You can run the SQLPage server directly using:
+
+```bash
+SQLPAGE_SITE_PREFIX="" sqlpage
+```
 
 ### Option B: Execute the Entire Workflow via Runbook
 
-Since the tasks are designed to be executed sequentially, you can run the entire workflow in a single command using `runbook`. This executes Step 1, then Step 2, then Step 3.
+Since the tasks are designed to be executed sequentially, you can run the entire workflow in a single command using `runbook`. This executes Step 1, then Step 2 and Step 3 in sequential order.
 
 ```bash
 # This command runs prepare-db, build-to-db, and run-server in sequence
@@ -258,10 +263,8 @@ If a new dataset requires a **unique sequence of ETL steps** or specialized tran
 | Action | Command |
 | :--- | :--- |
 | **Run Custom ETL** | `./spry.ts -m study-x-etl.spry.md task prepare-db` |
-| **Build Custom Site** | `./spry.ts -m study-x-etl.spry.md task build-to-db` |
+| **Build Custom Site** | `./spry.ts -m study-x-etl.spry.md task build-server` |
 | **Run Server** | `./spry.ts -m study-x-etl.spry.md task run-server` |
-
------
 
 ## Security and Hygiene (`.gitignore` Summary)
 

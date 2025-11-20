@@ -35,20 +35,20 @@ SELECT
 FROM metadata_table_exists AS T1;
 
 -- Show status
-SELECT 
-  CASE 
-    WHEN table_exists_flag = 0 THEN '❌ Table "uniform_resource_cgm_file_metadata" not found. Creating empty view.'
-    WHEN metadata_count = 0 THEN '⚠️ Metadata table found but is empty. Creating empty view.'
-    ELSE '✅ Metadata records found (' || metadata_count || '). Proceeding with dynamic union.'
-  END AS status
-FROM metadata_check;
+-- SELECT 
+--   CASE 
+--     WHEN table_exists_flag = 0 THEN '❌ Table "uniform_resource_cgm_file_metadata" not found. Creating empty view.'
+--     WHEN metadata_count = 0 THEN '⚠️ Metadata table found but is empty. Creating empty view.'
+--     ELSE '✅ CGM Metadata records found (' || metadata_count || '). Proceeding with dynamic union.'
+--   END AS status
+-- FROM metadata_check;
 
 ---
 ---------------------------------------
 -- 3. PREPARE LOCAL METADATA VIEW
 ---------------------------------------
 CREATE OR REPLACE TEMP VIEW metadata_local AS
-SELECT  
+SELECT 
   (select party_id from drh.party limit 1) AS tenant_id,
   (select study_id from drh.uniform_resource_study limit 1 )AS study_id,
   device_id,
@@ -155,9 +155,9 @@ FROM combined_cgm_tracing_materialized;
 ---------------------------------------
 -- 9. SUMMARY
 ---------------------------------------
-SELECT
-  (SELECT COUNT(*) FROM combined_cgm_tracing_materialized) AS total_records_in_combined_view,
-  (SELECT COUNT(*) FROM drh.combined_cgm_tracing_cached) AS total_records_exported_to_sqlite;
+-- SELECT
+--   (SELECT COUNT(*) FROM combined_cgm_tracing_materialized) AS total_records_in_combined_view,
+--   (SELECT COUNT(*) FROM drh.combined_cgm_tracing_cached) AS total_records_exported_to_sqlite;
 
 ---
 ---------------------------------------

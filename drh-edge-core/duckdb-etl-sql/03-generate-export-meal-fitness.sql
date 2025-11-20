@@ -36,11 +36,11 @@ SELECT COUNT(*) AS exists_flag
 FROM pragma_table_info('drh.uniform_resource_meal_file_metadata');
 
 -- Show a warning if table not found
-SELECT
-  CASE WHEN exists_flag = 0 THEN '⚠️ Table "uniform_resource_meal_file_metadata" not found in SQLite DB'
-       ELSE '✅ Meal Metadata table found'
-  END AS status
-FROM metadata_meal_exists;
+-- SELECT
+--   CASE WHEN exists_flag = 0 THEN '⚠️ Table "uniform_resource_meal_file_metadata" not found in SQLite DB'
+--        ELSE '✅ Meal Metadata table found'
+--   END AS status
+-- FROM metadata_meal_exists;
 
 ---------------------------------------
 -- 4M. PREPARE LOCAL MEAL METADATA VIEW
@@ -110,9 +110,9 @@ FROM combined_meal_metadata; -- If the view is empty, the table is created with 
 ---------------------------------------
 -- 10M. SUMMARY: MEAL
 ---------------------------------------
-SELECT
-  (SELECT COUNT(*) FROM combined_meal_metadata) AS total_meal_records_in_combined_view,
-  (SELECT COUNT(*) FROM drh.combined_meal_metadata_cached) AS total_meal_records_exported_to_sqlite;
+-- SELECT
+--   (SELECT COUNT(*) FROM combined_meal_metadata) AS total_meal_records_in_combined_view,
+--   (SELECT COUNT(*) FROM drh.combined_meal_metadata_cached) AS total_meal_records_exported_to_sqlite;
 
 ---
 -- =====================================================================
@@ -127,11 +127,11 @@ SELECT COUNT(*) AS exists_flag
 FROM pragma_table_info('drh.uniform_resource_fitness_file_metadata');
 
 -- Show a warning if table not found
-SELECT
-  CASE WHEN exists_flag = 0 THEN '⚠️ Table "uniform_resource_fitness_file_metadata" not found in SQLite DB'
-       ELSE '✅ Fitness Metadata table found'
-  END AS status
-FROM metadata_fitness_exists;
+-- SELECT
+--   CASE WHEN exists_flag = 0 THEN '⚠️ Table "uniform_resource_fitness_file_metadata" not found in SQLite DB'
+--        ELSE '✅ Fitness Metadata table found'
+--   END AS status
+-- FROM metadata_fitness_exists;
 
 ---------------------------------------
 -- 4F. PREPARE LOCAL FITNESS METADATA VIEW
@@ -206,9 +206,9 @@ FROM combined_fitness_metadata; -- If the view is empty, the table is created wi
 ---------------------------------------
 -- 10F. SUMMARY: FITNESS
 ---------------------------------------
-SELECT
-  (SELECT COUNT(*) FROM combined_fitness_metadata) AS total_fitness_records_in_combined_view,
-  (SELECT COUNT(*) FROM drh.combined_fitness_metadata_cached) AS total_fitness_records_exported_to_sqlite;
+-- SELECT
+--   (SELECT COUNT(*) FROM combined_fitness_metadata) AS total_fitness_records_in_combined_view,
+--   (SELECT COUNT(*) FROM drh.combined_fitness_metadata_cached) AS total_fitness_records_exported_to_sqlite;
 
 ---
 

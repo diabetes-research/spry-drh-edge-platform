@@ -166,8 +166,8 @@ SELECT final_json_insert_query FROM final_insert_query_generator
 ---------------------------------------
 -- 7. SUMMARY
 ---------------------------------------
-SELECT COUNT(*) AS total_records_inserted_into_participant_meal_fitness_data
-FROM participant_meal_fitness_data;
+-- SELECT COUNT(*) AS total_records_inserted_into_participant_meal_fitness_data
+-- FROM participant_meal_fitness_data;
 
 
 ---------------------------------------
@@ -182,9 +182,9 @@ FROM participant_meal_fitness_data
 ---------------------------------------
 -- 9. FINAL SUMMARY
 ---------------------------------------
-SELECT
- (SELECT COUNT(*) FROM participant_meal_fitness_data) AS total_records_in_participant_meal_fitness_data,
- (SELECT COUNT(*) FROM drh.participant_meal_fitness_data) AS total_records_exported_to_sqlite;
+-- SELECT
+--  (SELECT COUNT(*) FROM participant_meal_fitness_data) AS total_records_in_participant_meal_fitness_data,
+--  (SELECT COUNT(*) FROM drh.participant_meal_fitness_data) AS total_records_exported_to_sqlite;
 
 
 ---------------------------------------

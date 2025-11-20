@@ -851,7 +851,7 @@ if (import.meta.main) {
         // Expected args: <folderName> <tenantId> <tenantName>
         if (args.length !== 3) { 
             console.error(colors.red("FATAL ERROR: Missing required arguments."));
-            console.error(colors.yellow("Usage: deno run pre-etl-validation.ts <folderName> <tenantId> <tenantName>"));
+            console.error(colors.yellow("Usage: deno run -A drh-pre-etl-validation.ts <folderName> <tenantId> <tenantName>"));
             Deno.exit(1);
         }
 

@@ -39,11 +39,11 @@ SELECT COUNT(*) AS exists_flag
 FROM pragma_table_info('drh.uniform_resource_cgm_file_metadata');
 
 -- Show a warning if table not found (no RAISE_ERROR in 1.4.1)
-SELECT
- CASE WHEN exists_flag = 0 THEN '⚠️ Table "drh.uniform_resource_cgm_file_metadata" not found in SQLite DB'
-   ELSE '✅ Metadata table found'
- END AS status
-FROM metadata_exists;
+-- SELECT
+--  CASE WHEN exists_flag = 0 THEN '⚠️ Table "drh.uniform_resource_cgm_file_metadata" not found in SQLite DB'
+--    ELSE '✅ CGM Metadata table found'
+--  END AS status
+-- FROM metadata_exists;
 
 
 -- 2. DDL for the Target Ingest Table
@@ -144,9 +144,9 @@ WHERE (SELECT record_count FROM metadata_count_check) > 0;
 ---------------------------------------
 -- 10. SUMMARY
 ---------------------------------------
-SELECT
- (SELECT COUNT(*) FROM file_meta_ingest_data) AS total_records_in_file_meta_ingest_data,
- (SELECT COUNT(*) FROM drh.file_meta_ingest_data) AS total_records_exported_to_sqlite;
+-- SELECT
+--  (SELECT COUNT(*) FROM file_meta_ingest_data) AS total_records_in_file_meta_ingest_data,
+--  (SELECT COUNT(*) FROM drh.file_meta_ingest_data) AS total_records_exported_to_sqlite;
 
 
 ---------------------------------------

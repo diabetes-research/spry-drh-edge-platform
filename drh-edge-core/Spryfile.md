@@ -219,19 +219,22 @@ If you're running SQLPage in another terminal window, use:
 After development is complete, the `dev-src.auto` can be removed and
 single-database deployment can be used:
 
-```bash build-to-db --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
+```bash build-server --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
+#!/usr/bin/env -S bash
 rm -rf dev-src.auto
-./spry.ts spc  --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
+echo "DRH EDGE UI Build is in progress............."
+./spry.ts spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
+echo "Data Pipeline and UI Build complete..."
+echo "DRH EDGE UI will be available at http://localhost:9227/"
 ```
 
 ## SQLPage Server Execution
 
-```bash run-server  --descr "Starts server"
+```bash  run-server --descr "Starts server"
 #!/usr/bin/env -S bash
 SQLPAGE_SITE_PREFIX="" sqlpage   
-if [ $? -eq 0 ]; then
-    # Execution succeeded
-    echo "[DRH EDGE UI]](http://localhost:9227/) is up and running..."
+if [ $? -eq 0 ]; then    
+    echo " DRH EDGE UI is up and running..."
 else
     # Execution failed (likely due to port conflict)
     echo "ERROR: SQLPage failed to start (check port 9227 conflict)."
@@ -570,7 +573,7 @@ ${pagination.navigation}
 
 SELECT 'text' AS component, $page_title AS title;
 
-${paginate("drh_study_files_table_info")}
+${paginate("drh_vandv_orch_issues")}
 
 SELECT
     'text' as component,
