@@ -48,7 +48,7 @@ POSIX-style example (bash/zsh):
 ```envrc prepare-env -C ./.envrc --gitignore --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
-export STUDY_DATA_PATH="raw-data/synthetic-data/"
+export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
 export TENANT_ID="FLCG"
 export TENANT_NAME="Florida Clinical Group"
 direnv allow
@@ -66,7 +66,7 @@ Then run `direnv allow` in this project directory to load the `.envrc` into your
 
 Why these variables matter here
 
-- The YAML header at the top of this `drh-edge-spry.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
+- The YAML header at the top of this `drh-simplera-spry.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
 - The `prepare-db` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
 - If `SPRY_DB` is not set, the tooling may fail to find the database or fall back to defaults; explicitly setting it ensures predictable, repeatable dev runs.
 
@@ -88,7 +88,7 @@ Quick troubleshooting
   - **SQLite3**: The final destination database engine used for persistence and serving data via SQLPage (the file path is specified by `$SPRY_DB`).
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
-  - ` ./spry.ts task -m drh-edge-spry.md prepare-db `
+  - ` ./spry.ts task -m drh-simplera-spry.md prepare-db `
 - The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
@@ -184,7 +184,7 @@ fi
 While you're developing, Spry's `dev-src.auto` generator should be used:
 
 ```bash  --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
-./spry.ts spc -m drh-edge-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json  
+./spry.ts spc -m drh-simplera-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json  
 ```
 
 ```bash  --descr "Clean up the project directory's generated artifacts"
@@ -193,11 +193,11 @@ rm -f *.sql
 ```
 
 In development mode, here’s the `--watch` convenience you can use so that
-whenever you update `drh-edge-spry.md`, it regenerates the SQLPage `dev-src.auto`,
+whenever you update `drh-simplera-spry.md`, it regenerates the SQLPage `dev-src.auto`,
 which is then picked up automatically by the SQLPage server:
 
 ```bash
-./spry.ts spc -m drh-edge-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch --with-sqlpage
+./spry.ts spc -m drh-simplera-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch --with-sqlpage
 ```
 
 - `--watch` turns on watching all `--md` files passed in (defaults to `Spryfile.md`)
@@ -211,7 +211,7 @@ window.
 If you're running SQLPage in another terminal window, use:
 
 ```bash
-./spry.ts spc -m drh-edge-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
+./spry.ts spc -m drh-simplera-spry.md --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
 ```
 
 ## SQLPage single database deployment mode
@@ -223,7 +223,7 @@ single-database deployment can be used:
 #!/usr/bin/env -S bash
 rm -rf dev-src.auto
 echo "DRH EDGE UI Build is in progress............."
-./spry.ts spc -m drh-edge-spry.md --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
+./spry.ts spc -m drh-simplera-spry.md --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
 echo "Data Pipeline and UI Build complete..."
 ```
 

@@ -118,7 +118,7 @@ direnv allow
 | :--- | :--- | :--- | :--- |
 | **`SPRY_DB`** | The database connection URL used by SQLPage and Spry. | `sqlite://resource-surveillance.sqlite.db?mode=rwc` | Yes |
 | **`PORT`** | The TCP port for the local SQLPage server. | `9227` | Yes |
-| **`STUDY_DATA_PATH`** | The path to the folder containing your raw study files (the input folder for ingestion). | `raw-data/synthetic-data/` | Yes |
+| **`STUDY_DATA_PATH`** | The path to the folder containing your raw study files (the input folder for ingestion). | `raw-data/simplera-synthetic-cgm/` | Yes |
 | **`TENANT_ID`** | A unique, short identifier for your study or tenant. | `FLCG` | Yes |
 | **`TENANT_NAME`** | The full, human-readable name for your study or organization. | `"Florida Clinical Group"` | Yes |
 
@@ -127,7 +127,7 @@ direnv allow
 ```envrc
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
-export STUDY_DATA_PATH="raw-data/synthetic-data/"
+export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
 export TENANT_ID="FLCG"
 export TENANT_NAME="Florida Clinical Group"
 direnv allow
@@ -137,7 +137,7 @@ direnv allow
 
 ## Core Pipeline Overview
 
-The entire data preparation workflow is defined by the **`drh-edge-spry.md`** file, executed through the `prepare-db` task.
+The entire data preparation workflow is defined in the dataset specific  markdown file, executed through the `prepare-db` task.
 
 | Stage | Tool | Description |
 | :--- | :--- | :--- |
@@ -152,8 +152,10 @@ The entire data preparation workflow is defined by the **`drh-edge-spry.md`** fi
 
 ### Prepare Study Data
 
-* Organize your raw research data files according to the formats listed at the official DRH website: [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
-* Place the data directory at the path specified by the **`$STUDY_DATA_PATH`** environment variable.
+* Organize your raw research data files according to the formats described on the official DRH website: [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
+* Place the data directory at the location specified by the **`$STUDY_DATA_PATH`** environment variable.
+* Depending on the structure of each dataset, you can create dedicated executable Markdown workflows containing DuckDB or SQLite SQL tailored for dataset-specific transformations and analytics.
+  For example, for CGM study data obtained from the SIMPLERA device, you can create a file such as **`drh-simplera-spry.md`** and invoke the relevant SQL scripts within it.
 
 -----
 
@@ -161,11 +163,15 @@ The entire data preparation workflow is defined by the **`drh-edge-spry.md`** fi
 
 ### Inspect the Pipeline Structure (Runbook)
 
-Before executing, you can view the dependency graph and sequence of tasks defined in **`drh-edge-spry.md`** using the Spry `runbook` command.
+Before executing, you can view the dependency graph and sequence of tasks defined in **`drh-simplera-spry`** using the Spry `runbook` command.
+
+**command:** ./spry.ts runbook -m [markdown file name] --visualize ascii-tree
+
+**Example:**
 
 ```bash
 # View the runbook as a dependency tree (ASCII visualization)
-./spry.ts runbook -m drh-edge-spry.md --visualize ascii-tree
+./spry.ts runbook -m drh-simplera-spry.md --visualize ascii-tree
 ```
 
 ### Option A: Execute All Steps Sequentially (Recommended for Development)
@@ -182,16 +188,28 @@ This script performs cleanup, validation, ingestion, and the complete complex ET
 
 If you need to explicitly reference the Spryfile, use the `-m` flag:
 
+**command:** ./spry.ts task -m [markdown file name]  [task name]
+
+**Example:**
+
 ```bash
-./spry.ts task -m drh-edge-spry.md prepare-db
+./spry.ts task -m drh-simplera-spry.md prepare-db
 ```
 
 #### Step 2: Integrated Build
 
 This is the preferred method for running the application. This command executes the following pipeline: it performs the data build `build-server`, compiling the SQLPage content files, generating the necessary SQL, and pushing the entire application structure into the database `$SPRY_DB`.
 
+**command:**
+
 ```bash
-./spry.ts task -m drh-edge-spry.md build-server
+./spry.ts task -m [markdown file name]  [task name]
+```
+
+**Example:**
+
+```bash
+./spry.ts task -m drh-simplera-spry.md build-server
 ```
 
 Expected Result: The console will display messages for the application build, and finally, the URL where the server is running (e.g., <http://localhost:9227/>).
@@ -200,8 +218,16 @@ Expected Result: The console will display messages for the application build, an
 
 This task start the local SQLPage server automatically
 
+**command:**
+
 ```bash
-./spry.ts task -m drh-edge-spry.md run-server
+ ./spry.ts task -m [markdown file name]  [task name]
+ ```
+
+**Example:**
+
+```bash
+./spry.ts task -m drh-simplera-spry.md run-server
 ```
 
 You can run the SQLPage server directly using:
@@ -214,16 +240,20 @@ SQLPAGE_SITE_PREFIX="" sqlpage
 
 Since the tasks are designed to be executed sequentially, you can run the entire workflow in a single command using `runbook`. This executes Step 1, then Step 2 and Step 3 in sequential order.
 
+**command:** ./spry.ts runbook -m [markdown file name] 
+
+**Example:**
+
 ```bash
 # This command runs prepare-db, build-to-db, and run-server in sequence
-./spry.ts runbook -m drh-edge-spry.md
+./spry.ts runbook -m drh-simplera-spry.md
 ```
 
 -----
 
 ## Customization and Modification Guide
 
-To modify the pipeline's behavior, you must edit the source files that control the specific logic, as defined in **`drh-edge-spry.md`**.
+To modify the pipeline's behavior, you must edit the source files that control the specific logic, as defined in **`drh-simplera-spry`**.
 
 ### Modifying Pre-Validation Logic
 
@@ -232,7 +262,7 @@ This logic dictates the rules for checking data integrity and dependencies *befo
 | Logic | File to Modify |
 | :--- | :--- |
 | **Pre-Validation Rules** | `drh-pre-etl-validation.ts` |
-| **Validation Execution** | The `deno run` command within the **`prepare-db`** task in **`drh-edge-spry.md`**. |
+| **Validation Execution** | The `deno run` command within the **`prepare-db`** task in **`drh-simplera-spry`**. |
 
 ### Modifying ETL and Data Quality Logic
 
@@ -256,7 +286,7 @@ If a new dataset requires a **unique sequence of ETL steps** or specialized tran
 
 ### Strategy: Use a Custom `Spryfile`
 
-1. **Duplicate the Base File:** Copy the main Spryfile and rename it (e.g., `cp drh-edge-spry.md study-x-etl.spry.md`).
+1. **Duplicate the Base File:** Copy the main Spryfile and rename it (e.g., `cp drh-simplera-spry study-x-etl.spry.md`).
 2. **Customize the Logic:** Modify the task steps within **`study-x-etl.spry.md`**. You can replace existing SQL steps with calls to your newly created custom SQL files (from Section `Modifying ETL and Data Quality Logic`) to bring the data views into the required DRH format.
 3. **Execute the Custom Pipeline:** Use the `-f` flag to point Spry to your custom definition for both the ETL and the build steps.
 

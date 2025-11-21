@@ -48,7 +48,7 @@ POSIX-style example (bash/zsh):
 ```envrc prepare-env -C ./.envrc --gitignore --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
-export STUDY_DATA_PATH="raw-data/synthetic-data/"
+export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
 export TENANT_ID="FLCG"
 export TENANT_NAME="Florida Clinical Group"
 direnv allow
