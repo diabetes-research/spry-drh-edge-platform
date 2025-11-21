@@ -155,7 +155,8 @@ The entire data preparation workflow is defined in the dataset specific  markdow
 * Organize your raw research data files according to the formats described on the official DRH website: [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
 * Place the data directory at the location specified by the **`$STUDY_DATA_PATH`** environment variable.
 * Depending on the structure of each dataset, you can create dedicated executable Markdown workflows containing DuckDB or SQLite SQL tailored for dataset-specific transformations and analytics.
-  For example, for CGM study data obtained from the SIMPLERA device, you can create a file such as **`drh-simplera-spry.md`** and invoke the relevant SQL scripts within it.
+  * For example, for CGM study data obtained from the SIMPLERA device(`simplera-synthetic-cgm` folder), you can create a file such as **`drh-simplera-spry.md`** and invoke the relevant SQL scripts within it.
+  * As an additional example, we have also provided an executable Markdown workflow for CGM data from the Dexcom device and Dexcom API(`dexcom-synthetic-cgm` folder), available as `drh-dexcom-cgm-spry.md`.
 
 -----
 
