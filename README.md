@@ -166,7 +166,11 @@ The entire data preparation workflow is defined in the dataset specific  markdow
 
 Before executing, you can view the dependency graph and sequence of tasks defined in **`drh-simplera-spry`** using the Spry `runbook` command.
 
-**command:** ./spry.ts runbook -m [markdown file name] --visualize ascii-tree
+**command:**
+
+```bash
+ ./spry.ts runbook -m [markdown file name] --visualize ascii-tree
+ ```
 
 **Example:**
 
@@ -189,7 +193,11 @@ This script performs cleanup, validation, ingestion, and the complete complex ET
 
 If you need to explicitly reference the Spryfile, use the `-m` flag:
 
-**command:** ./spry.ts task -m [markdown file name]  [task name]
+**command:**
+
+```bash
+./spry.ts task -m [markdown file name]  [task name]
+```
 
 **Example:**
 
@@ -241,7 +249,11 @@ SQLPAGE_SITE_PREFIX="" sqlpage
 
 Since the tasks are designed to be executed sequentially, you can run the entire workflow in a single command using `runbook`. This executes Step 1, then Step 2 and Step 3 in sequential order.
 
-**command:** ./spry.ts runbook -m [markdown file name] 
+**command:**
+
+```bash
+./spry.ts runbook -m [markdown file name] 
+```
 
 **Example:**
 
