@@ -266,7 +266,7 @@ Since the tasks are designed to be executed sequentially, you can run the entire
 
 ## Customization and Modification Guide
 
-To modify the pipeline's behavior, you must edit the source files that control the specific logic, as defined in **`drh-simplera-spry`**.
+To modify the pipeline's behavior, you must edit the source files that control the specific logic, as defined in **`drh-simplera-spry.md`**.
 
 ### Modifying Pre-Validation Logic
 
@@ -275,7 +275,7 @@ This logic dictates the rules for checking data integrity and dependencies *befo
 | Logic | File to Modify |
 | :--- | :--- |
 | **Pre-Validation Rules** | `drh-pre-etl-validation.ts` |
-| **Validation Execution** | The `deno run` command within the **`prepare-db`** task in **`drh-simplera-spry`**. |
+| **Validation Execution** | The `deno run` command within the **`prepare-db`** task in **`drh-simplera-spry.md`**. |
 
 ### Modifying ETL and Data Quality Logic
 
