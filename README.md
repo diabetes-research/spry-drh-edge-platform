@@ -103,6 +103,14 @@ tar -xzf surveilr_3.7.0_x86_64-unknown-linux-gnu.tar.gz
 sudo mv surveilr /usr/local/bin/
 ```
 
+## Execution Directory
+
+After cloning this repository, switch to:
+
+```bash
+cd drh-edge-core
+```
+
 ### Environment Variables
 
 Configuration is handled through environment variables, ideally managed with **direnv** and stored in a local `.envrc` file.
