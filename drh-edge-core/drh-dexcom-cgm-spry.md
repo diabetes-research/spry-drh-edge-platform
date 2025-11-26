@@ -156,11 +156,8 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
     (
         set -e
         "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql
-        cat duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql | duckdb ":memory:"
-        cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
-        "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql
-        cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
-        cat duckdb-etl-sql/04-dynamic-participant-meal-fitness-data.sql | duckdb ":memory:"
+        cat duckdb-etl-sql/drh-master-etl.sql | duckdb ":memory:"     
+        "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql        
         echo "ETL process complete. Database generated successfully......... "
     )
     
