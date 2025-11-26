@@ -228,19 +228,6 @@ echo "Data Pipeline and UI Build complete..."
 echo "DRH EDGE UI will be available at http://localhost:9227/"
 ```
 
-## SQLPage Server Execution
-
-```bash  run-server --descr "Starts server"
-#!/usr/bin/env -S bash
-SQLPAGE_SITE_PREFIX="" sqlpage   
-if [ $? -eq 0 ]; then    
-    echo " DRH EDGE UI is up and running..."
-else
-    # Execution failed (likely due to port conflict)
-    echo "ERROR: SQLPage failed to start (check port 9227 conflict)."
-    exit 1
-fi
-```
 
 ## Layout
 

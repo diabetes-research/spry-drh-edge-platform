@@ -225,21 +225,7 @@ rm -rf dev-src.auto
 echo "DRH EDGE UI Build is in progress............."
 ./spry.ts spc -m drh-dexcom-cgm-spry.md --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
 echo "Data Pipeline and UI Build complete..."
-```
-
-## SQLPage Server Execution
-
-```bash  run-server --descr "Starts server"
-#!/usr/bin/env -S bash
 echo "DRH EDGE UI will be available at http://localhost:9227/"
-SQLPAGE_SITE_PREFIX="" sqlpage   
-if [ $? -eq 0 ]; then    
-    echo " DRH EDGE UI is up and running..."
-else
-    # Execution failed (likely due to port conflict)
-    echo "ERROR: SQLPage failed to start (check port 9227 conflict)."
-    exit 1
-fi
 ```
 
 ## Layout
@@ -296,7 +282,7 @@ select
 -- END: PARTIAL chart-head.sql
 ```
 
-```sql PARTIAL handlebars.sql --inject ../sqlpage/**
+```sql PARTIAL handlebars.sql --inject sqlpage/**
 {{!-- BEGIN: PARTIAL handlebars.sql 
 -- END: PARTIAL handlebars.sql--}}
 ```
@@ -1354,7 +1340,7 @@ SELECT 'json' AS component,
         ) AS contents;  
 ```
 
-```sql ../sqlpage/templates/gri_component.handlebars
+```sql sqlpage/templates/gri_component.handlebars
 
 <style>
   svg {
@@ -1849,7 +1835,7 @@ WHERE daily_diff IS NOT NULL;
 
 ```
 
-```sql ../sqlpage/templates/stacked_bar_chart.handlebars
+```sql sqlpage/templates/stacked_bar_chart.handlebars
 
 <input type="hidden" name="start_date" class="start_date" value="{{ start_date }}">
 <input type="hidden" name="end_date" class="end_date" value="{{ end_date }}">
@@ -1868,11 +1854,11 @@ WHERE daily_diff IS NOT NULL;
 
 ```
 
-```sql ../sqlpage/templates/participant_hidden_input.handlebars
+```sql sqlpage/templates/participant_hidden_input.handlebars
  <input type="hidden" name="participant_id" class="participant_id" value="{{ participant_id }}">
 ```
 
-```sql ../sqlpage/templates/agp-chart.handlebars
+```sql sqlpage/templates/agp-chart.handlebars
 <style>
         .text-\\[11px\\] { 
             font-size: 11px;  
@@ -1882,7 +1868,7 @@ WHERE daily_diff IS NOT NULL;
     <agp-chart class="p-5"></agp-chart>
 ```
 
-```sql ../sqlpage/templates/dgp-chart.handlebars
+```sql sqlpage/templates/dgp-chart.handlebars
 <style>
     .line {
         fill: none;
@@ -1961,7 +1947,7 @@ WHERE daily_diff IS NOT NULL;
             plots the glucose levels of the last 14 days.</p>
 ```
 
-```sql ../sqlpage/templates/gri-chart.handlebars
+```sql sqlpage/templates/gri-chart.handlebars
 <style>
         svg {
           display: block;
@@ -2003,7 +1989,7 @@ WHERE daily_diff IS NOT NULL;
       </div> 
 ```
 
-```sql ../sqlpage/templates/advanced_metrics.handlebars
+```sql sqlpage/templates/advanced_metrics.handlebars
 <div class="px-4">
   {{#each_row}}
   <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">

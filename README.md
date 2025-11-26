@@ -115,10 +115,19 @@ cd drh-edge-core
 
 Configuration is handled through environment variables, ideally managed with **direnv** and stored in a local `.envrc` file.
 
+* Modify the **`STUDY_DATA_PATH`** ,**`TENANT_ID`** and **`TENANT_NAME`**  in the markdown file specific to the dataset.
+  
 You can generate a starter `.envrc` file and add it to your local configuration using Spry:
 
 ```bash
-./spry.ts task prepare-env
+./spry.ts task -m [markdownfilename] prepare-env
+direnv allow
+```
+
+**Example:**
+
+```bash
+./spry.ts task -m drh-simplera-spry.md prepare-env
 direnv allow
 ```
 
@@ -177,7 +186,7 @@ Before executing, you can view the dependency graph and sequence of tasks define
 **command:**
 
 ```bash
- ./spry.ts runbook -m [markdown file name] --visualize ascii-tree
+ ./spry.ts runbook -m [markdownfilename] --visualize ascii-tree
  ```
 
 **Example:**
@@ -204,7 +213,7 @@ If you need to explicitly reference the Spryfile, use the `-m` flag:
 **command:**
 
 ```bash
-./spry.ts task -m [markdown file name]  [task name]
+./spry.ts task -m [markdownfilename]  [taskname]
 ```
 
 **Example:**
@@ -220,7 +229,7 @@ This is the preferred method for running the application. This command executes 
 **command:**
 
 ```bash
-./spry.ts task -m [markdown file name]  [task name]
+./spry.ts task -m [markdownfilename]  [taskname]
 ```
 
 **Example:**
@@ -233,34 +242,20 @@ Expected Result: The console will display messages for the application build, an
 
 #### Step 3: Start the Local SQLPage Server manually
 
-This task start the local SQLPage server automatically
-
-**command:**
-
-```bash
- ./spry.ts task -m [markdown file name]  [task name]
- ```
-
-**Example:**
-
-```bash
-./spry.ts task -m drh-simplera-spry.md run-server
-```
-
 You can run the SQLPage server directly using:
 
 ```bash
-SQLPAGE_SITE_PREFIX="" sqlpage
+sqlpage
 ```
 
 ### Option B: Execute the Entire Workflow via Runbook
 
-Since the tasks are designed to be executed sequentially, you can run the entire workflow in a single command using `runbook`. This executes Step 1, then Step 2 and Step 3 in sequential order.
+Since the tasks are designed to be executed sequentially, you can run the entire workflow in a single command using `runbook`. This executes Step 1, then Step 2 in sequential order.
 
 **command:**
 
 ```bash
-./spry.ts runbook -m [markdown file name] 
+./spry.ts runbook -m [markdownfilename] 
 ```
 
 **Example:**
@@ -268,6 +263,12 @@ Since the tasks are designed to be executed sequentially, you can run the entire
 ```bash
 # This command runs prepare-db, build-to-db, and run-server in sequence
 ./spry.ts runbook -m drh-simplera-spry.md
+```
+
+Execute the following once the runbook execution succeeds..
+
+```bash
+SQLPAGE_SITE_PREFIX="" sqlpage
 ```
 
 -----
@@ -315,7 +316,7 @@ If a new dataset requires a **unique sequence of ETL steps** or specialized tran
 | :--- | :--- |
 | **Run Custom ETL** | `./spry.ts -m study-x-etl.spry.md task prepare-db` |
 | **Build Custom Site** | `./spry.ts -m study-x-etl.spry.md task build-server` |
-| **Run Server** | `./spry.ts -m study-x-etl.spry.md task run-server` |
+
 
 ## Security and Hygiene (`.gitignore` Summary)
 
