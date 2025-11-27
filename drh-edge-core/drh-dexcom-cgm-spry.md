@@ -187,6 +187,8 @@ While you're developing, Spry's `dev-src.auto` generator should be used:
 ```bash  --descr "Clean up the project directory's generated artifacts"
 rm -rf dev-src.auto
 rm -f *.sql   
+rm -rf sqlpage/  
+rm -rf validation-reports
 ```
 
 In development mode, here’s the `--watch` convenience you can use so that
