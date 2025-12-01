@@ -332,25 +332,35 @@ The following files and directories are typically generated during the workflow 
 | **`sqlpage/`** | contains the handlebars and sqlpage.json |
 
 
-## 📦 **Using Homebrew Spry Package Instead of spry.ts**
+---
 
-### Install
+## 📦 **Using Homebrew Spry Packages (Alternative to `spry.ts`)**
+
+If you prefer not to execute `spry.ts` directly, you can install the **Spry SQLPage CLI** and **Spry Runbook** via Homebrew. These provide the same functionality as `spry.ts` but as standalone system binaries.
+
+---
+
+### 🔧 Install via Homebrew
 
 ```bash
 brew tap programmablemd/packages https://github.com/programmablemd/packages
+
 brew install spry-sqlpage
 brew install spry-runbook
 ```
 
-Verify:
+### ✅ Verify Installation
 
 ```bash
-spry-sqlpage --version
-spry-runbook --version
+spry-sqlpage --version   # or: spry-sqlpage -V
+spry-runbook --version   # or: spry-runbook -V
 ```
 
+---
 
-### Replace Commands
+## 🔄 **Command Substitutions**
+
+When using the Homebrew packages, replace any `./spry.ts` invocation in your Markdown workflows as follows:
 
 | If your Spryfile uses… | Replace with…          |
 | ---------------------- | ---------------------- |
@@ -358,11 +368,31 @@ spry-runbook --version
 | `./spry.ts task`       | `spry-sqlpage task`    |
 | `./spry.ts spc`        | `spry-sqlpage spc`     |
 
-Example:
+### ✔️ Examples
 
 ```bash
+# Visualize workflow
 spry-sqlpage runbook -m drh-dexcom-cgm-spry.md --visualize ascii-tree
+
+# Prepare environment variables
 spry-sqlpage task -m drh-dexcom-cgm-spry.md prepare-env
+
+# Full ETL
 spry-sqlpage task -m drh-dexcom-cgm-spry.md prepare-db
+
+# Build SQLPage server
 spry-sqlpage task -m drh-dexcom-cgm-spry.md build-server
 ```
+
+---
+
+### 🧹 Uninstall
+
+To remove the Homebrew-installed CLI tools:
+
+```bash
+brew uninstall spry-sqlpage spry-runbook
+```
+
+---
+
