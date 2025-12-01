@@ -93,11 +93,11 @@ Surveilr is the data-processing utility for file ingestion.The latest surveilr p
 Surveilr has inbuilt duckdb and sqlite features.but it would be advisable to install them.
 
 ```bash
-# Download the latest stable release (e.g., v3.7.0) . check in https://github.com/surveilr/packages/releases
-wget https://github.com/surveilr/packages/releases/download/3.7.0/surveilr_3.7.0_x86_64-unknown-linux-gnu.tar.gz
+# Download the latest stable release (e.g., v3.9.0) . check in https://github.com/surveilr/packages/releases
+wget https://github.com/surveilr/packages/releases/download/3.9.0/surveilr_3.9.0_x86_64-unknown-linux-gnu.tar.gz
 
 # Extract it
-tar -xzf surveilr_3.7.0_x86_64-unknown-linux-gnu.tar.gz
+tar -xzf surveilr_3.9.0_x86_64-unknown-linux-gnu.tar.gz
 
 # Install it by moving the executable to a directory in your PATH
 sudo mv surveilr /usr/local/bin/
@@ -330,3 +330,39 @@ The following files and directories are typically generated during the workflow 
 | **`dev-src.auto`** | The generated directory used by SQLPage to serve content in development mode. |
 | **`validation-reports`** | Output reports from the pre-validation gate. |
 | **`sqlpage/`** | contains the handlebars and sqlpage.json |
+
+
+## 📦 **Using Homebrew Spry Package Instead of spry.ts**
+
+### Install
+
+```bash
+brew tap programmablemd/packages https://github.com/programmablemd/packages
+brew install spry-sqlpage
+brew install spry-runbook
+```
+
+Verify:
+
+```bash
+spry-sqlpage --version
+spry-runbook --version
+```
+
+
+### Replace Commands
+
+| If your Spryfile uses… | Replace with…          |
+| ---------------------- | ---------------------- |
+| `./spry.ts runbook`    | `spry-sqlpage runbook` |
+| `./spry.ts task`       | `spry-sqlpage task`    |
+| `./spry.ts spc`        | `spry-sqlpage spc`     |
+
+Example:
+
+```bash
+spry-sqlpage runbook -m drh-dexcom-cgm-spry.md --visualize ascii-tree
+spry-sqlpage task -m drh-dexcom-cgm-spry.md prepare-env
+spry-sqlpage task -m drh-dexcom-cgm-spry.md prepare-db
+spry-sqlpage task -m drh-dexcom-cgm-spry.md build-server
+```
