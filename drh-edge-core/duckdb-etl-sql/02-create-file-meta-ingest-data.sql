@@ -15,15 +15,29 @@ ATTACH 'resource-surveillance.sqlite.db' AS drh (TYPE sqlite);
 ---------------------------------------
 -- 2. ULID-LIKE GENERATOR (DuckDB-safe)
 ---------------------------------------
+-- CREATE OR REPLACE MACRO gen_ulid() AS (
+--     -- Generates a 26-character string, time-prefix for sortability.
+--     SUBSTRING(
+--         REPLACE(
+--             STRFTIME(NOW(), '%Y%m%d%H%M%S%f') || CAST(ABS(random()) * 1e16 AS VARCHAR),
+--             '.', '' 
+--         ), 1, 26
+--     )
+-- );
+
 CREATE OR REPLACE MACRO gen_ulid() AS (
-    -- Generates a 26-character string, time-prefix for sortability.
     SUBSTRING(
         REPLACE(
-            STRFTIME(NOW(), '%Y%m%d%H%M%S%f') || CAST(ABS(random()) * 1e16 AS VARCHAR),
-            '.', '' 
-        ), 1, 26
+            STRFTIME(CAST(NOW() AS TIMESTAMP), '%Y%m%d%H%M%S%f')
+            || CAST(ABS(random()) * 1e16 AS VARCHAR),
+            '.',
+            ''
+        ), 
+        1, 
+        26
     )
 );
+
 
 
 -- 1. Generate the single, constant db_file_id for the entire batch

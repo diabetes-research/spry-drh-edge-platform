@@ -20,9 +20,23 @@ ATTACH 'resource-surveillance.sqlite.db' AS drh (TYPE sqlite);
 ---------------------------------------
 -- 2. ULID-LIKE GENERATOR (DuckDB-safe)
 ---------------------------------------
+-- CREATE OR REPLACE MACRO gen_ulid() AS (
+--  STRFTIME(NOW(), '%Y%m%d%H%M%S') || '-' || CAST(ABS(random()) * 1e16 AS VARCHAR)
+-- );
+
 CREATE OR REPLACE MACRO gen_ulid() AS (
- STRFTIME(NOW(), '%Y%m%d%H%M%S') || '-' || CAST(ABS(random()) * 1e16 AS VARCHAR)
+    SUBSTRING(
+        REPLACE(
+            STRFTIME(CAST(NOW() AS TIMESTAMP), '%Y%m%d%H%M%S%f')
+            || CAST(ABS(random()) * 1e16 AS VARCHAR),
+            '.',
+            ''
+        ), 
+        1, 
+        26
+    )
 );
+
 
 -- =====================================================================
 -- MEAL DATA PROCESSING

@@ -156,7 +156,8 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
     (
         set -e
         "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql
-        cat duckdb-etl-sql/drh-master-etl.sql | duckdb ":memory:"     
+        # cat duckdb-etl-sql/drh-master-etl.sql | duckdb ":memory:"     
+        surveilr shell --engine duckdb duckdb-etl-sql/drh-master-etl.sql
         "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql        
         echo "ETL process complete. Database generated successfully......... "
     )

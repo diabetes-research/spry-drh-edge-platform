@@ -13,14 +13,28 @@ ATTACH 'resource-surveillance.sqlite.db' AS drh (TYPE sqlite);
 ---------------------------------------
 -- ULID-LIKE GENERATOR
 ---------------------------------------
+-- CREATE OR REPLACE MACRO gen_ulid() AS (
+--     SUBSTRING(
+--         REPLACE(
+--             STRFTIME(NOW(), '%Y%m%d%H%M%S%f') || CAST(ABS(random()) * 1e16 AS VARCHAR),
+--             '.', ''
+--         ), 1, 26
+--     )
+-- );
+
 CREATE OR REPLACE MACRO gen_ulid() AS (
     SUBSTRING(
         REPLACE(
-            STRFTIME(NOW(), '%Y%m%d%H%M%S%f') || CAST(ABS(random()) * 1e16 AS VARCHAR),
-            '.', ''
-        ), 1, 26
+            STRFTIME(CAST(NOW() AS TIMESTAMP), '%Y%m%d%H%M%S%f')
+            || CAST(ABS(random()) * 1e16 AS VARCHAR),
+            '.',
+            ''
+        ), 
+        1, 
+        26
     )
 );
+
 
 -- Generate constant IDs for the batch, prioritizing db_file_id from file_meta_ingest_data
 CREATE OR REPLACE TEMPORARY VIEW constant_batch_ids AS
