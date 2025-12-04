@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run -A --import-map=import_map.json
 // Use `deno run -A --watch` in the shebang if you're contributing / developing Spry itself.
  
-import { CLI } from "https://raw.githubusercontent.com/programmablemd/spry/refs/tags/v0.70.4/lib/sqlpage/cli.ts";
+import { CLI } from "https://raw.githubusercontent.com/programmablemd/spry/refs/tags/v0.80.1/lib/sqlpage/cli.ts";
  
 CLI.instance().run();
