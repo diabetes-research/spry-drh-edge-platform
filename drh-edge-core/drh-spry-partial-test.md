@@ -236,8 +236,9 @@ required by Spry but only used for reference), but the `--inject **/*` argument
 is how matching occurs. The `--BEGIN` and `--END` comments are not required by
 Spry but make it easier to trace where _partial_ injections are occurring.
 
-```sql PARTIAL global-layout.sql --inject ./drh/*.sql
+<!-- ```sql PARTIAL global-layout.sql  --inject index.sql  --inject  drh/**/*.sql   -->
 
+```sql PARTIAL global-layout.sql  --inject index.sql  --inject  drh/**/*.sql --no-inject drh/api/*.sql
 -- BEGIN: PARTIAL global-layout.sql
 SELECT 'shell' AS component,
        'Diabetes Research Hub Edge' AS title,
