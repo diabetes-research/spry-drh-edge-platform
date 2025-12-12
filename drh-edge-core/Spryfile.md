@@ -223,7 +223,7 @@ single-database deployment can be used:
 #!/usr/bin/env -S bash
 rm -rf dev-src.auto
 echo "DRH EDGE UI Build is in progress............."
-./spry.ts spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
+./spry.ts sp spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
 echo "Data Pipeline and UI Build complete..."
 echo "DRH EDGE UI will be available at http://localhost:9227/"
 ```
@@ -237,7 +237,7 @@ required by Spry but only used for reference), but the `--inject **/*` argument
 is how matching occurs. The `--BEGIN` and `--END` comments are not required by
 Spry but make it easier to trace where _partial_ injections are occurring.
 
-```sql PARTIAL global-layout.sql --inject **/*
+```sql PARTIAL global-layout.sql --inject **/* --inject !/^drh/api/ --inject !/^drh/chart/ --inject !/.handlebars$/ --inject !/^js/ --inject !/^d3-aide-component.js/ --weight 0
 
 -- BEGIN: PARTIAL global-layout.sql
 SELECT 'shell' AS component,
@@ -270,7 +270,7 @@ SET page_title  = json_extract($resource_json, '$.route.caption');
 -- this is the `${cell.info}` cell on line ${cell.startLine}
 ```
 
-```sql PARTIAL api-head.sql --inject ./drh/api/**
+```sql PARTIAL api-head.sql --inject drh/api/**
 -- BEGIN: PARTIAL api-head.sql
 select
    'http_header' as component,
@@ -278,7 +278,8 @@ select
 -- END: PARTIAL api-head.sql
 ```
 
-```sql PARTIAL chart-head.sql --inject ./drh/chart/**
+
+```sql PARTIAL chart-head.sql --inject drh/chart/**
 -- BEGIN: PARTIAL chart-head.sql
 -- END: PARTIAL chart-head.sql
 ```
@@ -1669,10 +1670,6 @@ SELECT 'stacked_bar_chart' AS component, $start_date AS start_date,$end_date AS 
 
 ```sql drh/chart/daily-gluecose-profile/index.sql
     SELECT 'dgp-chart' AS component;
-```
-
-```sql drh/chart/glycemic_risk_indicator/index.sql
-    SELECT 'gri-chart' AS component;
 ```
 
 ```sql drh/chart/advanced_metrics/index.sql

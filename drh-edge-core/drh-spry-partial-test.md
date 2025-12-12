@@ -211,7 +211,7 @@ window.
 If you're running SQLPage in another terminal window, use:
 
 ```bash
-./spry.ts spc  --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
+./spry.ts  sp spc  --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
 ```
 
 ## SQLPage single database deployment mode
@@ -223,7 +223,7 @@ single-database deployment can be used:
 #!/usr/bin/env -S bash
 rm -rf dev-src.auto
 echo "DRH EDGE UI Build is in progress............."
-./spry.ts spc  --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
+./spry.ts  sp spc  --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
 echo "Data Pipeline and UI Build complete..."
 echo "DRH EDGE UI will be available at http://localhost:9227/"
 ```
@@ -236,9 +236,7 @@ required by Spry but only used for reference), but the `--inject **/*` argument
 is how matching occurs. The `--BEGIN` and `--END` comments are not required by
 Spry but make it easier to trace where _partial_ injections are occurring.
 
-<!-- ```sql PARTIAL global-layout.sql  --inject index.sql  --inject  drh/**/*.sql   -->
-
-```sql PARTIAL global-layout.sql  --inject index.sql  --inject  drh/**/*.sql --no-inject drh/api/*.sql
+```sql PARTIAL global-layout.sql  --inject **/* --inject !/^drh/api/ --inject !/^drh/chart/ --inject !/.handlebars$/ --inject !/^js/ --weight 0
 -- BEGIN: PARTIAL global-layout.sql
 SELECT 'shell' AS component,
        'Diabetes Research Hub Edge' AS title,
@@ -270,7 +268,7 @@ SET page_title  = json_extract($resource_json, '$.route.caption');
 -- this is the `${cell.info}` cell on line ${cell.startLine}
 ```
 
-```sql PARTIAL api-head.sql --inject ./drh/api/**
+```sql PARTIAL api-head.sql --inject drh/api/**
 -- BEGIN: PARTIAL api-head.sql
 select
    'http_header' as component,
@@ -278,7 +276,7 @@ select
 -- END: PARTIAL api-head.sql
 ```
 
-```sql PARTIAL chart-head.sql --inject ./drh/chart/**
+```sql PARTIAL chart-head.sql --inject drh/chart/**
 -- BEGIN: PARTIAL chart-head.sql
 -- END: PARTIAL chart-head.sql
 ```
