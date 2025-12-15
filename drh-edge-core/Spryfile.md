@@ -16,6 +16,20 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 - Uses DuckDB for data transformation.(file meta ingest data,meal fitness data(if present),combined CGM data)
 - Export back to sqlite db to be used in SQLpage
 
+## Spry Axiom Configuration
+
+`code DEFAULTS` is a special directive used by Spry's Axiom library to supply
+default flags to specific code blocks like `sql`, `text`, etc. allowing them to
+be interpolatable (`${...}`) and injectable (using `PARTIAL`s) by default
+instead of having to pass `--interpolate` and `--injectable` into each code
+cell. 💡 `code DEFAULTS` is necessary in Spry SQLPage playbooks to tell Axiom
+how to treat `sql` code fenced blocks.
+
+```code DEFAULTS
+sql * --interpolate --injectable
+envrc * --interpolate --injectable
+```
+
 ## Setup
 
 ## Environment variables and .envrc
@@ -51,7 +65,6 @@ export PORT=9227
 export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
 export TENANT_ID="FLCG"
 export TENANT_NAME="Florida Clinical Group"
-direnv allow
 ```
 
 Then run `direnv allow` in this project directory to load the `.envrc` into your shell environment. direnv will evaluate `.envrc` only after you explicitly allow it.
@@ -88,7 +101,7 @@ Quick troubleshooting
   - **SQLite3**: The final destination database engine used for persistence and serving data via SQLPage (the file path is specified by `$SPRY_DB`).
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
-  - `./spry.ts task prepare-db`
+  - `spry rb task prepare-db`
 - The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
@@ -184,7 +197,7 @@ fi
 While you're developing, Spry's `dev-src.auto` generator should be used:
 
 ```bash  --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json  
+spry sp spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json  
 ```
 
 ```bash  --descr "Clean up the project directory's generated artifacts"
@@ -197,7 +210,7 @@ whenever you update `Spryfile.md`, it regenerates the SQLPage `dev-src.auto`,
 which is then picked up automatically by the SQLPage server:
 
 ```bash
-./spry.ts spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch --with-sqlpage
+spry sp spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch --with-sqlpage
 ```
 
 - `--watch` turns on watching all `--md` files passed in (defaults to `Spryfile.md`)
@@ -211,7 +224,7 @@ window.
 If you're running SQLPage in another terminal window, use:
 
 ```bash
-./spry.ts spc  --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
+spry sp spc  --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --watch
 ```
 
 ## SQLPage single database deployment mode
@@ -223,11 +236,10 @@ single-database deployment can be used:
 #!/usr/bin/env -S bash
 rm -rf dev-src.auto
 echo "DRH EDGE UI Build is in progress............."
-./spry.ts sp spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
+spry sp spc --package --conf sqlpage/sqlpage.json | sqlite3 resource-surveillance.sqlite.db  
 echo "Data Pipeline and UI Build complete..."
 echo "DRH EDGE UI will be available at http://localhost:9227/"
 ```
-
 
 ## Layout
 
@@ -237,7 +249,7 @@ required by Spry but only used for reference), but the `--inject **/*` argument
 is how matching occurs. The `--BEGIN` and `--END` comments are not required by
 Spry but make it easier to trace where _partial_ injections are occurring.
 
-```sql PARTIAL global-layout.sql --inject **/* --inject !/^drh/api/ --inject !/^drh/chart/ --inject !/.handlebars$/ --inject !/^js/ --inject !/^d3-aide-component.js/ --weight 0
+```sql PARTIAL global-layout.sql --inject *.sql --inject drh/*.sql
 
 -- BEGIN: PARTIAL global-layout.sql
 SELECT 'shell' AS component,
@@ -278,35 +290,59 @@ select
 -- END: PARTIAL api-head.sql
 ```
 
-
 ```sql PARTIAL chart-head.sql --inject drh/chart/**
 -- BEGIN: PARTIAL chart-head.sql
 -- END: PARTIAL chart-head.sql
 ```
 
-```sql PARTIAL handlebars.sql --inject ../sqlpage/**
+<!-- ```sql PARTIAL handlebars.sql --inject sqlpage/**
 {{!-- BEGIN: PARTIAL handlebars.sql 
 -- END: PARTIAL handlebars.sql--}}
+``` -->
+<!-- 
+```import --base ../
+utf8 sqlpage/templates/**/*
+``` -->
+
+```contribute sqlpage_files --base sqlpage/templates --mode package
+**/* templates --mime text/plain
 ```
 
-```import --base https://app.devl.drh.diabetestechnology.org/
-uff8 https://app.devl.drh.diabetestechnology.org/js/d3-aide.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/stacked-bar-chart.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/gri-chart.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/dgp-chart.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/agp-chart.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/formula-component.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/axis-D3QohQNI.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/line-Co2p4suz.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/lit-element-CA3xe_EJ.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/state-DQ3nVIzR.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/transform-CPUYrfNj.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/custom-W6OohYNa.js --spc
-uff8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js --spc
+<!-- ```import --base https://app.devl.drh.diabetestechnology.org/
+utf8 https://app.devl.drh.diabetestechnology.org/js/d3-aide.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/stacked-bar-chart.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/gri-chart.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/dgp-chart.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/agp-chart.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/formula-component.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/axis-D3QohQNI.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/line-Co2p4suz.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/lit-element-CA3xe_EJ.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/state-DQ3nVIzR.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/transform-CPUYrfNj.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/custom-W6OohYNa.js --spc
+utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js --spc -->
+```-->
+
+
+```contribute sqlpage_files --base https://app.devl.drh.diabetestechnology.org/
+/js/d3-aide.js --spc mime application/javascript
+/js/wc/d3/stacked-bar-chart.js --spc mime application/javascript
+/js/wc/d3/gri-chart.js --spc mime application/javascript
+/js/wc/d3/dgp-chart.js --spc mime application/javascript
+/js/wc/d3/agp-chart.js --spc mime application/javascript
+/js/wc/formula-component.js --spc mime application/javascript
+/js/wc/assets/axis-D3QohQNI.js --spc mime application/javascript
+/js/wc/assets/line-Co2p4suz.js --spc mime application/javascript
+/js/wc/assets/lit-element-CA3xe_EJ.js --spc mime application/javascript
+/js/wc/assets/state-DQ3nVIzR.js --spc mime application/javascript
+/js/wc/assets/transform-CPUYrfNj.js --spc mime application/javascript
+/js/wc/assets/custom-W6OohYNa.js --spc mime application/javascript
+/js/wc/assets/band-B4BH55T4.js --spc mime application/javascript
 ```
 
 ```import
-uff8 ./d3-aide-component.js --spc
+utf8 ./d3-aide-component.js --spc
 ```
 
 Get the brand assets and store them into the SQLPage content stream. They will
@@ -764,8 +800,8 @@ FROM
         'participant_id' as markdown,
         TRUE AS sort,
         TRUE AS search;        
---   SELECT tenant_id,format('[%s]('||sqlpage.environment_variable('SQLPAGE_SITE_PREFIX') || '/drh/participant-info/index.sql?participant_id='||'%s)',
-    SELECT tenant_id,${md.link("participant_id", [`'participant-info/index.sql?participant_id='`, "participant_id"])} as participant_id,gender,age,study_arm,baseline_hba1c,cgm_devices,cgm_files,tir,tar_vh,tar_h,tbr_l,tbr_vl,tar,tbr,gmi,percent_gv,gri,days_of_wear,data_start_date,data_end_date FROM participant_dashboard_cached    
+--   SELECT tenant_id,format('[%s]('||sqlpage.environment_variable('SQLPAGE_SITE_PREFIX') || '/drh/participant-info.sql?participant_id='||'%s)',
+    SELECT tenant_id,${md.link("participant_id", [`'participant-info.sql?participant_id='`, "participant_id"])} as participant_id,gender,age,study_arm,baseline_hba1c,cgm_devices,cgm_files,tir,tar_vh,tar_h,tbr_l,tbr_vl,tar,tbr,gmi,percent_gv,gri,days_of_wear,data_start_date,data_end_date FROM participant_dashboard_cached    
     order by participant_id
 ${pagination.limit}; 
 
@@ -1342,7 +1378,7 @@ SELECT 'json' AS component,
         ) AS contents;  
 ```
 
-```sql ../sqlpage/templates/gri_component.handlebars
+```sql sqlpage/templates/gri_component.handlebars
 
 <style>
   svg {
@@ -1399,7 +1435,7 @@ SELECT 'json' AS component,
   SELECT 'gri_component' AS component; 
 ```
 
-```sql drh/participant-info/index.sql
+```sql drh/participant-info.sql
 -- @route.caption "Participant Information"
 -- @route.description "The Participants Detail page is a comprehensive report that includes glucose statistics, such as the Ambulatory Glucose Profile (AGP), Glycemia Risk Index (GRI), Daily Glucose Profile, and all other metrics data."
 SELECT
@@ -1833,7 +1869,7 @@ WHERE daily_diff IS NOT NULL;
 
 ```
 
-```sql ../sqlpage/templates/stacked_bar_chart.handlebars
+```sql sqlpage/templates/stacked_bar_chart.handlebars
 
 <input type="hidden" name="start_date" class="start_date" value="{{ start_date }}">
 <input type="hidden" name="end_date" class="end_date" value="{{ end_date }}">
@@ -1852,11 +1888,11 @@ WHERE daily_diff IS NOT NULL;
 
 ```
 
-```sql ../sqlpage/templates/participant_hidden_input.handlebars
+```sql sqlpage/templates/participant_hidden_input.handlebars
  <input type="hidden" name="participant_id" class="participant_id" value="{{ participant_id }}">
 ```
 
-```sql ../sqlpage/templates/agp-chart.handlebars
+```sql sqlpage/templates/agp-chart.handlebars
 <style>
         .text-\\[11px\\] { 
             font-size: 11px;  
@@ -1866,7 +1902,7 @@ WHERE daily_diff IS NOT NULL;
     <agp-chart class="p-5"></agp-chart>
 ```
 
-```sql ../sqlpage/templates/dgp-chart.handlebars
+```sql sqlpage/templates/dgp-chart.handlebars
 <style>
     .line {
         fill: none;
@@ -1945,7 +1981,7 @@ WHERE daily_diff IS NOT NULL;
             plots the glucose levels of the last 14 days.</p>
 ```
 
-```sql ../sqlpage/templates/gri-chart.handlebars
+```sql sqlpage/templates/gri-chart.handlebars
 <style>
         svg {
           display: block;
@@ -1987,7 +2023,7 @@ WHERE daily_diff IS NOT NULL;
       </div> 
 ```
 
-```sql ../sqlpage/templates/advanced_metrics.handlebars
+```sql sqlpage/templates/advanced_metrics.handlebars
 <div class="px-4">
   {{#each_row}}
   <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">
