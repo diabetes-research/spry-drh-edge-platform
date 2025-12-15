@@ -27,7 +27,6 @@ how to treat `sql` code fenced blocks.
 
 ```code DEFAULTS
 sql * --interpolate --injectable
-envrc * --interpolate --injectable
 ```
 
 ## Setup
@@ -278,6 +277,9 @@ SELECT 'shell' AS component,
 
 SET resource_json = sqlpage.read_file_as_text('spry.d/auto/resource/${path}.auto.json');
 SET page_title  = json_extract($resource_json, '$.route.caption');
+
+
+${ctx.breadcrumbs()}
 -- END: PARTIAL global-layout.sql
 -- this is the `${cell.info}` cell on line ${cell.startLine}
 ```
@@ -295,35 +297,9 @@ select
 -- END: PARTIAL chart-head.sql
 ```
 
-<!-- ```sql PARTIAL handlebars.sql --inject sqlpage/**
-{{!-- BEGIN: PARTIAL handlebars.sql 
--- END: PARTIAL handlebars.sql--}}
-``` -->
-<!-- 
-```import --base ../
-utf8 sqlpage/templates/**/*
-``` -->
-
 ```contribute sqlpage_files --base sqlpage/templates --mode package
 **/* templates --mime text/plain
 ```
-
-<!-- ```import --base https://app.devl.drh.diabetestechnology.org/
-utf8 https://app.devl.drh.diabetestechnology.org/js/d3-aide.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/stacked-bar-chart.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/gri-chart.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/dgp-chart.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/d3/agp-chart.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/formula-component.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/axis-D3QohQNI.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/line-Co2p4suz.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/lit-element-CA3xe_EJ.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/state-DQ3nVIzR.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/transform-CPUYrfNj.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/custom-W6OohYNa.js --spc
-utf8 https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js --spc -->
-```-->
-
 
 ```contribute sqlpage_files --base https://app.devl.drh.diabetestechnology.org/
 /js/d3-aide.js --spc mime application/javascript
