@@ -18,13 +18,6 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 
 ## Spry Axiom Configuration
 
-`code DEFAULTS` is a special directive used by Spry's Axiom library to supply
-default flags to specific code blocks like `sql`, `text`, etc. allowing them to
-be interpolatable (`${...}`) and injectable (using `PARTIAL`s) by default
-instead of having to pass `--interpolate` and `--injectable` into each code
-cell. 💡 `code DEFAULTS` is necessary in Spry SQLPage playbooks to tell Axiom
-how to treat `sql` code fenced blocks.
-
 ```code DEFAULTS
 sql * --interpolate --injectable
 ```
@@ -124,69 +117,44 @@ rm -rf dev-src.auto validation-reports
 echo "Starting the pipeline......."
 
 # 3. CRITICAL PRE-VALIDATION GATE
-echo "Executing the Data Pre-Validation Gate (Structure, Metadata, Dependencies, Completeness)....."
 deno run -A drh-pre-etl-validation.ts "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
 VALIDATION_EXIT_CODE=$?
-
-# Check the Deno script's explicit exit code
-if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
-    echo "SUCCESS: Data Pre-Validation passed with overallStatus: PASS. Proceeding to ETL."
-    # ----------------------------------------------------
-
-    # 4. CORE INGESTION AND INITIAL TRANSFORMATION
+if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then        
     # Using 'set -e' locally to ensure these chained steps halt immediately on failure
     (
-        set -e
-        echo "Starting Ingestion and Initial Transformation......... "
+        set -e        
         "${TOOL_CMD}" ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}"
-        "${TOOL_CMD}" orchestrate transform-csv
-        echo "SUCCESS: Ingestion and CSV transformation complete........."
+        "${TOOL_CMD}" orchestrate transform-csv        
     )
     # Check if the ingestion/transformation subshell failed
     if [ $? -ne 0 ]; then
         echo "FAILURE: Ingestion or Initial Transformation failed. Halting pipeline........."
         exit 1
-    fi
-    # ----------------------------------------------------
-
-    # 5. SQL DATA QUALITY VALIDATION (Post-Ingestion Check)
-    echo "Running Post-Ingestion SQL Data Quality Validation...."
-    "${TOOL_CMD}" shell common-sql/drh-data-validation.sql
-    
+    fi    
+    "${TOOL_CMD}" shell common-sql/drh-data-validation.sql    
     # Check SQL Validation success
     if [ $? -ne 0 ]; then
         echo "FAILURE: Post-Ingestion SQL Validation failed. Halting complex ETL........."
         exit 1
-    fi
-    echo "SUCCESS: SQL Validation passed. Starting complex ETL transformations........."
-    # ----------------------------------------------------
-
-    # 6. COMPLEX ETL TRANSFORMATIONS
-    echo "Running Complex ETL Pipelines (Anonymization, Tracing, Metrics, etc.)........."
+    fi   
     
     # Run all complex ETL steps, halting immediately on any failure
     (
         set -e
-        "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql
-        cat duckdb-etl-sql/01-generate-execute-export-combined-cgm-tracing.sql | duckdb ":memory:"
-        cat duckdb-etl-sql/02-create-file-meta-ingest-data.sql | duckdb ":memory:"
-        "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql
-        cat duckdb-etl-sql/03-generate-export-meal-fitness.sql | duckdb ":memory:"
-        cat duckdb-etl-sql/04-dynamic-participant-meal-fitness-data.sql | duckdb ":memory:"
+        "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql            
+        "${TOOL_CMD}" shell --engine duckdb duckdb-etl-sql/drh-master-etl.sql
+        "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql        
         echo "ETL process complete. Database generated successfully......... "
     )
     
     if [ $? -ne 0 ]; then
         echo "FAILURE: Complex ETL failed. Halting pipeline."
         exit 1
-    fi
-
-    
+    fi   
 
 else
     # This block executes if VALIDATION_EXIT_CODE is 1 (FAIL or WARNING)
-    echo "FAILURE: Data Pre-Validation failed or returned a WARNING status (Exit Code 1)."
-    echo "Skipping all subsequent Ingestion and ETL steps........."
+    echo "FAILURE: Data Pre-Validation failed or returned a WARNING status (Exit Code 1)."    
     exit 1
 fi
 ```
@@ -242,12 +210,6 @@ echo "DRH EDGE UI will be available at http://localhost:9227/"
 
 ## Layout
 
-This cell instructs Spry to automatically inject the SQL `PARTIAL` into all
-SQLPage content cells. The name `global-layout.sql` is not significant (it's
-required by Spry but only used for reference), but the `--inject **/*` argument
-is how matching occurs. The `--BEGIN` and `--END` comments are not required by
-Spry but make it easier to trace where _partial_ injections are occurring.
-
 ```sql PARTIAL global-layout.sql --inject *.sql --inject drh/*.sql
 
 -- BEGIN: PARTIAL global-layout.sql
@@ -302,29 +264,24 @@ select
 ```
 
 ```contribute sqlpage_files --base https://app.devl.drh.diabetestechnology.org/
-/js/d3-aide.js --spc mime application/javascript
-/js/wc/d3/stacked-bar-chart.js --spc mime application/javascript
-/js/wc/d3/gri-chart.js --spc mime application/javascript
-/js/wc/d3/dgp-chart.js --spc mime application/javascript
-/js/wc/d3/agp-chart.js --spc mime application/javascript
-/js/wc/formula-component.js --spc mime application/javascript
-/js/wc/assets/axis-D3QohQNI.js --spc mime application/javascript
-/js/wc/assets/line-Co2p4suz.js --spc mime application/javascript
-/js/wc/assets/lit-element-CA3xe_EJ.js --spc mime application/javascript
-/js/wc/assets/state-DQ3nVIzR.js --spc mime application/javascript
-/js/wc/assets/transform-CPUYrfNj.js --spc mime application/javascript
-/js/wc/assets/custom-W6OohYNa.js --spc mime application/javascript
-/js/wc/assets/band-B4BH55T4.js --spc mime application/javascript
+/js/d3-aide.js  
+/js/wc/d3/stacked-bar-chart.js  
+/js/wc/d3/gri-chart.js  
+/js/wc/d3/dgp-chart.js  
+/js/wc/d3/agp-chart.js  
+/js/wc/formula-component.js  
+/js/wc/assets/axis-D3QohQNI.js  
+/js/wc/assets/line-Co2p4suz.js  
+/js/wc/assets/lit-element-CA3xe_EJ.js  
+/js/wc/assets/state-DQ3nVIzR.js  
+/js/wc/assets/transform-CPUYrfNj.js  
+/js/wc/assets/custom-W6OohYNa.js  
+/js/wc/assets/band-B4BH55T4.js  
 ```
 
-```import
-utf8 ./d3-aide-component.js --spc
+```contribute sqlpage_files --base .
+./d3-aide-component.js 
 ```
-
-Get the brand assets and store them into the SQLPage content stream. They will
-be stored as `assets/brand/*` because the `--base` is `https://drh.diabetestechnology.org`. The `--spc` reminds Spry to include it as part of
-the SQLPage content since by default utf8 and other file types don't get
-inserted into the stream.
 
 ## DRH EDGE  Home Page
 
@@ -1354,59 +1311,6 @@ SELECT 'json' AS component,
         ) AS contents;  
 ```
 
-```sql sqlpage/templates/gri_component.handlebars
-
-<style>
-  svg {
-    display: block;
-    margin: auto;
-  }
-</style>
-
-<div class="fs-3 p-1 fw-bold"
-     style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">
-  Glycemia Risk Index
-  <div style="display: flex; justify-content: flex-end; align-items: center;">
-    <formula-component content="Hypoglycemia Component = VLow + (0.8 × Low)
-      Hyperglycemia Component = VHigh + (0.5 × High)
-      GRI = (3.0 × Hypoglycemia Component) + (1.6 × Hyperglycemia Component)
-      Equivalently,
-      GRI = (3.0 × VLow) + (2.4 × Low) + (1.6 × VHigh) + (0.8 × High)">
-    </formula-component>
-  </div>
-</div>
-
-<div class="px-4 pb-4">
-  <gri-chart></gri-chart>
-
-  <table class="w-full text-center border mt-3">
-    <thead>
-      <tr class="bg-gray-900 text-white">
-        <th>TIR</th>
-        <th>TAR(VH)</th>
-        <th>TAR(H)</th>
-        <th>TBR(L)</th>
-        <th>TBR(VL)</th>
-        <th>TITR</th>
-        <th>GRI</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td class="TIR"></td>
-        <td class="TAR_VH"></td>
-        <td class="TAR_H"></td>
-        <td class="TBR_L"></td>
-        <td class="TBR_VL"></td>
-        <td class="timeInTightRangeCdata"></td>
-        <td class="GRI"></td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-
-```
-
 ```sql drh/chart/glycemic_risk_indicator/index.sql
   SELECT 'gri_component' AS component; 
 ```
@@ -1843,174 +1747,4 @@ FROM (
 ) AS daily_diffs
 WHERE daily_diff IS NOT NULL;
 
-```
-
-```sql sqlpage/templates/stacked_bar_chart.handlebars
-
-<input type="hidden" name="start_date" class="start_date" value="{{ start_date }}">
-<input type="hidden" name="end_date" class="end_date" value="{{ end_date }}">
-
-<div class="fs-3 p-1 fw-bold"
-     style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">
-  Goals for Type 1 and Type 2 Diabetes
-  <div style="display: flex; justify-content: flex-end; align-items: center;">
-    <formula-component
-      content="Goals for Type 1 and Type 2 Diabetes Chart provides a comprehensive view of a participant&#39;s glucose readings categorized into different ranges over a specified period.">
-    </formula-component>
-  </div>
-</div>
-
-<stacked-bar-chart class="p-5"></stacked-bar-chart>
-
-```
-
-```sql sqlpage/templates/participant_hidden_input.handlebars
- <input type="hidden" name="participant_id" class="participant_id" value="{{ participant_id }}">
-```
-
-```sql sqlpage/templates/agp-chart.handlebars
-<style>
-        .text-\\[11px\\] { 
-            font-size: 11px;  
-        }
-    </style>
-    <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">AMBULATORY GLUCOSE PROFILE (AGP) <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="The Ambulatory Glucose Profile (AGP) summarizes glucose monitoring data over a specified period, typically 14 to 90 days. It provides a visual representation of glucose levels, helping to identify patterns and variability in glucose management."></formula-component></div></div>
-    <agp-chart class="p-5"></agp-chart>
-```
-
-```sql sqlpage/templates/dgp-chart.handlebars
-<style>
-    .line {
-        fill: none;
-        stroke: lightgrey;
-        stroke-width: 1px;
-    }
-
-    .highlight-area {
-        fill: lightgreen;
-        opacity: 1;
-    }
-
-    .highlight-line {
-        fill: none;
-        stroke: green;
-        stroke-width: 1px;
-    }
-
-    .highlight-glucose-h-line {
-        fill: none;
-        stroke: orange;
-        stroke-width: 1px;
-    }
-
-    .highlight-glucose-l-line {
-        fill: none;
-        stroke: red;
-        stroke-width: 1px;
-    }
-
-    .reference-line {
-        stroke: black;
-        stroke-width: 1px;
-    }
-
-    .vertical-line {
-        stroke: rgb(223, 223, 223);
-        stroke-width: 1px;
-    }
-
-    .day-label {
-        font-size: 10px;
-        fill: #000;
-    }
-
-    .day-label-top {
-        font-size: 12px;
-        text-anchor: middle;
-        fill: #000;
-    }
-
-    .axis path,
-    .axis line {
-        fill: none;
-        shape-rendering: crispEdges;
-    }
-
-    .mg-dl-label {
-        font-size: 14px;
-        font-weight: bold;
-        text-anchor: middle;
-        fill: #000;
-        transform: rotate(-90deg);
-        transform-origin: left center;
-    }
-
-    .horizontal-line {
-        stroke: rgb(223, 223, 223);
-        stroke-width: 1px;
-    }
-</style> 
-        <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">DAILY GLUCOSE PROFILE <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="The Ambulatory Glucose Profile (AGP) summarizes glucose monitoring data over a specified period, typically 14 to 90 days. It provides a visual representation of glucose levels, helping to identify patterns and variability in glucose management."></formula-component></div></div>
-        <dgp-chart></dgp-chart>
-        <p class="py-2 px-4 text-gray-800 font-normal text-xs hidden" id="dgp-note"><b>NOTE:</b> The Daily Glucose
-            Profile
-            plots the glucose levels of the last 14 days.</p>
-```
-
-```sql sqlpage/templates/gri-chart.handlebars
-<style>
-        svg {
-          display: block;
-          margin: auto;
-        }
-      </style>        
-        <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">Glycemia Risk Index <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="Hypoglycemia Component = VLow + (0.8 × Low)
-                    Hyperglycemia Component = VHigh + (0.5 × High)
-                    GRI = (3.0 × Hypoglycemia Component) + (1.6 × Hyperglycemia Component)
-                    Equivalently,
-                    GRI = (3.0 × VLow) + (2.4 × Low) + (1.6 × VHigh) + (0.8 × High)"></formula-component></div></div>
-        <div class="px-4 pb-4">
-        <gri-chart></gri-chart>
-      
-        <table class="w-full text-center border">
-        <thead>
-          <tr class="bg-gray-900">
-            <th >TIR</th>
-            <th >TAR(VH)</th>
-            <th >TAR(H)</th>
-            <th >TBR(L)</th>
-            <th >TBR(VL)</th>
-            <th >TITR</th>
-            <th >GRI</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="TIR"></td>
-            <td class="TAR_VH"></td>
-            <td class="TAR_H"></td>
-            <td class="TBR_L"></td>
-            <td class="TBR_VL"></td>
-            <td class="timeInTightRangeCdata"></td>
-            <td class="GRI"></td>
-          </tr>
-        </tbody> 
-      </table>
-      </div> 
-```
-
-```sql sqlpage/templates/advanced_metrics.handlebars
-<div class="px-4">
-  {{#each_row}}
-  <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">
-    {{label}} 
-    <div style="display: flex; justify-content: flex-end; align-items: center;">
-        <div style="display: flex;align-items: center;gap: 0.1rem;">
-         {{value}}
-          <formula-component content="{{formula}}"></formula-component>
-        </div>
-    </div>
-  </div>
-  {{/each_row}}
-</div>
 ```

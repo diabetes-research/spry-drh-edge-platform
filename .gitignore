@@ -1,5 +1,5 @@
 drh-edge-core/resource-surveillance.sqlite.db
-sqlpage/
+sqlpage/sqlpage.json
 drh-edge-core/*.sql
 .envrc
 dev-src.auto

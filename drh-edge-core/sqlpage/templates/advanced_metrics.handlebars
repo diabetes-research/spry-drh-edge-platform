@@ -1,0 +1,13 @@
+<div class="px-4">
+  {{#each_row}}
+  <div class="card-content my-3 border-bottom" style="display: flex; flex-direction: row; justify-content: space-between;">
+    {{label}} 
+    <div style="display: flex; justify-content: flex-end; align-items: center;">
+        <div style="display: flex;align-items: center;gap: 0.1rem;">
+         {{value}}
+          <formula-component content="{{formula}}"></formula-component>
+        </div>
+    </div>
+  </div>
+  {{/each_row}}
+</div>
