@@ -264,23 +264,23 @@ select
 ```
 
 ```contribute sqlpage_files --base https://app.devl.drh.diabetestechnology.org/
-/js/d3-aide.js  
-/js/wc/d3/stacked-bar-chart.js  
-/js/wc/d3/gri-chart.js  
-/js/wc/d3/dgp-chart.js  
-/js/wc/d3/agp-chart.js  
-/js/wc/formula-component.js  
-/js/wc/assets/axis-D3QohQNI.js  
-/js/wc/assets/line-Co2p4suz.js  
-/js/wc/assets/lit-element-CA3xe_EJ.js  
-/js/wc/assets/state-DQ3nVIzR.js  
-/js/wc/assets/transform-CPUYrfNj.js  
-/js/wc/assets/custom-W6OohYNa.js  
-/js/wc/assets/band-B4BH55T4.js  
+https://app.devl.drh.diabetestechnology.org/js/d3-aide.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/d3/stacked-bar-chart.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/d3/gri-chart.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/d3/dgp-chart.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/d3/agp-chart.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/formula-component.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/axis-D3QohQNI.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/line-Co2p4suz.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/lit-element-CA3xe_EJ.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/state-DQ3nVIzR.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/transform-CPUYrfNj.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/custom-W6OohYNa.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js .
 ```
 
 ```contribute sqlpage_files --base .
-./d3-aide-component.js 
+./d3-aide-component.js .
 ```
 
 ## DRH EDGE  Home Page
@@ -1580,7 +1580,7 @@ SELECT
 SELECT 'stacked_bar_chart' AS component, $start_date AS start_date,$end_date AS end_date;
 ```
 
-```sql  drh/chart/ambulatory-glucose-profile/index.sql
+```sql drh/chart/ambulatory-glucose-profile/index.sql
     SELECT 'agp-chart' AS component;
 ```
 
