@@ -51,7 +51,7 @@ Recommended practice is to keep these values in a local, directory-scoped enviro
 
 POSIX-style example (bash/zsh):
 
-```envrc prepare-env -C ./.envrc --gitignore --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
+```envrc prepare-env  -C ./.envrc --gitignore --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
 export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
@@ -97,7 +97,7 @@ Quick troubleshooting
 - The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
-```bash prepare-db --dep prepare-env --descr "Performs pre-etl-validation ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
+```bash prepare-db --dep prepare-env  --descr "Performs pre-etl-validation ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/bin/bash
 # Exit immediately if a command exits with a non-zero status (except for the Deno check)
 # set -e
@@ -163,13 +163,14 @@ fi
 
 While you're developing, Spry's `dev-src.auto` generator should be used:
 
-```bash  --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
+```bash  
 spry sp spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json  
 ```
 
-```bash  --descr "Clean up the project directory's generated artifacts"
+```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"
 rm -rf dev-src.auto
 rm -f *.sql   
+rm -rf validation-reports
 ```
 
 In development mode, here’s the `--watch` convenience you can use so that
@@ -199,7 +200,7 @@ spry sp spc  --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json --wat
 After development is complete, the `dev-src.auto` can be removed and
 single-database deployment can be used:
 
-```bash build-server --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
+```bash build-server   --descr "Generate sqlpage_files table upsert SQL and push them to SQLite"
 #!/usr/bin/env -S bash
 rm -rf dev-src.auto
 echo "DRH EDGE UI Build is in progress............."

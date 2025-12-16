@@ -164,11 +164,11 @@ fi
 
 While you're developing, Spry's `dev-src.auto` generator should be used:
 
-```bash  --descr "Generate the dev-src.auto directory to work in SQLPage dev mode"
+```bash  
 spry sp spc --fs dev-src.auto --destroy-first --conf sqlpage/sqlpage.json -m drh-dexcom-cgm-spry.md
 ```
 
-```bash  --descr "Clean up the project directory's generated artifacts"
+```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"
 rm -rf dev-src.auto
 rm -f *.sql   
 rm -rf validation-reports

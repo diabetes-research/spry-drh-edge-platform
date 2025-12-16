@@ -44,7 +44,7 @@ The platform performs a complete workflow for converting raw diabetes research d
 
 Ensure you have the following installed to run the platform:
 
-1. **[Deno](https://deno.land/):** Used to run the Spry CLI tool (`spry.ts`).
+1. **[Spry binary](https://github.com/programmablemd/homebrew-packages):** The core command-line tool, installed via Homebrew.
 2. **[Surveilr](https://github.com/surveilr/packages/releases):** The data-processing utility for file ingestion and orchestration.
 3. **DuckDB**: Used within the data preparation scripts for ETL operations.
 4. **SQLITE**: The final destination database engine used for data persistence and serving via SQLPage (specified by `$SPRY_DB`).
@@ -54,7 +54,48 @@ Ensure you have the following installed to run the platform:
 
 Follow these steps to install the required tools on a Linux system.
 
-#### 1. Install Deno
+#### 1. Install Spry binary (via Homebrew)
+
+Install the unified `spry` binary, which contains all the necessary commands (tasks, runbooks, sqlpage compiler).
+
+```bash
+## Installation
+brew tap programmablemd/packages
+brew install spry
+```
+
+##### Usage
+
+After installation, you can run:
+
+```bash
+spry --version
+```
+
+##### How to Update
+
+To update to the latest version:
+
+```bash
+brew update
+brew upgrade spry
+```
+
+##### Uninstall
+
+To remove Spry:
+
+```bash
+brew uninstall spry
+```
+
+To remove the tap:
+
+```bash
+brew untap programmablemd/packages
+```
+
+#### 2. Install Deno
 
 Deno is required to run the Spry CLI.
 
@@ -65,7 +106,7 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 # Example: export PATH="$HOME/.deno/bin:$PATH"
 ```
 
-#### 2. Install DuckDB (v1.4.1+)
+#### 3. Install DuckDB (v1.4.1+)
 
 DuckDB is used for complex ETL and data transformations.
 
@@ -77,7 +118,7 @@ chmod +x duckdb
 sudo mv duckdb /usr/local/bin/
 ```
 
-#### 3. Install SQLite
+#### 4. Install SQLite
 
 SQLite is the final structured database used by SQLPage. On most systems, it can be installed via the package manager.
 
@@ -122,14 +163,14 @@ Configuration is handled through environment variables, ideally managed with **d
 You can generate a starter `.envrc` file and add it to your local configuration using Spry:
 
 ```bash
-./spry.ts task -m [markdownfilename] prepare-env
+spry rb task prepare-env [markdownfilename]
 direnv allow
 ```
 
 **Example:**
 
 ```bash
-./spry.ts task -m drh-simplera-spry.md prepare-env
+spry rb task prepare-env drh-simplera-spry.md
 direnv allow
 ```
 
@@ -181,47 +222,61 @@ The entire data preparation workflow is defined in the dataset specific  markdow
 
 ## Standard Workflow Instructions
 
-### Inspect the Pipeline Structure (Runbook)
+### Inspect the task Structure as dependancy graph
 
-Before executing, you can view the dependency graph and sequence of tasks defined in **`drh-simplera-spry`** using the Spry `runbook` command.
+Before executing, you can view the dependency graph and sequence of tasks defined in any markdown file using the Spry `rb run` command.
 
 **command:**
 
 ```bash
- ./spry.ts runbook -m [markdownfilename] --visualize ascii-tree
+ spry rb run [markdownfilename] --visualize ascii-tree
  ```
 
 **Example:**
 
 ```bash
 # View the runbook as a dependency tree (ASCII visualization)
-./spry.ts runbook -m drh-simplera-spry.md --visualize ascii-tree
+spry rb run drh-simplera-spry.md --visualize ascii-tree
+```
+
+### List All Defined Tasks in the markdown
+
+You can view a list of all defined tasks within the markdown file:
+
+```bash
+spry rb ls [markdownfilename]
+```
+
+Example:
+
+```bash
+spry rb ls drh-simplera-spry.md
 ```
 
 ### Option A: Execute All Steps Sequentially (Recommended for Development)
 
-Execute the three main tasks in order. Use the `-m` flag to explicitly reference the Spryfile if it's not the default `Spryfile.md`.
+Execute the three main tasks in order. Specifiy the markdown name to explicitly reference the data set specific markdown if it's not the default `Spryfile.md`.
 
 #### Step 1: Run ETL (Cleanup, Data validation, Data Preparation and Transformation)
 
 This script performs cleanup, validation, ingestion, and the complete complex ETL sequence.
 
 ```bash
-./spry.ts task prepare-db
+spry rb task prepare-db
 ```
 
-If you need to explicitly reference the Spryfile, use the `-m` flag:
+If you need to explicitly reference the specific datset based markdown, refer the following sample:
 
 **command:**
 
 ```bash
-./spry.ts task -m [markdownfilename]  [taskname]
+spry rb task [taskname] [markdownfilename]
 ```
 
 **Example:**
 
 ```bash
-./spry.ts task -m drh-simplera-spry.md prepare-db
+spry rb task prepare-db drh-simplera-spry.md
 ```
 
 #### Step 2: Integrated Build
@@ -231,13 +286,13 @@ This is the preferred method for running the application. This command executes 
 **command:**
 
 ```bash
-./spry.ts task -m [markdownfilename]  [taskname]
+spry rb task [taskname] [markdownfilename] 
 ```
 
 **Example:**
 
 ```bash
-./spry.ts task -m drh-simplera-spry.md build-server
+spry rb task build-server drh-simplera-spry.md
 ```
 
 Expected Result: The console will display messages for the application build, and finally, the URL where the server is running (e.g., <http://localhost:9227/>).
@@ -257,20 +312,26 @@ Since the tasks are designed to be executed sequentially, you can run the entire
 **command:**
 
 ```bash
-./spry.ts runbook -m [markdownfilename] 
+spry rb run [markdownfilename] 
 ```
 
 **Example:**
 
 ```bash
 # This command runs prepare-db, build-to-db, and run-server in sequence
-./spry.ts runbook -m drh-simplera-spry.md
+spry rb run drh-simplera-spry.md
+```
+
+Or
+
+```bash
+spry rb run drh-simplera-spry.md ls 
 ```
 
 Execute the following once the runbook execution succeeds..
 
 ```bash
-SQLPAGE_SITE_PREFIX="" sqlpage
+sqlpage
 ```
 
 -----
@@ -316,9 +377,8 @@ If a new dataset requires a **unique sequence of ETL steps** or specialized tran
 
 | Action | Command |
 | :--- | :--- |
-| **Run Custom ETL** | `./spry.ts -m study-x-etl.spry.md task prepare-db` |
-| **Build Custom Site** | `./spry.ts -m study-x-etl.spry.md task build-server` |
-
+| **Run Custom ETL** | `spry rb task prepare-db study-x-etl.spry.md` |
+| **Build Custom Site** | `spry rb task build-server study-x-etl.spry.md` |
 
 ## Security and Hygiene (`.gitignore` Summary)
 
@@ -331,70 +391,3 @@ The following files and directories are typically generated during the workflow 
 | **`drh-edge-core/*.sql`** | Temporary SQL files generated during the ETL process. |
 | **`dev-src.auto`** | The generated directory used by SQLPage to serve content in development mode. |
 | **`validation-reports`** | Output reports from the pre-validation gate. |
-| **`sqlpage/`** | contains the handlebars and sqlpage.json |
-
-
----
-
-## 📦 **Using Homebrew Spry Packages (Alternative to `spry.ts`)**
-
-If you prefer not to execute `spry.ts` directly, you can install the **Spry SQLPage CLI** and **Spry Runbook** via Homebrew. These provide the same functionality as `spry.ts` but as standalone system binaries.
-
----
-
-### 🔧 Install via Homebrew
-
-```bash
-brew tap programmablemd/packages https://github.com/programmablemd/packages
-
-brew install spry-sqlpage
-brew install spry-runbook
-```
-
-### ✅ Verify Installation
-
-```bash
-spry-sqlpage --version   # or: spry-sqlpage -V
-spry-runbook --version   # or: spry-runbook -V
-```
-
----
-
-## 🔄 **Command Substitutions**
-
-When using the Homebrew packages, replace any `./spry.ts` invocation in your Markdown workflows as follows:
-
-| If your Spryfile uses… | Replace with…          |
-| ---------------------- | ---------------------- |
-| `./spry.ts runbook`    | `spry-sqlpage runbook` |
-| `./spry.ts task`       | `spry-sqlpage task`    |
-| `./spry.ts spc`        | `spry-sqlpage spc`     |
-
-### ✔️ Examples
-
-```bash
-# Visualize workflow
-spry-sqlpage runbook -m drh-dexcom-cgm-spry.md --visualize ascii-tree
-
-# Prepare environment variables
-spry-sqlpage task -m drh-dexcom-cgm-spry.md prepare-env
-
-# Full ETL
-spry-sqlpage task -m drh-dexcom-cgm-spry.md prepare-db
-
-# Build SQLPage server
-spry-sqlpage task -m drh-dexcom-cgm-spry.md build-server
-```
-
----
-
-### 🧹 Uninstall
-
-To remove the Homebrew-installed CLI tools:
-
-```bash
-brew uninstall spry-sqlpage spry-runbook
-```
-
----
-
