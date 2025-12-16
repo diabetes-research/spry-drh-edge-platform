@@ -128,7 +128,7 @@ sudo apt update
 sudo apt install sqlite3 libsqlite3-dev
 ```
 
-#### 4. Install Surveilr
+#### 5. Install Surveilr
 
 Surveilr is the data-processing utility for file ingestion.The latest surveilr packages can be found [here.](https://github.com/surveilr/packages/releases)
 Although Surveilr includes built-in DuckDB and SQLite support, it is recommended to have DuckDB and SQLite installed separately for smoother ETL execution and debugging.
