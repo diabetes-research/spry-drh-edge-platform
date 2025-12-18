@@ -46,7 +46,8 @@ Ensure you have the following installed to run the platform:
 
 1. **[Spry binary](https://github.com/programmablemd/homebrew-packages):** The core command-line tool, installed via Homebrew.
 2. **[Surveilr](https://github.com/surveilr/packages/releases):** The data-processing utility for file ingestion and orchestration.
-3. **direnv**: Recommended for managing environment variables easily.
+3. **Deno:** Required for pre-validation typescript execution
+4. **direnv**: Recommended for managing environment variables easily.
 
 ### ⚙️ Installation Steps
 
@@ -107,7 +108,7 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 #### 3. Install Surveilr
 
 Surveilr is the data-processing utility for file ingestion.The latest surveilr packages can be found [here.](https://github.com/surveilr/packages/releases)
-Although Surveilr includes built-in DuckDB and SQLite support, it is recommended to have DuckDB and SQLite installed separately for smoother ETL execution and debugging.
+Surveilr includes built-in DuckDB and SQLite support, from surveilr version 3.10 for smoother ETL execution and debugging.
 
 > Note: Only Surveilr v3.10.0 and above provide support for DuckDB-based ETL SQL execution.
 
@@ -231,9 +232,9 @@ spry rb ls drh-simplera-spry.md
 
 ### Option A: Execute All Steps Sequentially (Recommended for Development)
 
-Execute the three main tasks in order. Specifiy the markdown name to explicitly reference the data set specific markdown if it's not the default `Spryfile.md`.
+Execute the tasks in order. Specifiy the markdown name to explicitly reference the data set specific markdown if it's not the default `Spryfile.md`.
 
-#### Step 1: Prepare ENV
+#### Step 1: Set the enviornment variables
 
 ```bash
 spry rb task prepare-env
