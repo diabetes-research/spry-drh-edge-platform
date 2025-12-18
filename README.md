@@ -353,7 +353,7 @@ All SQL files are segregated into dedicated directories for modularity.
 
 | ETL Component | Directory | Purpose |
 | :--- | :--- | :--- |
-| **Complex DuckDB Transformations** | `duckdb-etl-sql/` | Contains scripts for resource-intensive operations like combined CGM tracing and advanced data processing. |
+| **Complex DuckDB Transformations** | `duckdb-etl-sql/drh-master-etl.sql` | Contains script for resource-intensive operations like combined CGM tracing,meal-fitness data processing, advanced data processing etc. |
 | **Common SQL / Validation** | `common-sql/` | Contains common SQL used for post-ingestion data quality checks and utility views. |
 
 **To customize the transformation logic for a new dataset:**
