@@ -46,9 +46,7 @@ Ensure you have the following installed to run the platform:
 
 1. **[Spry binary](https://github.com/programmablemd/homebrew-packages):** The core command-line tool, installed via Homebrew.
 2. **[Surveilr](https://github.com/surveilr/packages/releases):** The data-processing utility for file ingestion and orchestration.
-3. **DuckDB**: Used within the data preparation scripts for ETL operations.
-4. **SQLITE**: The final destination database engine used for data persistence and serving via SQLPage (specified by `$SPRY_DB`).
-5. **direnv**: Recommended for managing environment variables easily.
+3. **direnv**: Recommended for managing environment variables easily.
 
 ### ⚙️ Installation Steps
 
@@ -106,29 +104,7 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 # Example: export PATH="$HOME/.deno/bin:$PATH"
 ```
 
-#### 3. Install DuckDB (v1.4.1+)
-
-DuckDB is used for complex ETL and data transformations.
-
-```bash
-# Download and install the latest stable version
-wget https://github.com/duckdb/duckdb/releases/download/v1.4.1/duckdb_cli-linux-amd64.zip
-unzip duckdb_cli-linux-amd64.zip
-chmod +x duckdb
-sudo mv duckdb /usr/local/bin/
-```
-
-#### 4. Install SQLite
-
-SQLite is the final structured database used by SQLPage. On most systems, it can be installed via the package manager.
-
-```bash
-# For Debian/Ubuntu-based systems
-sudo apt update
-sudo apt install sqlite3 libsqlite3-dev
-```
-
-#### 5. Install Surveilr
+#### 3. Install Surveilr
 
 Surveilr is the data-processing utility for file ingestion.The latest surveilr packages can be found [here.](https://github.com/surveilr/packages/releases)
 Although Surveilr includes built-in DuckDB and SQLite support, it is recommended to have DuckDB and SQLite installed separately for smoother ETL execution and debugging.
@@ -136,11 +112,11 @@ Although Surveilr includes built-in DuckDB and SQLite support, it is recommended
 > Note: Only Surveilr v3.10.0 and above provide support for DuckDB-based ETL SQL execution.
 
 ```bash
-# Download the latest stable release (e.g., v3.10.0) . check in https://github.com/surveilr/packages/releases
-wget https://github.com/surveilr/packages/releases/download/3.10.0/surveilr_3.10.0_x86_64-unknown-linux-gnu.tar.gz
+# Download the latest stable release (e.g., v3.13.0) . check in https://github.com/surveilr/packages/releases
+wget https://github.com/surveilr/packages/releases/download/3.13.0/surveilr_3.13.0_x86_64-unknown-linux-gnu.tar.gz
 
 # Extract it
-tar -xzf surveilr_3.10.0_x86_64-unknown-linux-gnu.tar.gz
+tar -xzf surveilr_3.13.0_x86_64-unknown-linux-gnu.tar.gz
 
 # Install it by moving the executable to a directory in your PATH
 sudo mv surveilr /usr/local/bin/
@@ -257,7 +233,27 @@ spry rb ls drh-simplera-spry.md
 
 Execute the three main tasks in order. Specifiy the markdown name to explicitly reference the data set specific markdown if it's not the default `Spryfile.md`.
 
-#### Step 1: Run ETL (Cleanup, Data validation, Data Preparation and Transformation)
+#### Step 1: Prepare ENV
+
+```bash
+spry rb task prepare-env
+```
+
+If you need to explicitly reference the specific datset based markdown, refer the following sample:
+
+**command:**
+
+```bash
+spry rb task [taskname] [markdownfilename]
+```
+
+**Example:**
+
+```bash
+spry rb task prepare-env drh-simplera-spry.md
+```
+
+#### Step 2: Run ETL (Cleanup, Data validation, Data Preparation and Transformation)
 
 This script performs cleanup, validation, ingestion, and the complete complex ETL sequence.
 
@@ -279,7 +275,7 @@ spry rb task [taskname] [markdownfilename]
 spry rb task prepare-db drh-simplera-spry.md
 ```
 
-#### Step 2: Integrated Build
+#### Step 3: Integrated Build
 
 This is the preferred method for running the application. This command executes the following pipeline: it performs the data build `build-server`, compiling the SQLPage content files, generating the necessary SQL, and pushing the entire application structure into the database `$SPRY_DB`.
 
@@ -377,6 +373,7 @@ If a new dataset requires a **unique sequence of ETL steps** or specialized tran
 
 | Action | Command |
 | :--- | :--- |
+| **Set the Env** | `spry rb task prepare-env study-x-etl.spry.md` |
 | **Run Custom ETL** | `spry rb task prepare-db study-x-etl.spry.md` |
 | **Build Custom Site** | `spry rb task build-server study-x-etl.spry.md` |
 

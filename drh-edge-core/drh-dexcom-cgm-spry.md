@@ -141,8 +141,7 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
     # Run all complex ETL steps, halting immediately on any failure
     (
         set -e
-        "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql
-        # cat duckdb-etl-sql/drh-master-etl.sql | duckdb ":memory:"     
+        "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql           
         "${TOOL_CMD}" shell --engine duckdb duckdb-etl-sql/drh-master-etl.sql
         "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql                
     )

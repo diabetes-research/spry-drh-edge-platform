@@ -192,41 +192,41 @@ function getDoctorCategories(): DoctorCategory[] {
                 },
             };
             // DuckDB Check
-            yield {
-                diagnose: async (report) => {
-                    const requiredVersion = DUCKDB_VERSION_REQUIRED;
-                    if (await $.commandExists("duckdb")) {
-                        const versionOutput = await $`duckdb --version`.noThrow().text();
-                        const match = versionOutput.split('\n')[0].trim().match(/v?(\d+\.\d+\.\d+)/); 
+            // yield {
+            //     diagnose: async (report) => {
+            //         const requiredVersion = DUCKDB_VERSION_REQUIRED;
+            //         if (await $.commandExists("duckdb")) {
+            //             const versionOutput = await $`duckdb --version`.noThrow().text();
+            //             const match = versionOutput.split('\n')[0].trim().match(/v?(\d+\.\d+\.\d+)/); 
                         
-                        if (match && versionToNumber(match[1]) >= versionToNumber(requiredVersion)) {
-                            return report({ ok: `DuckDB version ${match[1]} installed (meets minimum requirement of ${requiredVersion}).` });
-                        } else if (match) {
-                            return report({ warn: `DuckDB found, but version is too old: ${match[1]}. Required: ${requiredVersion} or newer.` });
-                        } else {
-                            return report({ warn: `DuckDB found, but version could not be parsed` });
-                        }
-                    } else {
-                        return report({ warn: `DuckDB not found in PATH, install it` });
-                    }
-                },
-            };
+            //             if (match && versionToNumber(match[1]) >= versionToNumber(requiredVersion)) {
+            //                 return report({ ok: `DuckDB version ${match[1]} installed (meets minimum requirement of ${requiredVersion}).` });
+            //             } else if (match) {
+            //                 return report({ warn: `DuckDB found, but version is too old: ${match[1]}. Required: ${requiredVersion} or newer.` });
+            //             } else {
+            //                 return report({ warn: `DuckDB found, but version could not be parsed` });
+            //             }
+            //         } else {
+            //             return report({ warn: `DuckDB not found in PATH, install it` });
+            //         }
+            //     },
+            // };
             // SQLite Check
-            yield { 
-                diagnose: async (report) => {
-                    if (await $.commandExists("sqlite3")) {
-                        try {
-                            const versionOutput = await $`sqlite3 --version`.noThrow().text();
-                            const version = versionOutput.split(' ')[0].trim();
-                            return report({ ok: `SQLite found. Version: ${version}.` });
-                        } catch (e) {
-                             return report({ warn: `SQLite found, but version could not be retrieved: ${e.message}` });
-                        }
-                    } else {
-                        return report({ warn: "SQLite not found in PATH, install it" });
-                    }
-                },
-            };
+            // yield { 
+            //     diagnose: async (report) => {
+            //         if (await $.commandExists("sqlite3")) {
+            //             try {
+            //                 const versionOutput = await $`sqlite3 --version`.noThrow().text();
+            //                 const version = versionOutput.split(' ')[0].trim();
+            //                 return report({ ok: `SQLite found. Version: ${version}.` });
+            //             } catch (e) {
+            //                  return report({ warn: `SQLite found, but version could not be retrieved: ${e.message}` });
+            //             }
+            //         } else {
+            //             return report({ warn: "SQLite not found in PATH, install it" });
+            //         }
+            //     },
+            // };
         }),
     ];
 }
