@@ -47,7 +47,7 @@ Ensure you have the following installed to run the platform:
 
 1. **[Spry binary](https://github.com/programmablemd/homebrew-packages):** The core command-line tool, installed via Homebrew.
 2. **[Surveilr](https://github.com/surveilr/packages/releases):** The data-processing utility for file ingestion and orchestration.
-3. **Deno:** Required for pre-validation typescript execution
+3. **Deno:** Required for pre-validation typescript execution[version 2.5.6]
 4. **direnv**: Recommended for managing environment variables easily.
 
 ### ⚙️ Installation Steps
@@ -180,7 +180,7 @@ The entire data preparation workflow is defined in the dataset specific  markdow
 | Stage | Tool | Description |
 | :--- | :--- | :--- |
 | 1. **Pre-Validation Gate** | Deno Script | Checks dependencies, file structure, and metadata quality. **Pipeline halts if this fails.** |
-| 2. **Ingestion an transformation** | `surveilr ingest and orchestrate transform-csv` | Converts raw files into the standardized **RSSD** (Resource Surveillance Study Data) format. |
+| 2. **Ingestion and transformation** | `surveilr ingest and orchestrate transform-csv` | Converts raw files into the standardized **RSSD** (Resource Surveillance Study Data) format. |
 | 3. **SQL Validation** | `surveilr shell` | Runs data quality checks against the newly ingested data. |
 | 4. **Complex ETL** | DuckDB sql execution through `surveilr shell --engine duckdb` | Performs advanced transformations: tracing, combining CGM data, anonymization, and calculating metrics. |
 | 5. **Persistence** | DuckDB → SQLite(through `surveilr shell --engine duckdb` ) | Exports all final, processed tables into the SQLite database (`$SPRY_DB`). |
@@ -241,7 +241,7 @@ Execute the tasks in order. Specifiy the markdown name to explicitly reference t
 spry rb task prepare-env
 ```
 
-If you need to explicitly reference the specific datset based markdown, refer the following sample:
+If you need to explicitly reference the specific dataset based markdown(e.g.drh-simplera-spry.md), refer the following sample:
 
 **command:**
 
