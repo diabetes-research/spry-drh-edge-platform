@@ -162,10 +162,23 @@ const consoleReport = (options: ReportResult) => {
 
 function getDoctorCategories(): DoctorCategory[] {
     return [
-        // 1. Deno Runtime check (User requested this first)
+        doctorCategory("Spry CLI", function* () {
+            yield {
+                diagnose: async (report: DoctorReporter) => {
+                    if (await $.commandExists("spry")) {
+                        // spry -V or spry --version usually returns the version
+                        const versionOutput = await $`spry -V`.noThrow().text();
+                        return report({ ok: `Spry found. Version: ${versionOutput.trim() || "unknown"}` });
+                    } else {
+                        return report({ warn: "Spry not found in PATH. Please install it before proceeding." });
+                    }
+                },
+            };
+        }),
+        //  Deno Runtime check
         denoDoctor(), 
         
-        // 2. Other Project Dependencies
+        // Other Project Dependencies
         doctorCategory("Project Runtime Dependencies", function* () {
             // Surveilr Check
             yield {
