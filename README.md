@@ -4,7 +4,7 @@
 
 ## Overview
 
-The **Diabetes Research Hub (DRH) SQLPage Application** is an ETL (Extract, Transform, Load) pipeline and web interface designed to process and visualize raw diabetes research data. This project automates the conversion of raw study files (e.g., CSV) into a structured **SQLite database** and uses the **Spry** framework to generate a user interface powered by **SQLPage**.
+The **Diabetes Research Hub (DRH) SQLPage Application** is an ETL (Extract, Transform, Load) pipeline and web interface designed to process and visualize raw diabetes research data. This project automates the conversion of raw study files (e.g., CSV) into a structured SQLite database and uses the SQLPage framework to generate a user interface powered by SQLPage.
 
 The goal is to provide a centralized platform for managing and analyzing continuous glucose monitor (CGM) data from research study.
 
@@ -16,8 +16,8 @@ The platform performs a complete workflow for converting raw diabetes research d
 
 * **Pre-Validation Gate:** Checks file structure, metadata, and dependencies (Deno, surveilr). The pipeline halts if this step fails.
 * **Data Conversion:** Automates the ingestion and conversion of raw study files (e.g., CSV) into a structured format using the `surveilr` tool.
-* **DuckDB ETL:** Utilizes **DuckDB** for complex data transformation and integration, including combining CGM tracings and generating derived meal and fitness metadata.
-* **SQLPage UI:** Generates a modern, interactive data dashboard using **SQLPage** powered by the resulting SQLite database.
+* **DuckDB ETL:** Utilizes DuckDB for complex data transformation and integration, including combining CGM tracings and generating derived meal and fitness metadata using surveilr tool.
+* **SQLPage UI:** Generates a modern, interactive data dashboard using SQLPage powered by the resulting SQLite database.
 * **Comprehensive Dashboards:** Includes dedicated pages for:
   * Study Participant Dashboard (metrics, demographics)
   * Combined CGM Tracing, Meal, and Fitness Data
@@ -36,6 +36,7 @@ The platform performs a complete workflow for converting raw diabetes research d
 | **DuckDB** | Utilized for complex data transformations and ETL operations. |
 | **SQLite** | The final, structured database format used by SQLPage. |
 
+> **Note: SQLPage, Duckdb and Sqlite is integrated in surveilr.**
 -----
 
 ## 🛠️ Prerequisites & Setup
@@ -110,7 +111,7 @@ curl -fsSL https://deno.land/x/install/install.sh | sh
 Surveilr is the data-processing utility for file ingestion.The latest surveilr packages can be found [here.](https://github.com/surveilr/packages/releases)
 Surveilr includes built-in DuckDB and SQLite support, from surveilr version 3.10 for smoother ETL execution and debugging.
 
-> Note: Only Surveilr v3.10.0 and above provide support for DuckDB-based ETL SQL execution.
+> Note: Only Surveilr v3.10.0 and above, provide support for DuckDB-based ETL SQL execution.
 
 ```bash
 # Download the latest stable release (e.g., v3.13.0) . check in https://github.com/surveilr/packages/releases
@@ -179,11 +180,11 @@ The entire data preparation workflow is defined in the dataset specific  markdow
 | Stage | Tool | Description |
 | :--- | :--- | :--- |
 | 1. **Pre-Validation Gate** | Deno Script | Checks dependencies, file structure, and metadata quality. **Pipeline halts if this fails.** |
-| 2. **Ingestion** | `surveilr` | Converts raw files into the standardized **RSSD** (Resource Surveillance Study Data) format. |
-| 3. **SQL Validation** | `surveilr` Shell | Runs data quality checks against the newly ingested data. |
-| 4. **Complex ETL** | DuckDB | Performs advanced transformations: tracing, combining CGM data, anonymization, and calculating metrics. |
-| 5. **Persistence** | DuckDB → SQLite | Exports all final, processed tables into the SQLite database (`$SPRY_DB`). |
-| 6. **Presentation** | SQLPage | Reads the SQLite database to render the web dashboard. |
+| 2. **Ingestion an transformation** | `surveilr ingest and orchestrate transform-csv` | Converts raw files into the standardized **RSSD** (Resource Surveillance Study Data) format. |
+| 3. **SQL Validation** | `surveilr shell` | Runs data quality checks against the newly ingested data. |
+| 4. **Complex ETL** | DuckDB sql execution through `surveilr shell --engine duckdb` | Performs advanced transformations: tracing, combining CGM data, anonymization, and calculating metrics. |
+| 5. **Persistence** | DuckDB → SQLite(through `surveilr shell --engine duckdb` ) | Exports all final, processed tables into the SQLite database (`$SPRY_DB`). |
+| 6. **Presentation**| SQLPage(through `surveilr` and `spry binary`) | Reads the SQLite database to render the web dashboard. |
 
 -----
 
