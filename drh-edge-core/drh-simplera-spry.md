@@ -51,7 +51,7 @@ Recommended practice is to keep these values in a local, directory-scoped enviro
 
 POSIX-style example (bash/zsh):
 
-```envrc prepare-env -C ./.envrc --gitignore --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
+```envrc prepare-env -C ./.envrc --gitignore -X  --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
 export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
@@ -94,7 +94,7 @@ Quick troubleshooting
   - **SQLite3**: The final destination database engine used for persistence and serving data via SQLPage (the file path is specified by `$SPRY_DB`).
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
-  - `spry rb task prepare-db drh-simplera-spry.md `
+  - `spry rb task prepare-db drh-simplera-spry.md`
 - The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 

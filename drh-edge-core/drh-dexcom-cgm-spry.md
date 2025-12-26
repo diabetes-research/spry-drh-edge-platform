@@ -19,7 +19,7 @@ CSV, Parquet, or a private data warehouse export) into a structured SQLite datab
 ## Spry Axiom Configuration
 
 ```code DEFAULTS
-sql * --interpolate --injectable
+sql * --interpolate --injectable 
 ```
 
 ## Setup
@@ -51,7 +51,7 @@ Recommended practice is to keep these values in a local, directory-scoped enviro
 
 POSIX-style example (bash/zsh):
 
-```envrc prepare-env -C ./.envrc --gitignore --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
+```envrc prepare-env -C ./.envrc --gitignore -X --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
 export STUDY_DATA_PATH="raw-data/dexcom-synthetic-cgm/"
