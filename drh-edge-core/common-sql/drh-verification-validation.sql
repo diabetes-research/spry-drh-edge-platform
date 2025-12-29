@@ -46,7 +46,7 @@ SELECT 1, 'Folder & Resource Check',
 -- STEP 2: File Extension and Existence Check
 -- ---------------------------------------------------------------------
 INSERT INTO diagnostics (check_id, check_name, status, details)
-SELECT 2, 'Extension & Existence',
+SELECT 2, 'File Format & Mandatory  Files Existence',
     CASE 
         WHEN (SELECT status FROM diagnostics WHERE check_id = 1) = 'FAIL' THEN 'FAIL'
         WHEN EXISTS (SELECT 1 FROM stage_files WHERE file_extn != 'csv') THEN 'FAIL'

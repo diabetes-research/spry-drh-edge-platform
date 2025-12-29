@@ -204,12 +204,21 @@ folder_extraction AS (
         END AS last_folder
     FROM path_parsing
 )
-SELECT 1, 'Folder & Resource Check',
-    CASE WHEN (SELECT COUNT(*) FROM base.stage_files) > 0 THEN 'PASS' ELSE 'FAIL' END,
-    CASE 
-        WHEN (SELECT COUNT(*) FROM base.stage_files) = 0 THEN 'No records found.'
-        ELSE 'Parent Folder: ' || (SELECT last_folder FROM folder_extraction)
+SELECT
+    1,
+    'Folder & Resource Check',
+    CASE
+        WHEN (SELECT COUNT(*) FROM base.stage_files) > 0 THEN 'PASS'
+        ELSE 'FAIL'
+    END,
+    CASE
+        WHEN (SELECT COUNT(*) FROM base.stage_files) = 0
+            THEN 'Error: No files detected during ingestion. This may occur if the source folder name contains spaces or unsupported characters.'
+        ELSE
+            'File ingestion successful. Detected ' || (SELECT COUNT(*) FROM base.stage_files) || ' files from folder: ' ||
+            (SELECT last_folder FROM folder_extraction)
     END;
+
 
 ---------------------------------------------------------------------
 -- STEP 2: CSV FORMAT & MANDATORY FILE EXISTENCE
@@ -222,14 +231,14 @@ WITH format_check AS (
          LEFT JOIN base.stage_files s ON s.file_basename = m.file_basename
          WHERE s.file_basename IS NULL) as missing_mandatory_count
 )
-SELECT 2, 'File Format & Mandatory Presence',
+SELECT 2, 'File Format & Mandatory  Files Existence',
     CASE 
         WHEN (SELECT status FROM base.diagnostics WHERE check_id = 1) = 'FAIL' THEN 'FAIL'
         WHEN non_csv_count > 0 OR missing_mandatory_count > 0 THEN 'FAIL'
         ELSE 'PASS'
     END,
     CASE 
-        WHEN non_csv_count > 0 THEN 'Error: ' || non_csv_count || ' non-CSV files detected.'
+        WHEN non_csv_count > 0 THEN 'Error: ' || non_csv_count || ' Non-CSV files detected.'
         WHEN missing_mandatory_count > 0 THEN 'Error: Missing mandatory files.'
         ELSE 'All mandatory files present and in CSV format.'
     END
@@ -255,49 +264,84 @@ WITH header_eval AS (
 )
 SELECT 
     3, 
-    'Header Check: ' || file_basename,
+    'File Schema Check: ' || file_basename,
     CASE WHEN contains(string_agg(col_status, ','), 'MISSING') THEN 'FAIL' ELSE 'PASS' END,
     string_agg(column_name || ': ' || col_status, ' | ')
 FROM header_eval
 WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2) AND status = 'FAIL')
 GROUP BY file_basename;
 
--- ---------------------------------------------------------------------
--- -- STEP 4: CGM TRACING CONTENT CHECK (BLOB-to-BLOB)
--- ---------------------------------------------------------------------
--- INSERT INTO base.diagnostics (check_id, check_name, status, details)
--- WITH raw_meta AS (
---     -- Get the metadata file content
---     SELECT CAST(full_content AS TEXT) as csv_text
---     FROM base.stage_files 
---     WHERE file_basename LIKE 'cgm_file_metadata%'
---     LIMIT 1
--- ),
--- expected_files AS (
---     -- Parse the CSV BLOB to find what filenames SHOULD be in the folder
---     -- read_csv_auto treats the string as a virtual file
---     SELECT TRIM(file_name) as target_file
---     FROM read_csv_auto((SELECT csv_text FROM raw_meta))
--- )
--- SELECT 
---     4,
---     'Tracing BLOB Check: ' || e.target_file,
---     CASE 
---         -- Check if a record exists in stage_files with this name and has content
---         WHEN EXISTS (
---             SELECT 1 FROM base.stage_files s 
---             WHERE s.file_basename = e.target_file 
---             AND s.size_bytes > 0
---         ) THEN 'PASS'
---         ELSE 'FAIL'
---     END,
---     CASE 
---         WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
---         THEN 'Resource ' || e.target_file || ' located in uniform_resource (BLOB).'
---         ELSE 'Resource ' || e.target_file || ' MISSING from uniform_resource.'
---     END
--- FROM expected_files e
--- WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2) AND status = 'FAIL');
+---------------------------------------------------------------------
+-- STEP 4: CGM FILE EXISTENCE (Cross-reference Metadata with Resources)
+---------------------------------------------------------------------
+INSERT INTO base.diagnostics (check_id, check_name, status, details)
+WITH raw_meta AS (
+    SELECT CAST(full_content AS TEXT) as csv_text
+    FROM base.stage_files 
+    WHERE file_basename LIKE 'cgm_file_metadata%'
+    LIMIT 1
+),
+expected_files AS (
+    -- Fixed: Use a CROSS JOIN to pass the string into read_csv_auto
+    SELECT DISTINCT TRIM(f.file_name) as target_file
+    FROM raw_meta rm, 
+         read_csv_auto(rm.csv_text) f
+    WHERE rm.csv_text IS NOT NULL
+)
+SELECT 
+    4,
+    'CGM Metadata File Existence Check: ' || e.target_file,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
+        ELSE 'FAIL'
+    END,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
+        THEN 'File ' || e.target_file || ' found in uniform_resource.'
+        ELSE 'File ' || e.target_file || ' is MISSING based on cgm_file_metadata.'
+    END
+FROM expected_files e
+WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2) AND status = 'FAIL');
+
+---------------------------------------------------------------------
+-- STEP 5: CGM COLUMN & DATA VALIDATION (Deep Content Check)
+---------------------------------------------------------------------
+INSERT INTO base.diagnostics (check_id, check_name, status, details)
+WITH raw_meta AS (
+    SELECT CAST(full_content AS TEXT) as csv_text
+    FROM base.stage_files 
+    WHERE file_basename LIKE 'cgm_file_metadata%'
+    LIMIT 1
+),
+child_files AS (
+    -- Fixed: Use CROSS JOIN to avoid Binder Error subquery
+    SELECT DISTINCT TRIM(f.file_name) as target_file
+    FROM raw_meta rm, 
+         read_csv_auto(rm.csv_text) f
+    WHERE target_file IN (SELECT file_basename FROM base.stage_files)
+),
+content_eval AS (
+    SELECT 
+        c.target_file,
+        s.full_content,
+        s.actual_header_row,
+        -- Check if file is more than just a header
+        (contains(s.full_content, E'\n') AND length(TRIM(s.full_content)) > length(TRIM(s.actual_header_row))) as has_data
+    FROM child_files c
+    JOIN base.stage_files s ON s.file_basename = c.target_file
+)
+SELECT 
+    5,
+    'CGM Tracing Data Integrity Check: ' || target_file,
+    CASE WHEN has_data THEN 'PASS' ELSE 'FAIL' END,
+    CASE 
+        WHEN has_data THEN 'Data rows detected beyond header for ' || target_file
+        ELSE 'File ' || target_file || ' contains ONLY a header or is empty.'
+    END
+FROM content_eval
+-- WATERFALL GATE: Only run if Step 4 succeeded for ALL files
+WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status = 'FAIL')
+  AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2) AND status = 'FAIL');
 
 -- ---------------------------------------------------------------------
 -- -- STEP 5: MEAL DATA TRAVERSAL (Check Tracing BLOBs)
@@ -344,6 +388,9 @@ SELECT
     (SELECT CASE WHEN EXISTS (SELECT 1 FROM base.diagnostics WHERE status = 'FAIL') THEN 'FAIL' ELSE 'PASS' END),
     json_object(
         'timestamp', CURRENT_TIMESTAMP,
+        'folderName', (SELECT global_folder_name from base.temp_session_vars limit 1),
+        'tenantId', p.party_id,
+        'tenantName', p.party_name,
         'overallStatus', (SELECT CASE WHEN EXISTS (SELECT 1 FROM base.diagnostics WHERE status = 'FAIL') THEN 'FAIL' ELSE 'PASS' END),
         'results', (SELECT json_group_array(json_object('check', check_name, 'status', status, 'details', details)) FROM (SELECT * FROM base.diagnostics ORDER BY check_id))
     )
