@@ -364,44 +364,199 @@ SELECT
 FROM content_eval
 WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status = 'FAIL')
   AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
-  
--- ---------------------------------------------------------------------
--- -- STEP 5: MEAL DATA TRAVERSAL (Check Tracing BLOBs)
--- ---------------------------------------------------------------------
--- INSERT INTO base.diagnostics (check_id, check_name, status, details)
--- WITH raw_meal_meta AS (
---     -- Get the Meal Metadata BLOB from stage_files
---     SELECT CAST(full_content AS TEXT) as csv_text
---     FROM base.stage_files 
---     WHERE file_basename LIKE 'meal_file_metadata%'
---     LIMIT 1
--- ),
--- expected_meal_files AS (
---     -- Parse the CSV text to find every file_name mentioned
---     SELECT DISTINCT TRIM(file_name) as target_file
---     FROM read_csv_auto((SELECT csv_text FROM raw_meal_meta))
--- )
--- SELECT 
---     5,
---     'Meal Data Existence: ' || e.target_file,
---     CASE 
---         WHEN EXISTS (
---             SELECT 1 FROM base.stage_files s 
---             WHERE s.file_basename = e.target_file 
---             AND s.size_bytes > 0
---         ) THEN 'PASS'
---         ELSE 'FAIL'
---     END,
---     CASE 
---         WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
---         THEN 'Meal Resource ' || e.target_file || ' verified in uniform_resource.'
---         ELSE 'Meal Resource ' || e.target_file || ' is MISSING from the ingestion.'
---     END
--- FROM expected_meal_files e
--- WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2) AND status = 'FAIL');
 
 ---------------------------------------------------------------------
--- STEP 7: FINAL BUNDLE (JSON)
+-- STEP 6: MEAL DATA VALIDATION (Existence
+---------------------------------------------------------------------
+INSERT INTO base.diagnostics (check_id, check_name, status, details)
+WITH raw_data AS (
+    -- Convert hex \x0A to standard newlines and clean Windows \r
+    SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
+    FROM base.stage_files 
+    WHERE file_basename LIKE 'meal_file_metadata%'
+    LIMIT 1
+),
+split_lines AS (
+    SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
+),
+header_discovery AS (
+    SELECT list_indexof(list_transform(str_split(line, ','), x -> TRIM(x)), 'file_name') as fn_index
+    FROM split_lines LIMIT 1
+),
+expected_files AS (
+    SELECT DISTINCT 
+        -- Extract name, remove quotes, append .csv if missing
+        CASE 
+            WHEN TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) LIKE '%.csv' 
+            THEN TRIM(REPLACE(str_split(line, ',')[fn_index], '"', ''))
+            ELSE TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) || '.csv'
+        END as target_file
+    FROM split_lines, header_discovery
+    WHERE fn_index > 0 
+      AND line NOT LIKE '%file_name%' 
+      AND length(TRIM(line)) > 10
+)
+SELECT 
+    6,
+    'Meal Data Files Existence: ' || e.target_file,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
+        ELSE 'FAIL'
+    END,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
+        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.session_vars)
+        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.session_vars) 
+    END
+FROM expected_files e
+WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3,4,5) AND status = 'FAIL');
+
+---------------------------------------------------------------------
+-- Meal file content valdiation 
+---------------------------------------------------------------------
+INSERT INTO base.diagnostics (check_id, check_name, status, details)
+WITH raw_data AS (
+    SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
+    FROM base.stage_files WHERE file_basename LIKE 'meal_file_metadata%' LIMIT 1
+),
+split_lines AS (
+    SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
+),
+header_discovery AS (
+    SELECT list_indexof(list_transform(str_split(line, ','), x -> TRIM(LOWER(x))), 'file_name') as fn_index
+    FROM split_lines LIMIT 1
+),
+child_files AS (
+    SELECT DISTINCT 
+        -- Extract, lowercase, and normalize hyphens to underscores for the search
+        REPLACE(LOWER(TRIM(REPLACE(str_split(line, ',')[fn_index], '"', ''))), '-', '_') as search_key,
+        -- Keep the original name just for the report label
+        TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) as original_name
+    FROM split_lines, header_discovery
+    WHERE fn_index > 0 AND line NOT LIKE '%file_name%' AND length(TRIM(line)) > 10
+),
+content_eval AS (
+    SELECT 
+        c.original_name,
+        s.file_basename,
+        -- Use a more resilient data check: check if a second line exists
+        (len(str_split(REPLACE(CAST(s.full_content AS TEXT), '\x0A', E'\n'), E'\n')) > 1) as has_data
+    FROM child_files c
+    JOIN base.stage_files s ON (
+        -- Match by lowercasing both and replacing hyphens on both sides
+        REPLACE(REPLACE(LOWER(s.file_basename), '.csv', ''), '-', '_') = c.search_key
+    )
+)
+SELECT 
+    7,
+    'Meal Data Integrity: ' || original_name,
+    CASE WHEN has_data THEN 'PASS' ELSE 'FAIL' END,
+    CASE 
+        WHEN has_data THEN 'Data rows detected for ' || original_name
+        ELSE 'File ' || original_name || ' (matched as ' || file_basename || ') is empty or missing rows.'
+    END
+FROM content_eval
+WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status = 'FAIL')
+  AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
+
+
+
+---------------------------------------------------------------------
+-- FITNESS DATA VALIDATION (Existence)
+---------------------------------------------------------------------
+INSERT INTO base.diagnostics (check_id, check_name, status, details)
+WITH raw_data AS (
+    -- Convert hex \x0A to standard newlines and clean Windows \r
+    SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
+    FROM base.stage_files 
+    WHERE file_basename LIKE 'fitness_file_metadata%'
+    LIMIT 1
+),
+split_lines AS (
+    SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
+),
+header_discovery AS (
+    SELECT list_indexof(list_transform(str_split(line, ','), x -> TRIM(x)), 'file_name') as fn_index
+    FROM split_lines LIMIT 1
+),
+expected_files AS (
+    SELECT DISTINCT 
+        -- Extract name, remove quotes, append .csv if missing
+        CASE 
+            WHEN TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) LIKE '%.csv' 
+            THEN TRIM(REPLACE(str_split(line, ',')[fn_index], '"', ''))
+            ELSE TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) || '.csv'
+        END as target_file
+    FROM split_lines, header_discovery
+    WHERE fn_index > 0 
+      AND line NOT LIKE '%file_name%' 
+      AND length(TRIM(line)) > 10
+)
+SELECT 
+    8,
+    'Fitness Data Files Existence: ' || e.target_file,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
+        ELSE 'FAIL'
+    END,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
+        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.session_vars)
+        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.session_vars) 
+    END
+FROM expected_files e
+WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3,4,5,6,7) AND status = 'FAIL');
+
+---------------------------------------------------------------------
+-- Fitness file content valdiation 
+---------------------------------------------------------------------
+INSERT INTO base.diagnostics (check_id, check_name, status, details)
+WITH raw_data AS (
+    SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
+    FROM base.stage_files WHERE file_basename LIKE 'fitness_file_metadata%' LIMIT 1
+),
+split_lines AS (
+    SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
+),
+header_discovery AS (
+    SELECT list_indexof(list_transform(str_split(line, ','), x -> TRIM(LOWER(x))), 'file_name') as fn_index
+    FROM split_lines LIMIT 1
+),
+child_files AS (
+    SELECT DISTINCT 
+        -- Extract, lowercase, and normalize hyphens to underscores for the search
+        REPLACE(LOWER(TRIM(REPLACE(str_split(line, ',')[fn_index], '"', ''))), '-', '_') as search_key,
+        -- Keep the original name just for the report label
+        TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) as original_name
+    FROM split_lines, header_discovery
+    WHERE fn_index > 0 AND line NOT LIKE '%file_name%' AND length(TRIM(line)) > 10
+),
+content_eval AS (
+    SELECT 
+        c.original_name,
+        s.file_basename,
+        -- Use a more resilient data check: check if a second line exists
+        (len(str_split(REPLACE(CAST(s.full_content AS TEXT), '\x0A', E'\n'), E'\n')) > 1) as has_data
+    FROM child_files c
+    JOIN base.stage_files s ON (
+        -- Match by lowercasing both and replacing hyphens on both sides
+        REPLACE(REPLACE(LOWER(s.file_basename), '.csv', ''), '-', '_') = c.search_key
+    )
+)
+SELECT 
+    9,
+    'Fitness Data Integrity: ' || original_name,
+    CASE WHEN has_data THEN 'PASS' ELSE 'FAIL' END,
+    CASE 
+        WHEN has_data THEN 'Data rows detected for ' || original_name
+        ELSE 'File ' || original_name || ' (matched as ' || file_basename || ') is empty or missing rows.'
+    END
+FROM content_eval
+WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status = 'FAIL')
+  AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3,4,5,6,7) AND status = 'FAIL');
+
+---------------------------------------------------------------------
+-- FINAL BUNDLE (JSON)
 ---------------------------------------------------------------------
 INSERT INTO base.validation_reports (folder_name, tenant_id, tenant_name, overall_status, report_json)
 SELECT 
