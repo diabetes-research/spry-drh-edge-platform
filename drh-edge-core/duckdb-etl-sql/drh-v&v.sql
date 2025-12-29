@@ -164,8 +164,8 @@ SELECT * FROM (
 ---------------------------------------
 -- GLOBAL VARIABLE: Capture Parent Folder
 ---------------------------------------
-DROP TABLE IF EXISTS base.temp_session_vars;
-CREATE TABLE base.temp_session_vars AS
+DROP TABLE IF EXISTS base.session_vars;
+CREATE TABLE base.session_vars AS
 WITH path_parsing AS (
     SELECT 
         file_path_rel_parent,
@@ -268,81 +268,103 @@ SELECT
     CASE WHEN contains(string_agg(col_status, ','), 'MISSING') THEN 'FAIL' ELSE 'PASS' END,
     string_agg(column_name || ': ' || col_status, ' | ')
 FROM header_eval
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2) AND status = 'FAIL')
+WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL')
 GROUP BY file_basename;
 
 ---------------------------------------------------------------------
--- STEP 4: CGM FILE EXISTENCE (Cross-reference Metadata with Resources)
+-- STEP 4: CGM FILE EXISTENCE (Cross-referencing Metadata Content)
 ---------------------------------------------------------------------
 INSERT INTO base.diagnostics (check_id, check_name, status, details)
-WITH raw_meta AS (
-    SELECT CAST(full_content AS TEXT) as csv_text
+WITH raw_data AS (
+    -- Convert hex \x0A to standard newlines and clean Windows \r
+    SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
     FROM base.stage_files 
     WHERE file_basename LIKE 'cgm_file_metadata%'
     LIMIT 1
 ),
+split_lines AS (
+    SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
+),
+header_discovery AS (
+    SELECT list_indexof(list_transform(str_split(line, ','), x -> TRIM(x)), 'file_name') as fn_index
+    FROM split_lines LIMIT 1
+),
 expected_files AS (
-    -- Fixed: Use a CROSS JOIN to pass the string into read_csv_auto
-    SELECT DISTINCT TRIM(f.file_name) as target_file
-    FROM raw_meta rm, 
-         read_csv_auto(rm.csv_text) f
-    WHERE rm.csv_text IS NOT NULL
+    SELECT DISTINCT 
+        -- Extract name, remove quotes, append .csv if missing
+        CASE 
+            WHEN TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) LIKE '%.csv' 
+            THEN TRIM(REPLACE(str_split(line, ',')[fn_index], '"', ''))
+            ELSE TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) || '.csv'
+        END as target_file
+    FROM split_lines, header_discovery
+    WHERE fn_index > 0 
+      AND line NOT LIKE '%file_name%' 
+      AND length(TRIM(line)) > 10
 )
 SELECT 
     4,
-    'CGM Metadata File Existence Check: ' || e.target_file,
+    'CGM Tracing Files Existence: ' || e.target_file,
     CASE 
         WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
         ELSE 'FAIL'
     END,
     CASE 
         WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
-        THEN 'File ' || e.target_file || ' found in uniform_resource.'
-        ELSE 'File ' || e.target_file || ' is MISSING based on cgm_file_metadata.'
+        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.session_vars)
+        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.session_vars) 
     END
 FROM expected_files e
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2) AND status = 'FAIL');
+WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
 
 ---------------------------------------------------------------------
--- STEP 5: CGM COLUMN & DATA VALIDATION (Deep Content Check)
+-- STEP 5: CGM COLUMN & DATA VALIDATION (Robust Join Fix)
 ---------------------------------------------------------------------
 INSERT INTO base.diagnostics (check_id, check_name, status, details)
-WITH raw_meta AS (
-    SELECT CAST(full_content AS TEXT) as csv_text
-    FROM base.stage_files 
-    WHERE file_basename LIKE 'cgm_file_metadata%'
-    LIMIT 1
+WITH raw_data AS (
+    SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
+    FROM base.stage_files WHERE file_basename LIKE 'cgm_file_metadata%' LIMIT 1
+),
+split_lines AS (
+    SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
+),
+header_discovery AS (
+    SELECT list_indexof(list_transform(str_split(line, ','), x -> TRIM(LOWER(x))), 'file_name') as fn_index
+    FROM split_lines LIMIT 1
 ),
 child_files AS (
-    -- Fixed: Use CROSS JOIN to avoid Binder Error subquery
-    SELECT DISTINCT TRIM(f.file_name) as target_file
-    FROM raw_meta rm, 
-         read_csv_auto(rm.csv_text) f
-    WHERE target_file IN (SELECT file_basename FROM base.stage_files)
+    SELECT DISTINCT 
+        -- Extract, lowercase, and normalize hyphens to underscores for the search
+        REPLACE(LOWER(TRIM(REPLACE(str_split(line, ',')[fn_index], '"', ''))), '-', '_') as search_key,
+        -- Keep the original name just for the report label
+        TRIM(REPLACE(str_split(line, ',')[fn_index], '"', '')) as original_name
+    FROM split_lines, header_discovery
+    WHERE fn_index > 0 AND line NOT LIKE '%file_name%' AND length(TRIM(line)) > 10
 ),
 content_eval AS (
     SELECT 
-        c.target_file,
-        s.full_content,
-        s.actual_header_row,
-        -- Check if file is more than just a header
-        (contains(s.full_content, E'\n') AND length(TRIM(s.full_content)) > length(TRIM(s.actual_header_row))) as has_data
+        c.original_name,
+        s.file_basename,
+        -- Use a more resilient data check: check if a second line exists
+        (len(str_split(REPLACE(CAST(s.full_content AS TEXT), '\x0A', E'\n'), E'\n')) > 1) as has_data
     FROM child_files c
-    JOIN base.stage_files s ON s.file_basename = c.target_file
+    JOIN base.stage_files s ON (
+        -- Match by lowercasing both and replacing hyphens on both sides
+        REPLACE(REPLACE(LOWER(s.file_basename), '.csv', ''), '-', '_') = c.search_key
+    )
 )
 SELECT 
     5,
-    'CGM Tracing Data Integrity Check: ' || target_file,
+    'CGM Data Integrity: ' || original_name,
     CASE WHEN has_data THEN 'PASS' ELSE 'FAIL' END,
     CASE 
-        WHEN has_data THEN 'Data rows detected beyond header for ' || target_file
-        ELSE 'File ' || target_file || ' contains ONLY a header or is empty.'
+        WHEN has_data THEN 'Data rows detected for ' || original_name
+        ELSE 'File ' || original_name || ' (matched as ' || file_basename || ') is empty or missing rows.'
     END
 FROM content_eval
--- WATERFALL GATE: Only run if Step 4 succeeded for ALL files
 WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status = 'FAIL')
-  AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2) AND status = 'FAIL');
-
+  AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
+  
 -- ---------------------------------------------------------------------
 -- -- STEP 5: MEAL DATA TRAVERSAL (Check Tracing BLOBs)
 -- ---------------------------------------------------------------------
@@ -383,12 +405,12 @@ WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status =
 ---------------------------------------------------------------------
 INSERT INTO base.validation_reports (folder_name, tenant_id, tenant_name, overall_status, report_json)
 SELECT 
-    (SELECT global_folder_name from base.temp_session_vars limit 1),
+    (SELECT global_folder_name from base.session_vars limit 1),
     p.party_id, p.party_name,
     (SELECT CASE WHEN EXISTS (SELECT 1 FROM base.diagnostics WHERE status = 'FAIL') THEN 'FAIL' ELSE 'PASS' END),
     json_object(
         'timestamp', CURRENT_TIMESTAMP,
-        'folderName', (SELECT global_folder_name from base.temp_session_vars limit 1),
+        'folderName', (SELECT global_folder_name from base.session_vars limit 1),
         'tenantId', p.party_id,
         'tenantName', p.party_name,
         'overallStatus', (SELECT CASE WHEN EXISTS (SELECT 1 FROM base.diagnostics WHERE status = 'FAIL') THEN 'FAIL' ELSE 'PASS' END),
