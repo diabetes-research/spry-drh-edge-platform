@@ -13,8 +13,7 @@ load sqlite;
 -- 0. Ensure the SQLite DB is attached (if not already done in your session)
 ATTACH 'resource-surveillance.sqlite.db' AS base (TYPE SQLITE);
 
-CREATE TABLE IF NOT EXISTS base.validation_reports (
-    id INTEGER PRIMARY KEY , 
+CREATE TABLE IF NOT EXISTS base.validation_reports (    
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
     folder_name TEXT,
     tenant_id TEXT,
