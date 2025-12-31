@@ -202,65 +202,177 @@ ${ctx.breadcrumbs()}
 
 ```
 
+```contribute sqlpage_files --base sqlpage/templates --mode package
+**/* templates --mime text/plain
+```
+
 ## DRH EDGE  Home Page
 
 Index page which automatically generates links to all `/drh` pages.
 
 ```sql index.sql { route: { caption: "DRH Edge UI Home" } }
+-- @route.description "Welcome to Diabetes Research Hub Edge UI."
+
+-- 1. HERO SECTION: The Product "Hook"
+SELECT 
+    'hero' as component,
+    'Diabetes Research Hub' as title,
+    'The Edge UI for Centralized CGM Data Management' as subtitle,
+    'The DRH platform empowers researchers to harmonize, validate, and analyze continuous glucose monitor data with clinical precision.' as description,
+    'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=1000&q=80' as image,
+    'teal' as color;
+
+-- 2. CORE UTILITY SECTION (Horizontal Product Features)
+SELECT 'card' as component, 3 as columns;
+
+SELECT 
+    'Study Management' as title,
+    'Centralized collection of various research studies.' as description,
+    'microscope' as icon,
+    'azure' as color;
+
+SELECT 
+    'Data Diagnostics' as title,
+    'Real-time validation against clinical schemas.' as description,
+    'shield-check' as icon,
+    'teal' as color;
+
+SELECT 
+    'Orchestration' as title,
+    'Seamless transformation of CSV to research-ready data.' as description,
+    'adjustments' as icon,
+    'indigo' as color;
+
+-- 3. STATUS DISPLAY (The White/Green Border Design)
+SELECT 'html' AS component;
+SELECT 
+    '<div style="max-width: 800px; margin: 2rem auto; background-color: white; border: 1px solid #e9ecef; border-left: 6px solid ' || 
+        CASE overall_status WHEN 'PASS' THEN '#2fb344' WHEN 'WARNING' THEN '#f76707' ELSE '#d63939' END || 
+    '; padding: 2rem; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">' ||
+        '<div>' ||
+            '<span style="display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; margin-bottom: 10px; background: #f1f3f5; color: #495057; text-transform: uppercase;">System Health</span>' ||
+            '<div style="font-size: 1.25rem; font-weight: 600; color: #1d273b;">' ||
+                CASE overall_status
+                    WHEN 'PASS'    THEN 'Validation Successful'
+                    WHEN 'WARNING' THEN 'Attention Required'
+                    ELSE 'Action Needed'
+                END || 
+            '</div>' ||
+            '<div style="color: #64748b; margin-top: 4px;">' ||
+                CASE overall_status
+                    WHEN 'PASS'    THEN 'Your data is clean and ready for transformation.'
+                    WHEN 'WARNING' THEN 'Data passed but found minor schema inconsistencies.'
+                    ELSE 'The current data folder failed mandatory structural checks.'
+                END || 
+            '</div>' ||
+        '</div>' ||
+        '<div style="font-size: 2.5rem;">' ||
+             CASE overall_status WHEN 'PASS' THEN '🛡️' WHEN 'WARNING' THEN '⚠️' ELSE '🚨' END || 
+        '</div>' ||
+    '</div>' AS html
+FROM validation_reports ORDER BY timestamp DESC LIMIT 1;
+
+-- 4. ACTION CENTER (Product-style Buttons)
+SELECT 'button' AS component, 'center' AS justify;
+
+-- Primary Action (If Success)
+SELECT 
+    'Begin Data Transformation' AS title,
+    'execute_transform.sql' AS link,
+    'player-play-filled' AS icon,
+    'teal' AS color,
+    'outline' AS variant
+FROM validation_reports WHERE overall_status = 'PASS' ORDER BY timestamp DESC LIMIT 1;
+
+-- Detailed Report (Always available, but looks like a "Secondary" product action)
+SELECT 
+    'Explore Diagnostics' AS title,
+    '/drh/diagnostics-report.sql' AS link,
+    'database-search' AS icon,
+    'azure' AS color;
+```
+
+## Diagnostics Report
+
+```sql drh/diagnostics-report.sql { route: { caption: "Diagnostics Report" } }
+-- @route.description "Deatiled diagnostic Report."
+
+SELECT 'html' AS component;
 
 WITH latest_report AS (
-    SELECT report_json ,overall_status,tenant_name,folder_name
+    SELECT report_json 
     FROM validation_reports 
     ORDER BY timestamp DESC 
     LIMIT 1
+),
+counts AS (
+    SELECT 
+        SUM(CASE WHEN json_extract(value, '$.status') = 'PASS' THEN 1 ELSE 0 END) as pass_count,
+        SUM(CASE WHEN json_extract(value, '$.status') = 'WARNING' THEN 1 ELSE 0 END) as warn_count,
+        SUM(CASE WHEN json_extract(value, '$.status') = 'FAIL' THEN 1 ELSE 0 END) as fail_count
+    FROM latest_report, json_each(latest_report.report_json, '$.results')
 )
 SELECT 
-    'variables' AS component,
-    overall_status AS status,
-    folder_name AS folder,
-    tenant_name AS tenant,
-    (SELECT count(*) FROM diagnostics WHERE status = 'FAIL') AS total_errors
-FROM latest_report;
+    -- Change: justify-content: space-evenly and max-width: 100%
+    '<div style="display: flex; justify-content: space-evenly; align-items: center; padding: 15px; background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border-radius: 16px; border: 1px solid rgba(233, 236, 239, 0.6); box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin: 20px 0; width: 100%; max-width: 100%;">' ||
+        
+        -- Passed Pill (Compact)
+        '<div style="flex: 0 1 180px; background: #f0fdf4; color: #166534; padding: 8px 12px; border-radius: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #dcfce7;">' ||
+            '<span style="height: 8px; width: 8px; background-color: #22c55e; border-radius: 50%; box-shadow: 0 0 6px #22c55e;"></span>' || 
+            '<span style="font-size: 1rem;">' || pass_count || '</span> <span style="font-size: 0.8rem; opacity: 0.8;">Passed</span>' ||
+        '</div>' ||
+        
+        -- Warning Pill (Compact)
+        '<div style="flex: 0 1 180px; background: #ecfeff; color: #0e7490; padding: 8px 12px; border-radius: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #cffafe;">' ||
+            '<span style="height: 8px; width: 8px; background-color: #06b6d4; border-radius: 50%; box-shadow: 0 0 6px #06b6d4;"></span>' || 
+            '<span style="font-size: 1rem;">' || warn_count || '</span> <span style="font-size: 0.8rem; opacity: 0.8;">Warnings</span>' ||
+        '</div>' ||
+        
+        -- Critical Pill (Compact)
+        '<div style="flex: 0 1 180px; background: #fff1f2; color: #9f1239; padding: 8px 12px; border-radius: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #ffe4e6;">' ||
+            '<span style="height: 8px; width: 8px; background-color: #f43f5e; border-radius: 50%; box-shadow: 0 0 6px #f43f5e;"></span>' || 
+            '<span style="font-size: 1rem;">' || fail_count || '</span> <span style="font-size: 0.8rem; opacity: 0.8;">Critical</span>' ||
+        '</div>' ||
+        
+    '</div>' AS html
+FROM counts;
 
----
--- 2. HERO BRANDING (No Image - Clean Layout)
----
-SELECT 'hero' AS component,
-      'DRH Edge: ' || $tenant AS title,
-      'Source Folder: ' || $folder AS subtitle;
+-- 3. THE INSPECTION LOG
+-- We use a divider to separate the summary from the granular data
+SELECT 'divider' AS component, 'Granular Validation Logs' AS contents;
 
----
--- 3. OVERALL HEALTH ALERT
----
-SELECT 'alert' AS component,
-    CASE WHEN $status = 'PASS' THEN 'green' ELSE 'red' END AS color,
-    CASE WHEN $status = 'PASS' THEN 'check' ELSE 'alert-circle' END AS icon,
-    'System Health: ' || $status AS title,
-    CASE WHEN $status = 'PASS' 
-         THEN 'All checks passed. Data orchestration is unlocked and ready.' 
-         ELSE 'Found ' || COALESCE($total_errors, 0) || ' critical issues. Orchestration is locked.' 
-    END AS description;
+SELECT 
+    'list' AS component,
+    'Detailed Diagnostics' AS title;
 
--- 6. SECONDARY LOGS (Always available)
-SELECT 'card' AS component, 'System Exploration' AS title, 2 AS columns;
+SELECT     
+    -- Using the soothing palette
+    CASE json_extract(j.value, '$.status')
+        WHEN 'FAIL' THEN 'pink'
+        WHEN 'WARNING' THEN 'cyan'
+        ELSE 'teal' 
+    END AS color,    
+    -- Icon Logic
+    CASE         
+        WHEN json_extract(j.value, '$.check') LIKE 'Folder%' THEN 'folder'
+        WHEN json_extract(j.value, '$.check') LIKE 'File Format & Mandatory Files Existence' THEN 'folder-check'
+        WHEN json_extract(j.value, '$.check') LIKE '%Files Existence%' THEN 'file-check'
+        WHEN json_extract(j.value, '$.check') LIKE 'File Schema Check%' THEN 'file-stack'        
+        WHEN json_extract(j.value, '$.check') LIKE '%Data Integrity%' THEN 'brand-databricks'
+        ELSE 'info-circle'
+    END AS icon,    
+    json_extract(j.value, '$.check') AS title,    
+    IFNULL(json_extract(j.value, '$.details'), 'No details provided.') AS description,
+    -- This creates a small "tag" effect on the right side
+    json_extract(j.value, '$.status') AS link_text
+FROM 
+    (SELECT report_json FROM validation_reports ORDER BY timestamp DESC LIMIT 1) AS t,
+    json_each(t.report_json, '$.results') AS j
+ORDER BY 
+    CASE json_extract(j.value, '$.status')
+        WHEN 'FAIL' THEN 1 
+        WHEN 'WARNING' THEN 2 
+        ELSE 3 
+    END;
 
-SELECT 'Ingestion Log' AS title, '/drh/ingestion-log.sql' AS link, 
-       'View raw file conversion status' AS description, 'book' AS icon;
-
-SELECT 'Verification Log' AS title, '/drh/verification-validation-log.sql' AS link, 
-       'Content-level data issues' AS description, 'list-check' AS icon;
-```
-
-## orchestration page
-
-```sql orchestration.sql { route: { caption: "Surveilr orchestration" } }
--- Show a spinner/hero while the CLI runs
-SELECT 'hero' AS component, 'Processing' AS title, 'Running surveilr orchestrate transform-csv...' AS subtitle;
-
--- Execute the command
-SELECT 'shell' AS component, 'exec' AS command, 
-       'surveilr' AS argument, 'orchestrate' AS argument, 'transform-csv' AS argument;
-
--- Redirect back to index with a success toast
-SELECT 'redirect' AS component, 'index.sql?message=Transformation Complete&type=success' AS link;
 ```
