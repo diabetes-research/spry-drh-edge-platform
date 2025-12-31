@@ -122,6 +122,9 @@ tar -xzf surveilr_3.13.0_x86_64-unknown-linux-gnu.tar.gz
 
 # Install it by moving the executable to a directory in your PATH
 sudo mv surveilr /usr/local/bin/
+
+# if an older version exists ,uprade to latest version
+sudo surveilr upgrade
 ```
 
 ## Execution Directory

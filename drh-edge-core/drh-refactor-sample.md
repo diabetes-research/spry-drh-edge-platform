@@ -277,8 +277,8 @@ SELECT 'button' AS component, 'center' AS justify;
 
 -- Primary Action (If Success)
 SELECT 
-    'Begin Data Transformation' AS title,
-    'execute_transform.sql' AS link,
+    'Launch Data Orchestration' AS title,
+    'pipeline-monitor.sql' AS link,
     'player-play-filled' AS icon,
     'teal' AS color,
     'outline' AS variant
@@ -295,7 +295,7 @@ SELECT
 ## Diagnostics Report
 
 ```sql drh/diagnostics-report.sql { route: { caption: "Diagnostics Report" } }
--- @route.description "Deatiled diagnostic Report."
+-- @route.description "Detailed diagnostic Report."
 
 SELECT 'html' AS component;
 
@@ -375,4 +375,90 @@ ORDER BY
         ELSE 3 
     END;
 
+```
+
+## Execute Transform Page
+
+```sql drh/execute-transform.sql { route: { caption: "Transform Data" } }
+-- @route.description "Transform the Data."
+
+-- 1. Execute the shell command
+-- Note: Ensure the surveilr binary is in the system PATH
+SELECT 'shell' AS component,
+    'surveilr' AS command,
+    'orchestrate' AS arg,
+    'transform-csv' AS arg;
+
+-- 2. Redirect to the result page after completion
+-- We pass a parameter to indicate we just finished an orchestration
+SELECT 'redirect' AS component, 'transformation-result.sql?status=success' AS link;
+
+```
+
+## Pipleline Monitor
+
+```sql pipeline-monitor.sql { route: { caption: "Data Orchestration Pipeline" } }
+-- @route.description "Data Orchestration Pipeline."
+
+
+-- Get current progress from URL
+SET current_step = COALESCE(:step, '1');
+
+-- Progress Bar
+SELECT 'html' AS component;
+SELECT '<div style="width: 100%; background: #e2e8f0; height: 8px; border-radius: 10px; margin-bottom: 30px;">
+          <div style="width: ' || 
+            CASE :step 
+                WHEN '2' THEN '40%' WHEN '3' THEN '60%' 
+                WHEN '4' THEN '80%' WHEN '5' THEN '100%' 
+                ELSE '10%' END || 
+          '; background: #06b6d4; height: 8px; border-radius: 10px; transition: 0.5s;"></div>
+        </div>' AS html;
+
+-- Step-by-Step Execution List
+SELECT 'list' AS component, 'Pipeline Controls' AS title;
+
+-- STEP 1
+SELECT '1. Transform Data' AS title, 
+       CASE WHEN :step > 1 THEN 'Completed' ELSE 'Transform Research Data' END AS description,
+       CASE WHEN :step > 1 THEN 'check' ELSE 'player-play' END AS icon,
+       CASE WHEN :step > 1 THEN 'teal' ELSE 'azure' END AS color,
+       CASE WHEN :step IS NULL OR :step = '1' THEN 'op-transform.sql' END AS link;
+
+-- STEP 2 (Unlocked only if Step 1 is done)
+SELECT '2. Post Ingest Quality Validation' AS title, 
+       CASE WHEN :step > 2 THEN 'Completed' ELSE 'Verify data integrity' END AS description,
+       CASE WHEN :step > 2 THEN 'check' WHEN :step = '2' THEN 'player-play' ELSE 'lock' END AS icon,
+       CASE WHEN :step > 2 THEN 'teal' WHEN :step = '2' THEN 'azure' ELSE 'muted' END AS color,
+       CASE WHEN :step = '2' THEN 'op-validate.sql' END AS link;
+
+-- STEP 3
+SELECT '3. Data Anonymization' AS title, 
+       'Protect PHI' AS description,
+       CASE WHEN :step > 3 THEN 'check' WHEN :step = '3' THEN 'player-play' ELSE 'lock' END AS icon,
+       CASE WHEN :step > 3 THEN 'teal' WHEN :step = '3' THEN 'indigo' ELSE 'muted' END AS color,
+       CASE WHEN :step = '3' THEN 'op-anonymize.sql' END AS link;
+
+-- STEP 4
+SELECT '4. ETL Transformation' AS title, 
+       'Finalize research datasets' AS description,
+       CASE WHEN :step > 4 THEN 'check' WHEN :step = '4' THEN 'player-play' ELSE 'lock' END AS icon,
+       CASE WHEN :step > 4 THEN 'teal' WHEN :step = '4' THEN 'indigo' ELSE 'muted' END AS color,
+       CASE WHEN :step = '4' THEN 'op-execute-etl.sql' END AS link;
+```
+
+## Orchestration Pipeline Data Transformation
+
+```sql op-transform.sql{ route: { caption: "Data Transformation" } }
+-- @route.description "Data Transformation."
+
+SELECT 'shell' AS component, 'surveilr' AS command, 'orchestrate' AS arg, 'transform-csv' AS arg;
+SELECT 'redirect' AS component, 'pipeline-monitor.sql?step=2' AS link;
+```
+
+## Orchestration Pipeline Post Ingest Validation
+
+```sql op-validate.sql
+SELECT 'shell' AS component, 'surveilr' AS command, 'shell' AS arg, 'common-sql/drh-data-validation.sql' AS arg;
+SELECT 'redirect' AS component, 'pipeline-monitor.sql?step=2' AS link;
 ```
