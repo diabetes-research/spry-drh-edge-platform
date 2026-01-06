@@ -1,5 +1,0 @@
-{
-  "database_url": "sqlite://resource-surveillance.sqlite.db?mode=rwc",
-  "allow_exec": true,
-  "port": 9227
-}
