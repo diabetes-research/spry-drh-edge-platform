@@ -139,7 +139,9 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
         exit 1
     fi
     # 5. SQL DATA QUALITY VALIDATION (Post-Ingestion Check)
-    ${TOOL_CMD}" shell "${DATA_VALIDATION_SQL_URL}"   
+     echo "Running data validation from remote repository..."
+    "${TOOL_CMD}" shell "${DATA_VALIDATION_SQL_URL}"  
+     
     # Check SQL Validation success
     if [ $? -ne 0 ]; then
         echo "FAILURE: Post-Ingestion SQL Validation failed. Halting complex ETL........."
@@ -151,7 +153,7 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
         set -e
         "${TOOL_CMD}" shell "${ANONYMIZE_SQL_URL}"           
         "${TOOL_CMD}" shell --engine duckdb "${MASTER_ETL_SQL_URL}"
-       "${TOOL_CMD}" shell "${METRICS_SQL_URL}"               
+        "${TOOL_CMD}" shell "${METRICS_SQL_URL}"               
     )
     
     if [ $? -ne 0 ]; then
