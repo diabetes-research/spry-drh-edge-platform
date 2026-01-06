@@ -8,8 +8,7 @@ sqlpage-conf:
 
 # Diabetes Research Hub (DRH) SQLPage Application
 
-This script automates the conversion of raw diabetes research data (e.g.,
-CSV, Parquet, or a private data warehouse export) into a structured SQLite database.
+This script automates the conversion of raw diabetes research data (e.g.,CSV, Parquet, or a private data warehouse export) into a structured SQLite database.
 
 - Uses Spry to manage tasks and generate the SQLPage presentation layer.
 - surveilr tool performs csv files conversation and transformation to RSSD
