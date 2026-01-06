@@ -109,12 +109,20 @@ STUDY_DATA_PATH="${STUDY_DATA_PATH}"
 TENANT_ID="${TENANT_ID}"
 TENANT_NAME="${TENANT_NAME}"
 TOOL_CMD="surveilr"
+REMOTE_BASE_URL="https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/main/drh-edge-core"
+
+# Remote file URLs
+VALIDATION_SCRIPT_URL="${REMOTE_BASE_URL}/drh-pre-etl-validation.ts"
+DATA_VALIDATION_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-data-validation.sql"
+ANONYMIZE_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-anonymize-prepare.sql"
+MASTER_ETL_SQL_URL="${REMOTE_BASE_URL}/duckdb-etl-sql/drh-master-etl.sql"
+METRICS_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-metrics-pipeline.sql"
 # 2. Cleanup
 rm -f resource-surveillance.sqlite.db
 rm -f *.sql
 rm -rf dev-src.auto validation-reports
 # 3. CRITICAL PRE-VALIDATION GATE
-deno run -A drh-pre-etl-validation.ts "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
+deno run -A "${VALIDATION_SCRIPT_URL}" "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
 VALIDATION_EXIT_CODE=$?
 # Check the Deno script's explicit exit code
 if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
@@ -131,7 +139,7 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
         exit 1
     fi
     # 5. SQL DATA QUALITY VALIDATION (Post-Ingestion Check)
-    "${TOOL_CMD}" shell common-sql/drh-data-validation.sql    
+    ${TOOL_CMD}" shell "${DATA_VALIDATION_SQL_URL}"   
     # Check SQL Validation success
     if [ $? -ne 0 ]; then
         echo "FAILURE: Post-Ingestion SQL Validation failed. Halting complex ETL........."
@@ -141,9 +149,9 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
     # Run all complex ETL steps, halting immediately on any failure
     (
         set -e
-        "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql           
-        "${TOOL_CMD}" shell --engine duckdb duckdb-etl-sql/drh-master-etl.sql
-        "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql                
+        "${TOOL_CMD}" shell "${ANONYMIZE_SQL_URL}"           
+        "${TOOL_CMD}" shell --engine duckdb "${MASTER_ETL_SQL_URL}"
+       "${TOOL_CMD}" shell "${METRICS_SQL_URL}"               
     )
     
     if [ $? -ne 0 ]; then
