@@ -118,7 +118,7 @@ echo "Starting the pipeline.."
 
 
 # 3. CRITICAL PRE-VALIDATION GATE
-deno run -A $!{resolveRelPath("drh-pre-etl-validation.ts")} "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
+deno run -A ${resolveRelPath("drh-pre-etl-validation.ts")} "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
 VALIDATION_EXIT_CODE=$?
 if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then        
     # Using 'set -e' locally to ensure these chained steps halt immediately on failure
