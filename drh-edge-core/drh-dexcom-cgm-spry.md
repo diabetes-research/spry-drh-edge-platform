@@ -112,11 +112,11 @@ TOOL_CMD="surveilr"
 REMOTE_BASE_URL="https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/main/drh-edge-core"
 
 # Remote file URLs
-VALIDATION_SCRIPT_URL="$!{resolveRelPath('./drh-pre-etl-validation.ts')}"
-DATA_VALIDATION_SQL_URL="$!{resolveRelPath('./common-sql/drh-data-validation.sql')}"
-ANONYMIZE_SQL_URL="$!{resolveRelPath('./common-sql/drh-anonymize-prepare.sql)}"
-MASTER_ETL_SQL_URL="$!{resolveRelPath('./duckdb-etl-sql/drh-master-etl.sql)}"
-METRICS_SQL_URL="$!{resolveRelPath('./duckdb-etl-sql/drh-metrics-pipeline.sql)}"
+VALIDATION_SCRIPT_URL="${REMOTE_BASE_URL}/drh-pre-etl-validation.ts"
+DATA_VALIDATION_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-data-validation.sql"
+ANONYMIZE_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-anonymize-prepare.sql"
+MASTER_ETL_SQL_URL="${REMOTE_BASE_URL}/duckdb-etl-sql/drh-master-etl.sql"
+METRICS_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-metrics-pipeline.sql"
 # 2. Cleanup
 rm -f resource-surveillance.sqlite.db
 rm -f *.sql
