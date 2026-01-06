@@ -108,6 +108,7 @@ rm -f *.sql
 rm -rf dev-src.auto 
 "${TOOL_CMD}" ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}"
 "${TOOL_CMD}" shell --engine duckdb duckdb-etl-sql/drh-preflight-validation.sql
+"${TOOL_CMD}" shell common-sql/drh-pipeline.sql
 spry sp spc --package --conf sqlpage/sqlpage.json -m drh-refactor-sample.md | sqlite3 resource-surveillance.sqlite.db  
 ```
 
@@ -270,7 +271,7 @@ SELECT
              CASE overall_status WHEN 'PASS' THEN '🛡️' WHEN 'WARNING' THEN '⚠️' ELSE '🚨' END || 
         '</div>' ||
     '</div>' AS html
-FROM validation_reports ORDER BY timestamp DESC LIMIT 1;
+FROM drh_validation_reports ORDER BY timestamp DESC LIMIT 1;
 
 -- 4. ACTION CENTER (Product-style Buttons)
 SELECT 'button' AS component, 'center' AS justify;
@@ -278,11 +279,11 @@ SELECT 'button' AS component, 'center' AS justify;
 -- Primary Action (If Success)
 SELECT 
     'Launch Data Orchestration' AS title,
-    'pipeline-monitor.sql' AS link,
+    '/drh/pipeline-monitor.sql' AS link,
     'player-play-filled' AS icon,
     'teal' AS color,
     'outline' AS variant
-FROM validation_reports WHERE overall_status = 'PASS' ORDER BY timestamp DESC LIMIT 1;
+FROM drh_validation_reports WHERE overall_status = 'PASS' ORDER BY timestamp DESC LIMIT 1;
 
 -- Detailed Report (Always available, but looks like a "Secondary" product action)
 SELECT 
@@ -301,7 +302,7 @@ SELECT 'html' AS component;
 
 WITH latest_report AS (
     SELECT report_json 
-    FROM validation_reports 
+    FROM drh_validation_reports 
     ORDER BY timestamp DESC 
     LIMIT 1
 ),
@@ -366,7 +367,7 @@ SELECT
     -- This creates a small "tag" effect on the right side
     json_extract(j.value, '$.status') AS link_text
 FROM 
-    (SELECT report_json FROM validation_reports ORDER BY timestamp DESC LIMIT 1) AS t,
+    (SELECT report_json FROM drh_validation_reports ORDER BY timestamp DESC LIMIT 1) AS t,
     json_each(t.report_json, '$.results') AS j
 ORDER BY 
     CASE json_extract(j.value, '$.status')
@@ -377,88 +378,210 @@ ORDER BY
 
 ```
 
-## Execute Transform Page
-
-```sql drh/execute-transform.sql { route: { caption: "Transform Data" } }
--- @route.description "Transform the Data."
-
--- 1. Execute the shell command
--- Note: Ensure the surveilr binary is in the system PATH
-SELECT 'shell' AS component,
-    'surveilr' AS command,
-    'orchestrate' AS arg,
-    'transform-csv' AS arg;
-
--- 2. Redirect to the result page after completion
--- We pass a parameter to indicate we just finished an orchestration
-SELECT 'redirect' AS component, 'transformation-result.sql?status=success' AS link;
-
-```
-
 ## Pipleline Monitor
 
-```sql pipeline-monitor.sql { route: { caption: "Data Orchestration Pipeline" } }
--- @route.description "Data Orchestration Pipeline."
+```sql drh/pipeline-monitor.sql { route: { caption: "Data Orchestration Pipeline" } }
+
+-- 1. Check if everything is succeeded
+SET all_done = (SELECT COUNT(*) FROM drh_pipeline_steps WHERE status != 'succeeded');
 
 
--- Get current progress from URL
-SET current_step = COALESCE(:step, '1');
+-- 3. Hero Section (Professional Teal Theme)
+SELECT 'hero' AS component, 
+    'Data Orchestration' AS title, 
+    'Securely processing and validating medical research data.' AS description,
+    'teal' AS color;
 
--- Progress Bar
-SELECT 'html' AS component;
-SELECT '<div style="width: 100%; background: #e2e8f0; height: 8px; border-radius: 10px; margin-bottom: 30px;">
-          <div style="width: ' || 
-            CASE :step 
-                WHEN '2' THEN '40%' WHEN '3' THEN '60%' 
-                WHEN '4' THEN '80%' WHEN '5' THEN '100%' 
-                ELSE '10%' END || 
-          '; background: #06b6d4; height: 8px; border-radius: 10px; transition: 0.5s;"></div>
-        </div>' AS html;
+-- 4. Visual Progress Bar (Using Indigo for the "Ready" state)
+SELECT 'steps' AS component, TRUE AS counter;
+SELECT 
+    name AS title,
+    CASE status 
+        WHEN 'succeeded' THEN 'Succeeded' 
+        WHEN 'failed' THEN 'Failed'
+        WHEN 'pending' THEN 'Waiting'
+        ELSE 'Processing...' 
+    END AS description,
+    CASE status 
+        WHEN 'succeeded' THEN 'greeen' 
+        WHEN 'failed' THEN 'red' 
+        WHEN 'pending' THEN 'teal' 
+        ELSE 'orange' 
+    END AS color,
+    status = 'succeeded' AS completed
+FROM drh_pipeline_steps 
+ORDER BY step;
 
--- Step-by-Step Execution List
-SELECT 'list' AS component, 'Pipeline Controls' AS title;
+-- 5. Detailed Status Cards
+SELECT 'card' AS component, 3 AS columns;
+SELECT 
+    name AS title,
+    'Pipeline status: ' || status AS description,
+    CASE status 
+        WHEN 'succeeded' THEN 'shield-check'   -- More "verified" look
+        WHEN 'failed' THEN 'alert-triangle'     -- High visibility error
+        WHEN 'pending' THEN 'hourglass-empty'   -- Waiting to start
+        ELSE 'microscope' 
+    END AS icon,
+    CASE status 
+        WHEN 'succeeded' THEN 'green' 
+        WHEN 'failed' THEN 'red' 
+        WHEN 'pending' THEN 'teal' 
+        ELSE 'orange' 
+    END AS color,
+    CASE 
+        WHEN completed_at IS NOT NULL THEN 'Completed at: ' || completed_at
+        WHEN started_at IS NOT NULL THEN 'Started at: ' || started_at 
+        ELSE 'Queue Position: ' || step 
+    END AS footer
+FROM drh_pipeline_steps;
 
--- STEP 1
-SELECT '1. Transform Data' AS title, 
-       CASE WHEN :step > 1 THEN 'Completed' ELSE 'Transform Research Data' END AS description,
-       CASE WHEN :step > 1 THEN 'check' ELSE 'player-play' END AS icon,
-       CASE WHEN :step > 1 THEN 'teal' ELSE 'azure' END AS color,
-       CASE WHEN :step IS NULL OR :step = '1' THEN 'op-transform.sql' END AS link;
+-- 6. Central Action Button
+SELECT 'divider' AS component;
 
--- STEP 2 (Unlocked only if Step 1 is done)
-SELECT '2. Post Ingest Quality Validation' AS title, 
-       CASE WHEN :step > 2 THEN 'Completed' ELSE 'Verify data integrity' END AS description,
-       CASE WHEN :step > 2 THEN 'check' WHEN :step = '2' THEN 'player-play' ELSE 'lock' END AS icon,
-       CASE WHEN :step > 2 THEN 'teal' WHEN :step = '2' THEN 'azure' ELSE 'muted' END AS color,
-       CASE WHEN :step = '2' THEN 'op-validate.sql' END AS link;
+SELECT 'button' AS component, 'center' AS justify;
+SELECT 
+    'Execute ' || name AS title,
+    '/drh/pipeline/trigger-step' || step || '.sql' AS link,
+    'bolt' AS icon,
+    'teal' AS color
+FROM drh_pipeline_steps 
+WHERE status = 'pending' 
+ORDER BY step LIMIT 1;
 
--- STEP 3
-SELECT '3. Data Anonymization' AS title, 
-       'Protect PHI' AS description,
-       CASE WHEN :step > 3 THEN 'check' WHEN :step = '3' THEN 'player-play' ELSE 'lock' END AS icon,
-       CASE WHEN :step > 3 THEN 'teal' WHEN :step = '3' THEN 'indigo' ELSE 'muted' END AS color,
-       CASE WHEN :step = '3' THEN 'op-anonymize.sql' END AS link;
-
--- STEP 4
-SELECT '4. ETL Transformation' AS title, 
-       'Finalize research datasets' AS description,
-       CASE WHEN :step > 4 THEN 'check' WHEN :step = '4' THEN 'player-play' ELSE 'lock' END AS icon,
-       CASE WHEN :step > 4 THEN 'teal' WHEN :step = '4' THEN 'indigo' ELSE 'muted' END AS color,
-       CASE WHEN :step = '4' THEN 'op-execute-etl.sql' END AS link;
+SELECT
+    'Proceed to Research Data Dashboard' AS title,
+    '/drh/post-pipeline-research-dashboard.sql' AS link,
+    'arrow-right' AS icon,
+    'green' AS color
+WHERE $all_done = 0;
 ```
 
-## Orchestration Pipeline Data Transformation
+## Pipeline Step
 
-```sql op-transform.sql{ route: { caption: "Data Transformation" } }
--- @route.description "Data Transformation."
+```sql drh/pipeline/trigger-step1.sql { route: { caption: "Data transformation pipeline" } }
+-- 1. Run the update and the shell command in a single 'hidden' step
+SET result = (
+  SELECT sqlpage.exec('surveilr', 'orchestrate', 'transform-csv')
+);
 
-SELECT 'shell' AS component, 'surveilr' AS command, 'orchestrate' AS arg, 'transform-csv' AS arg;
-SELECT 'redirect' AS component, 'pipeline-monitor.sql?step=2' AS link;
+-- 2. Update the status now that the command above is finished
+UPDATE drh_pipeline_steps 
+SET status = 'succeeded', started_at = datetime('now', 'localtime'),
+    completed_at = datetime('now', 'localtime') 
+WHERE step = 1;
+
+-- 3. NOW the redirect will work because it is the first 'component' sent
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
 ```
 
-## Orchestration Pipeline Post Ingest Validation
+```sql drh/pipeline/trigger-step2.sql { route: { caption: "Data Validation pipeline" } }
 
-```sql op-validate.sql
-SELECT 'shell' AS component, 'surveilr' AS command, 'shell' AS arg, 'common-sql/drh-data-validation.sql' AS arg;
-SELECT 'redirect' AS component, 'pipeline-monitor.sql?step=2' AS link;
+SET result = (
+  SELECT sqlpage.exec('surveilr', 'shell', 'common-sql/drh-data-validation.sql')
+);
+
+
+UPDATE drh_pipeline_steps 
+SET status = 'succeeded', 
+    started_at = CURRENT_TIMESTAMP,
+    completed_at = CURRENT_TIMESTAMP 
+WHERE step = 2;
+
+
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
+
+```
+
+```sql drh/pipeline/trigger-step3.sql { route: { caption: "Data Anonymization pipeline" } }
+SET result = (
+SELECT sqlpage.exec('surveilr', 'shell', 'common-sql/drh-anonymize-prepare.sql')
+);
+
+UPDATE drh_pipeline_steps 
+SET status = 'succeeded', 
+    started_at = CURRENT_TIMESTAMP,
+    completed_at = CURRENT_TIMESTAMP 
+WHERE step = 3;
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
+```
+
+```sql drh/pipeline/trigger-step4.sql { route: { caption: "Data ETL pipeline" } }
+SET result = (
+SELECT sqlpage.exec('surveilr', 'shell', '--engine', 'duckdb', 'duckdb-etl-sql/drh-master-etl.sql'))
+;
+UPDATE drh_pipeline_steps 
+SET status = 'succeeded', 
+    started_at = CURRENT_TIMESTAMP,
+    completed_at = CURRENT_TIMESTAMP 
+WHERE step = 4;
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
+```
+
+```sql drh/pipeline/trigger-step5.sql { route: { caption: "Data Metrics pipeline" } }
+SET result = (
+SELECT sqlpage.exec('surveilr', 'shell', 'common-sql/drh-metrics-pipeline.sql') 
+);
+UPDATE drh_pipeline_steps 
+SET status = 'succeeded', 
+    started_at = CURRENT_TIMESTAMP,
+    completed_at = CURRENT_TIMESTAMP 
+WHERE step = 5;
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
+```
+
+## Post Pipeline Research Dashboard
+
+```sql drh/post-pipeline-research-dashboard.sql{ route: { caption: "Research Data Hub Dashboard" } }
+-- 1. HEADER HERO
+SELECT 'hero' AS component, 
+    'Research Data Hub' AS title, 
+    'Orchestration complete. All datasets are now synchronized, de-identified, and ready for analysis.' AS description,
+    'teal' AS color;
+
+-- 2. KEY METRICS (Big Number component)
+-- This shows the user that the pipeline actually DID something
+SELECT 'big_number' AS component, 4 AS columns;
+SELECT 'Participants' AS title, (SELECT COUNT(*) FROM drh_participant) AS value, 'users' AS icon, 'teal' AS color;
+SELECT 'CGM Records' AS title, (SELECT COUNT(*) FROM combined_cgm_tracing_cached) AS value, 'chart-dots' AS icon, 'azure' AS color;
+SELECT 'Health Alerts' AS title, '0' AS value, 'shield-check' AS icon, 'green' AS color;
+
+-- 3. CORE RESEARCH FEATURES (Using 'card' but with 'teal' theme)
+SELECT 'card' AS component, 'Research Insights & Feature Sets' AS title, 3 AS columns;
+
+SELECT 'Participant Dashboard' AS title, '/drh/study-participant-dashboard.sql' AS link,
+       'Participant-specific metrics and master study details.' AS description,
+       'users' AS icon, 'teal' AS color;
+
+SELECT 'Combined CGM Tracing' AS title, '/drh/cgm-combined-data.sql' AS link,
+       'Aggregated glycemic patterns across the entire study.' AS description,
+       'chart-line' AS icon, 'teal' AS color;
+
+SELECT 'Combined Meal Data' AS title, '/drh/combined-meal-data.sql' AS link,
+       'Dietary intake logs and post-prandial timestamps.' AS description,
+       'apple' AS icon, 'teal' AS color;
+
+-- 4. SYSTEM LOGS (Using a 'list' component for a cleaner feel than cards)
+-- This separates "Data" from "Logs" visually
+SELECT 'list' AS component, 'Data Integrity & Diagnostics' AS title;
+
+SELECT 'Study Files Ingestion Log' AS title, '/drh/ingestion-log.sql' AS link,
+       'Accepted files and database conversion status.' AS description,
+       'database-import' AS icon, 'azure' AS color;
+
+SELECT 'Data Validation Log' AS title, '/drh/verification-validation-log.sql' AS link,
+       'Quality issues and corrective actions.' AS description,
+       'shield-check' AS icon, 'azure' AS color;
+
+SELECT 'PHI De-Identification Log' AS title, '/drh/deidentification-log.sql' AS link,
+       'Audit of PII masking results.' AS description,
+       'lock-check' AS icon, 'azure' AS color;
+
+-- 5. SUPPORTING METADATA (Grid of 4 for compact view)
+SELECT 'card' AS component, 'Supporting Metadata' AS title, 4 AS columns;
+
+SELECT 'Researchers' AS title, '/drh/researcher-related-data.sql' AS link, 'Institutions & Labs.' AS description, 'building-community' AS icon, 'gray' AS color;
+SELECT 'Study Sites' AS title, '/drh/study-related-data.sql' AS link, 'Site-specific details.' AS description, 'map-pin' AS icon, 'gray' AS color;
+SELECT 'Demographics' AS title, '/drh/participant-related-data.sql' AS link, 'Participant backgrounds.' AS description, 'user-circle' AS icon, 'gray' AS color;
+SELECT 'Publications' AS title, '/drh/author-pub-data.sql' AS link, 'Authors & Dissemination.' AS description, 'news' AS icon, 'gray' AS color;
 ```

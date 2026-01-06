@@ -13,7 +13,7 @@ load sqlite;
 -- 0. Ensure the SQLite DB is attached (if not already done in your session)
 ATTACH 'resource-surveillance.sqlite.db' AS base (TYPE SQLITE);
 
-CREATE TABLE IF NOT EXISTS base.validation_reports (    
+CREATE TABLE IF NOT EXISTS base.drh_validation_reports (    
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
     folder_name TEXT,
     tenant_id TEXT,
@@ -23,10 +23,10 @@ CREATE TABLE IF NOT EXISTS base.validation_reports (
 );
 
 -- 1. Drop existing staging table in the persistent SQLite store
-DROP TABLE IF EXISTS base.stage_files;
+DROP TABLE IF EXISTS base.drh_stage_files;
 
 -- 2. Recreate using DuckDB optimized string logic
-CREATE TABLE base.stage_files AS
+CREATE TABLE base.drh_stage_files AS
 SELECT 
     entry.file_basename,
     res.size_bytes,
@@ -44,8 +44,8 @@ JOIN base.uniform_resource res ON entry.uniform_resource_id = res.uniform_resour
 
 
 -- 1. DIAGNOSTICS TABLE
-DROP TABLE IF EXISTS base.diagnostics;
-CREATE TABLE base.diagnostics (check_id INTEGER, check_name TEXT, status TEXT, details TEXT);
+DROP TABLE IF EXISTS base.drh_diagnostics;
+CREATE TABLE base.drh_diagnostics (check_id INTEGER, check_name TEXT, status TEXT, details TEXT);
 
 
 DROP TABLE IF EXISTS base.schema_dna;
@@ -142,8 +142,8 @@ FROM (
 ---------------------------------------------------------------------
 -- 2a. DEFINE MANDATORY FILES
 ---------------------------------------------------------------------
-DROP TABLE IF EXISTS base.mandatory_files;
-CREATE TABLE base.mandatory_files AS 
+DROP TABLE IF EXISTS base.drh_mandatory_files;
+CREATE TABLE base.drh_mandatory_files AS 
 SELECT * FROM (
     VALUES 
         ('participant.csv'),
@@ -163,8 +163,8 @@ SELECT * FROM (
 ---------------------------------------
 -- GLOBAL VARIABLE: Capture Parent Folder
 ---------------------------------------
-DROP TABLE IF EXISTS base.session_vars;
-CREATE TABLE base.session_vars AS
+DROP TABLE IF EXISTS base.drh_session_vars;
+CREATE TABLE base.drh_session_vars AS
 WITH path_parsing AS (
     SELECT 
         file_path_rel_parent,
@@ -184,7 +184,7 @@ FROM path_parsing;
 ---------------------------------------------------------------------
 -- STEP 1: PARENT FOLDER DYNAMIC DEPTH
 ---------------------------------------------------------------------
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH path_parsing AS (
     -- Use the specific parent path column
     -- and handle both / and \ just in case
@@ -207,14 +207,14 @@ SELECT
     1,
     'Folder & Resource Check',
     CASE
-        WHEN (SELECT COUNT(*) FROM base.stage_files) > 0 THEN 'PASS'
+        WHEN (SELECT COUNT(*) FROM base.drh_stage_files) > 0 THEN 'PASS'
         ELSE 'FAIL'
     END,
     CASE
-        WHEN (SELECT COUNT(*) FROM base.stage_files) = 0
+        WHEN (SELECT COUNT(*) FROM base.drh_stage_files) = 0
             THEN 'Error: No files detected during ingestion. This may occur if the source folder name contains spaces or unsupported characters.'
         ELSE
-            'File ingestion successful. Detected ' || (SELECT COUNT(*) FROM base.stage_files) || ' files from folder: ' ||
+            'File ingestion successful. Detected ' || (SELECT COUNT(*) FROM base.drh_stage_files) || ' files from folder: ' ||
             (SELECT last_folder FROM folder_extraction)
     END;
 
@@ -222,17 +222,17 @@ SELECT
 ---------------------------------------------------------------------
 -- STEP 2: CSV FORMAT & MANDATORY FILE EXISTENCE
 ---------------------------------------------------------------------
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH format_check AS (
     SELECT 
-        (SELECT COUNT(*) FROM base.stage_files WHERE LOWER(file_extn) != 'csv') as non_csv_count,
-        (SELECT COUNT(*) FROM base.mandatory_files m 
-         LEFT JOIN base.stage_files s ON s.file_basename = m.file_basename
+        (SELECT COUNT(*) FROM base.drh_stage_files WHERE LOWER(file_extn) != 'csv') as non_csv_count,
+        (SELECT COUNT(*) FROM base.drh_mandatory_files m 
+         LEFT JOIN base.drh_stage_files s ON s.file_basename = m.file_basename
          WHERE s.file_basename IS NULL) as missing_mandatory_count
 )
 SELECT 2, 'File Format & Mandatory  Files Existence',
     CASE 
-        WHEN (SELECT status FROM base.diagnostics WHERE check_id = 1) = 'FAIL' THEN 'FAIL'
+        WHEN (SELECT status FROM base.drh_diagnostics WHERE check_id = 1) = 'FAIL' THEN 'FAIL'
         WHEN non_csv_count > 0 OR missing_mandatory_count > 0 THEN 'FAIL'
         ELSE 'PASS'
     END,
@@ -247,7 +247,7 @@ FROM format_check;
 -- STEP 3: HEADER VALIDATION (With Halt Logic)
 ---------------------------------------------------------------------
 
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH header_eval AS (
     SELECT 
         dna.file_basename,
@@ -258,7 +258,7 @@ WITH header_eval AS (
             ELSE 'MISSING_COL'
         END AS col_status
     FROM base.schema_dna dna
-    LEFT JOIN base.stage_files s ON s.file_basename LIKE dna.file_basename || '%'
+    LEFT JOIN base.drh_stage_files s ON s.file_basename LIKE dna.file_basename || '%'
     WHERE dna.is_mandatory = 1
 )
 SELECT 
@@ -267,17 +267,17 @@ SELECT
     CASE WHEN contains(string_agg(col_status, ','), 'MISSING') THEN 'FAIL' ELSE 'PASS' END,
     string_agg(column_name || ': ' || col_status, ' | ')
 FROM header_eval
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL')
+WHERE NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL')
 GROUP BY file_basename;
 
 ---------------------------------------------------------------------
 -- STEP 4: CGM FILE EXISTENCE (Cross-referencing Metadata Content)
 ---------------------------------------------------------------------
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH raw_data AS (
     -- Convert hex \x0A to standard newlines and clean Windows \r
     SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
-    FROM base.stage_files 
+    FROM base.drh_stage_files 
     WHERE file_basename LIKE 'cgm_file_metadata%'
     LIMIT 1
 ),
@@ -305,24 +305,24 @@ SELECT
     4,
     'CGM Tracing Files Existence: ' || e.target_file,
     CASE 
-        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
+        WHEN EXISTS (SELECT 1 FROM base.drh_stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
         ELSE 'FAIL'
     END,
     CASE 
-        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
-        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.session_vars)
-        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.session_vars) 
+        WHEN EXISTS (SELECT 1 FROM base.drh_stage_files s WHERE s.file_basename = e.target_file)
+        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.drh_session_vars)
+        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.drh_session_vars) 
     END
 FROM expected_files e
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
+WHERE NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
 
 ---------------------------------------------------------------------
 -- STEP 5: CGM COLUMN & DATA VALIDATION (Robust Join Fix)
 ---------------------------------------------------------------------
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH raw_data AS (
     SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
-    FROM base.stage_files WHERE file_basename LIKE 'cgm_file_metadata%' LIMIT 1
+    FROM base.drh_stage_files WHERE file_basename LIKE 'cgm_file_metadata%' LIMIT 1
 ),
 split_lines AS (
     SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
@@ -347,7 +347,7 @@ content_eval AS (
         -- Use a more resilient data check: check if a second line exists
         (len(str_split(REPLACE(CAST(s.full_content AS TEXT), '\x0A', E'\n'), E'\n')) > 1) as has_data
     FROM child_files c
-    JOIN base.stage_files s ON (
+    JOIN base.drh_stage_files s ON (
         -- Match by lowercasing both and replacing hyphens on both sides
         REPLACE(REPLACE(LOWER(s.file_basename), '.csv', ''), '-', '_') = c.search_key
     )
@@ -361,17 +361,17 @@ SELECT
         ELSE 'File ' || original_name || ' (matched as ' || file_basename || ') is empty or missing rows.'
     END
 FROM content_eval
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status = 'FAIL')
-  AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
+WHERE NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id = 4 AND status = 'FAIL')
+  AND NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
 
 ---------------------------------------------------------------------
 -- STEP 6: MEAL DATA VALIDATION (Existence
 ---------------------------------------------------------------------
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH raw_data AS (
     -- Convert hex \x0A to standard newlines and clean Windows \r
     SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
-    FROM base.stage_files 
+    FROM base.drh_stage_files 
     WHERE file_basename LIKE 'meal_file_metadata%'
     LIMIT 1
 ),
@@ -399,24 +399,24 @@ SELECT
     6,
     'Meal Data Files Existence: ' || e.target_file,
     CASE 
-        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
+        WHEN EXISTS (SELECT 1 FROM base.drh_stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
         ELSE 'FAIL'
     END,
     CASE 
-        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
-        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.session_vars)
-        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.session_vars) 
+        WHEN EXISTS (SELECT 1 FROM base.drh_stage_files s WHERE s.file_basename = e.target_file)
+        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.drh_session_vars)
+        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.drh_session_vars) 
     END
 FROM expected_files e
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3,4,5) AND status = 'FAIL');
+WHERE NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id IN (1,2,3,4,5) AND status = 'FAIL');
 
 ---------------------------------------------------------------------
 -- Meal file content valdiation 
 ---------------------------------------------------------------------
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH raw_data AS (
     SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
-    FROM base.stage_files WHERE file_basename LIKE 'meal_file_metadata%' LIMIT 1
+    FROM base.drh_stage_files WHERE file_basename LIKE 'meal_file_metadata%' LIMIT 1
 ),
 split_lines AS (
     SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
@@ -441,7 +441,7 @@ content_eval AS (
         -- Use a more resilient data check: check if a second line exists
         (len(str_split(REPLACE(CAST(s.full_content AS TEXT), '\x0A', E'\n'), E'\n')) > 1) as has_data
     FROM child_files c
-    JOIN base.stage_files s ON (
+    JOIN base.drh_stage_files s ON (
         -- Match by lowercasing both and replacing hyphens on both sides
         REPLACE(REPLACE(LOWER(s.file_basename), '.csv', ''), '-', '_') = c.search_key
     )
@@ -455,19 +455,19 @@ SELECT
         ELSE 'File ' || original_name || ' (matched as ' || file_basename || ') is empty or missing rows.'
     END
 FROM content_eval
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status = 'FAIL')
-  AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
+WHERE NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id = 4 AND status = 'FAIL')
+  AND NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id IN (1,2,3) AND status = 'FAIL');
 
 
 
 ---------------------------------------------------------------------
 -- FITNESS DATA VALIDATION (Existence)
 ---------------------------------------------------------------------
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH raw_data AS (
     -- Convert hex \x0A to standard newlines and clean Windows \r
     SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
-    FROM base.stage_files 
+    FROM base.drh_stage_files 
     WHERE file_basename LIKE 'fitness_file_metadata%'
     LIMIT 1
 ),
@@ -495,24 +495,24 @@ SELECT
     8,
     'Fitness Data Files Existence: ' || e.target_file,
     CASE 
-        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
+        WHEN EXISTS (SELECT 1 FROM base.drh_stage_files s WHERE s.file_basename = e.target_file) THEN 'PASS'
         ELSE 'FAIL'
     END,
     CASE 
-        WHEN EXISTS (SELECT 1 FROM base.stage_files s WHERE s.file_basename = e.target_file)
-        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.session_vars)
-        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.session_vars) 
+        WHEN EXISTS (SELECT 1 FROM base.drh_stage_files s WHERE s.file_basename = e.target_file)
+        THEN 'File ' || e.target_file || ' verified in ' || (SELECT global_folder_name FROM base.drh_session_vars)
+        ELSE 'File ' || e.target_file || ' is missing from ' || (SELECT global_folder_name FROM base.drh_session_vars) 
     END
 FROM expected_files e
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3,4,5,6,7) AND status = 'FAIL');
+WHERE NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id IN (1,2,3,4,5,6,7) AND status = 'FAIL');
 
 ---------------------------------------------------------------------
 -- Fitness file content valdiation 
 ---------------------------------------------------------------------
-INSERT INTO base.diagnostics (check_id, check_name, status, details)
+INSERT INTO base.drh_diagnostics (check_id, check_name, status, details)
 WITH raw_data AS (
     SELECT REPLACE(REPLACE(CAST(full_content AS TEXT), '\x0A', E'\n'), E'\r', '') as clean_txt
-    FROM base.stage_files WHERE file_basename LIKE 'fitness_file_metadata%' LIMIT 1
+    FROM base.drh_stage_files WHERE file_basename LIKE 'fitness_file_metadata%' LIMIT 1
 ),
 split_lines AS (
     SELECT unnest(str_split(clean_txt, E'\n')) as line FROM raw_data
@@ -537,7 +537,7 @@ content_eval AS (
         -- Use a more resilient data check: check if a second line exists
         (len(str_split(REPLACE(CAST(s.full_content AS TEXT), '\x0A', E'\n'), E'\n')) > 1) as has_data
     FROM child_files c
-    JOIN base.stage_files s ON (
+    JOIN base.drh_stage_files s ON (
         -- Match by lowercasing both and replacing hyphens on both sides
         REPLACE(REPLACE(LOWER(s.file_basename), '.csv', ''), '-', '_') = c.search_key
     )
@@ -551,23 +551,23 @@ SELECT
         ELSE 'File ' || original_name || ' (matched as ' || file_basename || ') is empty or missing rows.'
     END
 FROM content_eval
-WHERE NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id = 4 AND status = 'FAIL')
-  AND NOT EXISTS (SELECT 1 FROM base.diagnostics WHERE check_id IN (1,2,3,4,5,6,7) AND status = 'FAIL');
+WHERE NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id = 4 AND status = 'FAIL')
+  AND NOT EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE check_id IN (1,2,3,4,5,6,7) AND status = 'FAIL');
 
 ---------------------------------------------------------------------
 -- FINAL BUNDLE (JSON)
 ---------------------------------------------------------------------
-INSERT INTO base.validation_reports (folder_name, tenant_id, tenant_name, overall_status, report_json)
+INSERT INTO base.drh_validation_reports (folder_name, tenant_id, tenant_name, overall_status, report_json)
 SELECT 
-    (SELECT global_folder_name from base.session_vars limit 1),
+    (SELECT global_folder_name from base.drh_session_vars limit 1),
     p.party_id, p.party_name,
-    (SELECT CASE WHEN EXISTS (SELECT 1 FROM base.diagnostics WHERE status = 'FAIL') THEN 'FAIL' ELSE 'PASS' END),
+    (SELECT CASE WHEN EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE status = 'FAIL') THEN 'FAIL' ELSE 'PASS' END),
     json_object(
         'timestamp', CURRENT_TIMESTAMP,
-        'folderName', (SELECT global_folder_name from base.session_vars limit 1),
+        'folderName', (SELECT global_folder_name from base.drh_session_vars limit 1),
         'tenantId', p.party_id,
         'tenantName', p.party_name,
-        'overallStatus', (SELECT CASE WHEN EXISTS (SELECT 1 FROM base.diagnostics WHERE status = 'FAIL') THEN 'FAIL' ELSE 'PASS' END),
-        'results', (SELECT json_group_array(json_object('check', check_name, 'status', status, 'details', details)) FROM (SELECT * FROM base.diagnostics ORDER BY check_id))
+        'overallStatus', (SELECT CASE WHEN EXISTS (SELECT 1 FROM base.drh_diagnostics WHERE status = 'FAIL') THEN 'FAIL' ELSE 'PASS' END),
+        'results', (SELECT json_group_array(json_object('check', check_name, 'status', status, 'details', details)) FROM (SELECT * FROM base.drh_diagnostics ORDER BY check_id))
     )
 FROM base.party p LIMIT 1;
