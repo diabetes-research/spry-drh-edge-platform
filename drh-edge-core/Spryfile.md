@@ -96,7 +96,7 @@ Quick troubleshooting
 - The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
-```bash prepare-db --descr "Performs pre-etl-validation ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
+```bash prepare-db --dep prepare-env  --descr "Performs pre-etl-validation ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/bin/bash
 # Exit immediately if a command exits with a non-zero status (except for the Deno check)
 # set -e
@@ -108,43 +108,59 @@ STUDY_DATA_PATH="${STUDY_DATA_PATH}"
 TENANT_ID="${TENANT_ID}"
 TENANT_NAME="${TENANT_NAME}"
 TOOL_CMD="surveilr"
+# Remote repository base URL
+REMOTE_BASE_URL="https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/main/drh-edge-core"
+
+# Remote file URLs
+VALIDATION_SCRIPT_URL="${REMOTE_BASE_URL}/drh-pre-etl-validation.ts"
+DATA_VALIDATION_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-data-validation.sql"
+ANONYMIZE_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-anonymize-prepare.sql"
+MASTER_ETL_SQL_URL="${REMOTE_BASE_URL}/duckdb-etl-sql/drh-master-etl.sql"
+METRICS_SQL_URL="${REMOTE_BASE_URL}/common-sql/drh-metrics-pipeline.sql"
 
 # 2. Cleanup
 rm -f resource-surveillance.sqlite.db
 rm -f *.sql
 rm -rf dev-src.auto validation-reports
-echo "STUDY_DATA_PATH: ${STUDY_DATA_PATH}"
-echo "Starting the pipeline.."
+echo "Starting the pipeline......."
+
+# Run validation script from remote URL
 
 
 # 3. CRITICAL PRE-VALIDATION GATE
-deno run -A ${resolveRelPath("drh-pre-etl-validation.ts")} "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
+deno run -A "${VALIDATION_SCRIPT_URL}" "${STUDY_DATA_PATH}" "${TENANT_ID}" "${TENANT_NAME}"
 VALIDATION_EXIT_CODE=$?
 if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then        
-    # Using 'set -e' locally to ensure these chained steps halt immediately on failure
     (
         set -e        
         "${TOOL_CMD}" ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}"
         "${TOOL_CMD}" orchestrate transform-csv        
     )
-    # Check if the ingestion/transformation subshell failed
+    
     if [ $? -ne 0 ]; then
         echo "FAILURE: Ingestion or Initial Transformation failed. Halting pipeline........."
         exit 1
     fi    
-    "${TOOL_CMD}" shell common-sql/drh-data-validation.sql    
-    # Check SQL Validation success
+    
+    echo "Running data validation from remote repository..."
+    "${TOOL_CMD}" shell "${DATA_VALIDATION_SQL_URL}"
+    
     if [ $? -ne 0 ]; then
         echo "FAILURE: Post-Ingestion SQL Validation failed. Halting complex ETL........."
         exit 1
     fi   
     
-    # Run all complex ETL steps, halting immediately on any failure
     (
         set -e
-        "${TOOL_CMD}" shell common-sql/drh-anonymize-prepare.sql            
-        "${TOOL_CMD}" shell --engine duckdb duckdb-etl-sql/drh-master-etl.sql
-        "${TOOL_CMD}" shell common-sql/drh-metrics-pipeline.sql        
+        echo "Running anonymization from remote repository..."
+        "${TOOL_CMD}" shell "${ANONYMIZE_SQL_URL}"
+        
+        echo "Running master ETL from remote repository..."
+        "${TOOL_CMD}" shell --engine duckdb "${MASTER_ETL_SQL_URL}"
+        
+        echo "Running metrics pipeline from remote repository..."
+        "${TOOL_CMD}" shell "${METRICS_SQL_URL}"
+        
         echo "ETL process complete. Database generated successfully......... "
     )
     
@@ -154,7 +170,6 @@ if [ ${VALIDATION_EXIT_CODE} -eq 0 ]; then
     fi   
 
 else
-    # This block executes if VALIDATION_EXIT_CODE is 1 (FAIL or WARNING)
     echo "FAILURE: Data Pre-Validation failed or returned a WARNING status (Exit Code 1)."    
     exit 1
 fi
