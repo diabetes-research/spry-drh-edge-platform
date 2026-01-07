@@ -275,8 +275,13 @@ select
 -- END: PARTIAL chart-head.sql
 ```
 
-```contribute sqlpage_files --base sqlpage/templates --mode package
-**/* templates --mime text/plain
+```contribute sqlpage_files --mode package
+https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/AN/edge-remote-access/drh-edge-core/sqlpage/templates/participant_hidden_input.handlebars templates
+https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/AN/edge-remote-access/drh-edge-core/sqlpage/templates/stacked_bar_chart.handlebars templates
+https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/AN/edge-remote-access/drh-edge-core/sqlpage/templates/agp-chart.handlebars templates
+https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/AN/edge-remote-access/drh-edge-core/sqlpage/templates/dgp-chart.handlebars templates
+https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/AN/edge-remote-access/drh-edge-core/sqlpage/templates/gri_component.handlebars templates
+https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/AN/edge-remote-access/drh-edge-core/sqlpage/templates/advanced_metrics.handlebars templates
 ```
 
 ```contribute sqlpage_files --base https://app.devl.drh.diabetestechnology.org/
@@ -295,8 +300,8 @@ https://app.devl.drh.diabetestechnology.org/js/wc/assets/custom-W6OohYNa.js .
 https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js .
 ```
 
-```contribute sqlpage_files --base .
-./d3-aide-component.js .
+```contribute sqlpage_files --base https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/AN/edge-remote-access/drh-edge-core/
+https://raw.githubusercontent.com/diabetes-research/spry-drh-edge-platform/refs/heads/AN/edge-remote-access/drh-edge-core/d3-aide-component.js .
 ```
 
 ## DRH EDGE  Home Page
