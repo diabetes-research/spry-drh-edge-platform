@@ -98,7 +98,7 @@ Quick troubleshooting
 - The `prepare-db` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
-```bash prepare-db --dep prepare-env --descr "Performs pre-etl-validation ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
+```bash prepare-db --descr "Performs pre-etl-validation ,Extract data , Perform transformations through DuckDB and export to the SQLite database used by SQLPage"
 #!/bin/bash
 # Exit immediately if a command exits with a non-zero status (except for the Deno check)
 # set -e
