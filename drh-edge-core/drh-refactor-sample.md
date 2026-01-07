@@ -531,15 +531,6 @@ SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
 
 ```sql drh/post-pipeline-research-dashboard.sql{ route: { caption: "Research Data Dashboard" } }
 
-SELECT 'html' AS component;
-SELECT '
-<div style="margin-bottom: 1rem;">
-    <button onclick="window.history.back()" style="background: none; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; color: #64748b; display: flex; align-items: center; gap: 8px;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-        Back
-    </button>
-</div>' AS html;
-
 -- 1. BRANDING HERO
 SELECT 'hero' AS component, 
     'Research Data Hub' AS title, 
@@ -637,15 +628,6 @@ SELECT 'Authors & Publications' AS title, '/drh/author-pub-data.sql' AS link,
 SELECT 'text' AS component, $page_title AS title;
 
 ${paginate("drh_study_files_table_info")}
-
-SELECT 'html' AS component;
-SELECT '
-<div style="margin-bottom: 1rem;">
-    <button onclick="window.history.back()" style="background: none; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; color: #64748b; display: flex; align-items: center; gap: 8px;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-        Back
-    </button>
-</div>' AS html;
 
 SELECT
   '
