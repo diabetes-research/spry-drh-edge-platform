@@ -1,0 +1,39 @@
+<style>
+        svg {
+          display: block;
+          margin: auto;
+        }
+      </style>        
+        <div class="fs-3 p-1 fw-bold" style="background-color: #E3E3E2; text-black; display: flex; flex-direction: row; justify-content: space-between;">Glycemia Risk Index <div style="display: flex; justify-content: flex-end; align-items: center;"><formula-component content="Hypoglycemia Component = VLow + (0.8 × Low)
+                    Hyperglycemia Component = VHigh + (0.5 × High)
+                    GRI = (3.0 × Hypoglycemia Component) + (1.6 × Hyperglycemia Component)
+                    Equivalently,
+                    GRI = (3.0 × VLow) + (2.4 × Low) + (1.6 × VHigh) + (0.8 × High)"></formula-component></div></div>
+        <div class="px-4 pb-4">
+        <gri-chart></gri-chart>
+      
+        <table class="w-full text-center border">
+        <thead>
+          <tr class="bg-gray-900">
+            <th >TIR</th>
+            <th >TAR(VH)</th>
+            <th >TAR(H)</th>
+            <th >TBR(L)</th>
+            <th >TBR(VL)</th>
+            <th >TITR</th>
+            <th >GRI</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="TIR"></td>
+            <td class="TAR_VH"></td>
+            <td class="TAR_H"></td>
+            <td class="TBR_L"></td>
+            <td class="TBR_VL"></td>
+            <td class="timeInTightRangeCdata"></td>
+            <td class="GRI"></td>
+          </tr>
+        </tbody> 
+      </table>
+      </div> 
