@@ -201,7 +201,7 @@ https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js .
 
 Index page which automatically generates links to all `/drh` pages.
 
-```sql index.sql { route: { caption: "DRH Edge UI Home" } }
+```sql index.sql { route: { caption: "DRH Edge Home" } }
 -- @route.description "Welcome to Diabetes Research Hub Edge UI."
 
 -- 1. HERO SECTION: The Product "Hook"
@@ -270,7 +270,7 @@ SELECT 'button' AS component, 'center' AS justify;
 SELECT 
     'Launch Data Orchestration' AS title,
     '/drh/pipeline-monitor.sql' AS link,
-    'player-play-filled' AS icon,
+    'circle-chevrons-right' AS icon,
     'teal' AS color,
     'outline' AS variant
 FROM drh_validation_reports WHERE overall_status = 'PASS' ORDER BY timestamp DESC LIMIT 1;
@@ -417,7 +417,7 @@ SELECT
     CASE status 
         WHEN 'succeeded' THEN 'shield-check'   -- More "verified" look
         WHEN 'failed' THEN 'alert-triangle'     -- High visibility error
-        WHEN 'pending' THEN 'hourglass-empty'   -- Waiting to start
+        WHEN 'pending' THEN 'pin-invoke'   -- Waiting to start
         ELSE 'microscope' 
     END AS icon,
     CASE status 
@@ -530,6 +530,16 @@ SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
 ## Post Pipeline Research Dashboard
 
 ```sql drh/post-pipeline-research-dashboard.sql{ route: { caption: "Research Data Dashboard" } }
+
+SELECT 'html' AS component;
+SELECT '
+<div style="margin-bottom: 1rem;">
+    <button onclick="window.history.back()" style="background: none; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; color: #64748b; display: flex; align-items: center; gap: 8px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        Back
+    </button>
+</div>' AS html;
+
 -- 1. BRANDING HERO
 SELECT 'hero' AS component, 
     'Research Data Hub' AS title, 
@@ -552,9 +562,11 @@ SELECT 'text' AS component, (SELECT study_description FROM drh_study_vanity_metr
 -- 4. DYNAMIC STUDY SNAPSHOT
 SELECT 'big_number' AS component, 4 AS columns;
 SELECT 'Participants' AS title, (SELECT total_number_of_participants FROM drh_study_vanity_metrics_details) AS value, 'users' AS icon, 'teal' AS color;
-SELECT 'CGM Files' AS title, (SELECT number_of_cgm_raw_files FROM drh_number_cgm_count) AS value, 'file-analytics' AS icon, 'azure' AS color;
+SELECT 'NUmber of CGM Raw Files' AS title, (SELECT number_of_cgm_raw_files FROM drh_number_cgm_count) AS value, 'file-analytics' AS icon, 'azure' AS color;
 SELECT 'Avg Age' AS title, (SELECT average_age || ' yrs' FROM drh_study_vanity_metrics_details) AS value, 'calendar-stats' AS icon, 'indigo' AS color;
-SELECT 'Gender Split' AS title, (SELECT percentage_of_females || '% Female' FROM drh_study_vanity_metrics_details) AS value, 'gender-femme' AS icon, 'teal' AS color;
+SELECT 'Gender (F/M)' AS title, 
+    (SELECT percentage_of_females || '% / ' || percentage_of_males || '%' FROM drh_study_vanity_metrics_details) AS value, 
+    'gender-intercellular' AS icon, 'teal' AS color;
 
 -- 5. CORE RESEARCH FEATURES (Cleaned of duplicates)
 SELECT 'card' AS component, 'Research Insights & Feature Sets' AS title, 3 AS columns;
@@ -577,7 +589,7 @@ SELECT 'Combined Fitness Data' AS title, '/drh/combined-fitness-data.sql' AS lin
 
 SELECT 'Raw CGM Data' AS title, '/drh/cgm-data.sql' AS link,
     'Direct access to time-series glucose values and raw timestamps.' AS description,
-    'binary' AS icon, 'teal' AS color;
+    'device-airtag' AS icon, 'teal' AS color;
 
 -- 6. DIAGNOSTICS & SYSTEM AUDIT
 SELECT 'card' AS component, 'File & Security Diagnostics' AS title, 3 AS columns;
@@ -625,6 +637,15 @@ SELECT 'Authors & Publications' AS title, '/drh/author-pub-data.sql' AS link,
 SELECT 'text' AS component, $page_title AS title;
 
 ${paginate("drh_study_files_table_info")}
+
+SELECT 'html' AS component;
+SELECT '
+<div style="margin-bottom: 1rem;">
+    <button onclick="window.history.back()" style="background: none; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; cursor: pointer; color: #64748b; display: flex; align-items: center; gap: 8px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        Back
+    </button>
+</div>' AS html;
 
 SELECT
   '
