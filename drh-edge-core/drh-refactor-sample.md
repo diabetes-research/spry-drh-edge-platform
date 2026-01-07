@@ -28,7 +28,8 @@ sql * --interpolate --injectable
 
 This project reads configuration from environment variables. All variables listed below must be set in your `.envrc` file for the pipeline to run.
 
-### Pipeline & Study Configuration 
+### Pipeline & Study Configuration
+
 These variables link your study data to the ETL process:
 
 - **`STUDY_DATA_PATH`**: The path to the folder containing your raw study files (e.g., `raw-data/synthetic data`). This is the **input folder** for the ingestion process.
@@ -50,12 +51,12 @@ Recommended practice is to keep these values in a local, directory-scoped enviro
 
 POSIX-style example (bash/zsh):
 
-```envrc prepare-env -C ./.envrc --gitignore --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
+```envrc prepare-env -C ./.envrc --gitignore -X --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
-export STUDY_DATA_PATH="raw-data/dexcom-synthetic-cgm/"
-export TENANT_ID="DSG"
-export TENANT_NAME="DSG"
+export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
+export TENANT_ID="FLCG"
+export TENANT_NAME="Florida Clinical Group"
 direnv allow
 ```
 
@@ -124,7 +125,7 @@ required by Spry but only used for reference), but the `--inject **/*` argument
 is how matching occurs. The `--BEGIN` and `--END` comments are not required by
 Spry but make it easier to trace where _partial_ injections are occurring.
 
-```sql PARTIAL global-layout.sql --inject *.sql --inject drh/dashboard/*.sql
+```sql PARTIAL global-layout.sql --inject *.sql --inject drh/*.sql
 
 -- BEGIN: PARTIAL global-layout.sql
 SELECT 'shell' AS component,
@@ -252,7 +253,7 @@ SELECT
                 CASE overall_status
                     WHEN 'PASS'    THEN 'Your data is clean and ready for transformation.'
                     WHEN 'WARNING' THEN 'Data passed but found minor schema inconsistencies.'
-                    ELSE 'The current data folder failed mandatory structural checks.'
+                    ELSE 'Please correct your folder and files and try again. Check the diagnostic report for specific error details.'
                 END || 
             '</div>' ||
         '</div>' ||
@@ -268,23 +269,30 @@ SELECT 'button' AS component, 'center' AS justify;
 -- Primary Action (If Success)
 SELECT 
     'Launch Data Orchestration' AS title,
-    '/drh/dashboard/pipeline-monitor.sql' AS link,
+    '/drh/pipeline-monitor.sql' AS link,
     'player-play-filled' AS icon,
     'teal' AS color,
     'outline' AS variant
 FROM drh_validation_reports WHERE overall_status = 'PASS' ORDER BY timestamp DESC LIMIT 1;
 
+SELECT 
+    'Review Error Details' AS title,
+    '/drh/diagnostics-report.sql' AS link,
+    'alert-circle' AS icon,
+    'red' AS color
+FROM drh_validation_reports WHERE overall_status <> 'PASS' ORDER BY timestamp DESC LIMIT 1;
+
 -- Detailed Report (Always available, but looks like a "Secondary" product action)
 SELECT 
     'Explore Diagnostics' AS title,
-    '/drh/dashboard/diagnostics-report.sql' AS link,
+    '/drh/diagnostics-report.sql' AS link,
     'database-search' AS icon,
     'azure' AS color;
 ```
 
 ## Diagnostics Report
 
-```sql drh/dashboard/diagnostics-report.sql { route: { caption: "Diagnostics Report" } }
+```sql drh/diagnostics-report.sql { route: { caption: "Diagnostics Report" } }
 -- @route.description "Detailed diagnostic Report."
 
 SELECT 'html' AS component;
@@ -369,7 +377,7 @@ ORDER BY
 
 ## Pipleline Monitor
 
-```sql drh/dashboard/pipeline-monitor.sql { route: { caption: "Data Orchestration Pipeline"} }
+```sql drh/pipeline-monitor.sql { route: { caption: "Data Orchestration Pipeline"} }
 
 -- 1. Check if everything is succeeded
 SET all_done = (SELECT COUNT(*) FROM drh_pipeline_steps WHERE status != 'succeeded');
@@ -395,7 +403,7 @@ SELECT
         WHEN 'succeeded' THEN 'greeen' 
         WHEN 'failed' THEN 'red' 
         WHEN 'pending' THEN 'teal' 
-        ELSE 'orange' 
+        ELSE 'cyan' 
     END AS color,
     status = 'succeeded' AS completed
 FROM drh_pipeline_steps 
@@ -416,7 +424,7 @@ SELECT
         WHEN 'succeeded' THEN 'green' 
         WHEN 'failed' THEN 'red' 
         WHEN 'pending' THEN 'teal' 
-        ELSE 'orange' 
+        ELSE 'cyan' 
     END AS color,
     CASE 
         WHEN completed_at IS NOT NULL THEN 'Completed at: ' || completed_at
@@ -440,7 +448,7 @@ ORDER BY step LIMIT 1;
 
 SELECT
     'Proceed to Research Data Dashboard' AS title,
-    '/drh/dashboard/post-pipeline-research-dashboard.sql' AS link,
+    '/drh/post-pipeline-research-dashboard.sql' AS link,
     'arrow-right' AS icon,
     'green' AS color
 WHERE $all_done = 0;
@@ -461,7 +469,7 @@ SET status = 'succeeded', started_at = datetime('now', 'localtime'),
 WHERE step = 1;
 
 -- 3. NOW the redirect will work because it is the first 'component' sent
-SELECT 'redirect' AS component, '/drh/dashboard/pipeline-monitor.sql' AS link;
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
 ```
 
 ```sql drh/pipeline/trigger-step2.sql { route: { caption: "Data Validation pipeline" } }
@@ -478,7 +486,7 @@ SET status = 'succeeded',
 WHERE step = 2;
 
 
-SELECT 'redirect' AS component, '/drh/dashboard/pipeline-monitor.sql' AS link;
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
 
 ```
 
@@ -492,7 +500,7 @@ SET status = 'succeeded',
     started_at = CURRENT_TIMESTAMP,
     completed_at = CURRENT_TIMESTAMP 
 WHERE step = 3;
-SELECT 'redirect' AS component, '/drh/dashboard/pipeline-monitor.sql' AS link;
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
 ```
 
 ```sql drh/pipeline/trigger-step4.sql { route: { caption: "Data ETL pipeline" } }
@@ -504,7 +512,7 @@ SET status = 'succeeded',
     started_at = CURRENT_TIMESTAMP,
     completed_at = CURRENT_TIMESTAMP 
 WHERE step = 4;
-SELECT 'redirect' AS component, '/drh/dashboard/pipeline-monitor.sql' AS link;
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
 ```
 
 ```sql drh/pipeline/trigger-step5.sql { route: { caption: "Data Metrics pipeline" } }
@@ -516,12 +524,12 @@ SET status = 'succeeded',
     started_at = CURRENT_TIMESTAMP,
     completed_at = CURRENT_TIMESTAMP 
 WHERE step = 5;
-SELECT 'redirect' AS component, '/drh/dashboard/pipeline-monitor.sql' AS link;
+SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
 ```
 
 ## Post Pipeline Research Dashboard
 
-```sql drh/dashboard/post-pipeline-research-dashboard.sql{ route: { caption: "Research Data Dashboard" } }
+```sql drh/post-pipeline-research-dashboard.sql{ route: { caption: "Research Data Dashboard" } }
 -- 1. BRANDING HERO
 SELECT 'hero' AS component, 
     'Research Data Hub' AS title, 
@@ -551,67 +559,67 @@ SELECT 'Gender Split' AS title, (SELECT percentage_of_females || '% Female' FROM
 -- 5. CORE RESEARCH FEATURES (Cleaned of duplicates)
 SELECT 'card' AS component, 'Research Insights & Feature Sets' AS title, 3 AS columns;
 
-SELECT 'Study Participant Dashboard' AS title, '/drh/dashboard/study-participant-dashboard.sql' AS link,
+SELECT 'Study Participant Dashboard' AS title, '/drh/study-participant-dashboard.sql' AS link,
     'Access participant-specific clinical metrics: TIR, GMI, and HbA1c table.' AS description,
     'layout-dashboard' AS icon, 'teal' AS color;
 
-SELECT 'Combined CGM Tracing' AS title, '/drh/dashboard/cgm-combined-data.sql' AS link,
+SELECT 'Combined CGM Tracing' AS title, '/drh/cgm-combined-data.sql' AS link,
     'Aggregated glucose monitoring data for trend analysis across the study.' AS description,
     'chart-line' AS icon, 'teal' AS color;
 
-SELECT 'Combined Meal Data' AS title, '/drh/dashboard/combined-meal-data.sql' AS link,
+SELECT 'Combined Meal Data' AS title, '/drh/combined-meal-data.sql' AS link,
     'Nutritional intake logs and post-prandial glycemic response analysis.' AS description,
     'soup' AS icon, 'teal' AS color;
 
-SELECT 'Combined Fitness Data' AS title, '/drh/dashboard/combined-fitness-data.sql' AS link,
+SELECT 'Combined Fitness Data' AS title, '/drh/combined-fitness-data.sql' AS link,
     'Physical activity metrics: steps, heart rate, and metabolic outcomes.' AS description,
     'run' AS icon, 'teal' AS color;
 
-SELECT 'Raw CGM Data' AS title, '/drh/dashboard/cgm-data.sql' AS link,
+SELECT 'Raw CGM Data' AS title, '/drh/cgm-data.sql' AS link,
     'Direct access to time-series glucose values and raw timestamps.' AS description,
     'binary' AS icon, 'teal' AS color;
 
 -- 6. DIAGNOSTICS & SYSTEM AUDIT
 SELECT 'card' AS component, 'File & Security Diagnostics' AS title, 3 AS columns;
 
-SELECT 'Ingestion Log' AS title, '/drh/dashboard/ingestion-log.sql' AS link,
+SELECT 'Ingestion Log' AS title, '/drh/ingestion-log.sql' AS link,
     'Audit files accepted and converted into database format.' AS description,
-    'database-import' AS icon, 'red' AS color;
+    'database-import' AS icon, 'cyan' AS color;
 
-SELECT 'Verification Log' AS title, '/drh/dashboard/verification-validation-log.sql' AS link,
+SELECT 'Verification Log' AS title, '/drh/verification-validation-log.sql' AS link,
     'Quality review of file content and corrective actions taken.' AS description,
-    'table-alert' AS icon, 'red' AS color;
+    'folder-check' AS icon, 'cyan' AS color;
 
-SELECT 'De-Identification Audit' AS title, '/drh/dashboard/deidentification-log.sql' AS link,
+SELECT 'De-Identification Audit' AS title, '/drh/deidentification-log.sql' AS link,
     'Review results of PHI masking and column modifications.' AS description,
-    'shield-lock' AS icon, 'red' AS color;
+    'shield-lock' AS icon, 'cyan' AS color;
 
 -- 7. SUPPORTING METADATA (Combined and point-to-point accurate)
 SELECT 'card' AS component, 'Supporting Metadata' AS title, 4 AS columns;
 
-SELECT 'Participant Demographics' AS title, '/drh/dashboard/participant-related-data.sql' AS link, 
+SELECT 'Participant Demographics' AS title, '/drh/participant-related-data.sql' AS link, 
     'Detailed breakdown of age, gender, ethnicity, and cohort background.' AS description, 
     'user-circle' AS icon, 'teal' AS color;
 
-SELECT 'CGM Metadata' AS title, '/drh/dashboard/cgm-associated-data.sql' AS link,
-    'Device specs and metadata mapping.' AS description, 'settings' AS icon, 'indigo' AS color;
+SELECT 'CGM Metadata' AS title, '/drh/cgm-associated-data.sql' AS link,
+    'Device specs and metadata mapping.' AS description, 'settings' AS icon, 'teal' AS color;
 
-SELECT 'Researchers & Partners' AS title, '/drh/dashboard/researcher-related-data.sql' AS link, 
+SELECT 'Researchers & Partners' AS title, '/drh/researcher-related-data.sql' AS link, 
     'Institutional affiliations and laboratory investigators.' AS description, 
-    'building-community' AS icon, 'gray' AS color;
+    'building-community' AS icon, 'teal' AS color;
 
-SELECT 'Research Sites' AS title, '/drh/dashboard/study-related-data.sql' AS link, 
+SELECT 'Research Sites' AS title, '/drh/study-related-data.sql' AS link, 
     'Clinical site locations and facility-specific metadata.' AS description, 
-    'map-pin' AS icon, 'gray' AS color;
+    'map-pin' AS icon, 'teal' AS color;
 
-SELECT 'Authors & Publications' AS title, '/drh/dashboard/author-pub-data.sql' AS link, 
+SELECT 'Authors & Publications' AS title, '/drh/author-pub-data.sql' AS link, 
     'Scientific dissemination, manuscripts, and author affiliations.' AS description, 
-    'news' AS icon, 'gray' AS color;
+    'news' AS icon, 'teal' AS color;
 ```
 
 ## Study Files Log Page
 
-```sql drh/dashboard/ingestion-log.sql { route: { caption: "Study Files Log" } }
+```sql drh/ingestion-log.sql { route: { caption: "Study Files Log" } }
 -- @route.description "This section provides an overview of the files that have been accepted and converted into database format for research purposes"
 
 SELECT 'text' AS component, $page_title AS title;
@@ -640,7 +648,7 @@ ${pagination.navigation}
 
 ## Verification Validation log page
 
-```sql drh/dashboard/verification-validation-log.sql { route: { caption: "Verification And Validation Results" } }
+```sql drh/verification-validation-log.sql { route: { caption: "Verification And Validation Results" } }
 -- @route.description "This section provides the verification and valdiation results performed on the study files"
 
 
@@ -740,7 +748,7 @@ ${pagination.navigation}
 
 ## Study Participant Dashboard
 
-```sql drh/dashboard/study-participant-dashboard.sql{ route: { caption: "Study Participant Dashboard" } }
+```sql drh/study-participant-dashboard.sql{ route: { caption: "Study Participant Dashboard" } }
 -- @route.description "The dashboard presents key study details and participant-specific metrics in a clear, organized table format"
 -- 1. CLEAN HEADER (No more duplicated study description)
 SELECT 'title' AS component, 
@@ -796,7 +804,7 @@ ${pagination.navigation}
 
 ## Researcher and Associated Information
 
-```sql drh/dashboard/researcher-related-data.sql{ route: { caption: "Researcher and Associated Information" } }
+```sql drh/researcher-related-data.sql{ route: { caption: "Researcher and Associated Information" } }
 -- @route.description "This section provides detailed information about the individuals , institutions and labs involved in the research study."
 
 SELECT 'text' AS component, $page_title AS title;
@@ -836,7 +844,7 @@ SELECT * from drh_lab;
 
 ## Study ResearchSite Details
 
-```sql drh/dashboard/study-related-data.sql{ route: { caption: "Study ResearchSite Details" } }
+```sql drh/study-related-data.sql{ route: { caption: "Study ResearchSite Details" } }
 -- @route.description "This section provides detailed information about the study , and sites involved in the research study."
 
 SELECT 'text' AS component, $page_title AS title;
@@ -889,7 +897,7 @@ Research sites are locations where the studies are conducted. They include clini
 
 ## Participant Demographics
 
-```sql drh/dashboard/participant-related-data.sql{ route: { caption: "Participant Demographics" } }
+```sql drh/participant-related-data.sql{ route: { caption: "Participant Demographics" } }
 -- @route.description "This section provides detailed information about the the participants involved in the research study."
 
 
@@ -939,7 +947,7 @@ ${pagination.navigation}
 
 ## Author and Publication Details
 
-```sql drh/dashboard/author-pub-data.sql{ route: { caption: "Author and Publication Details" } }
+```sql drh/author-pub-data.sql{ route: { caption: "Author and Publication Details" } }
 -- @route.description "Information about research publications and the authors involved in the studies are also collected, contributing to the broader understanding and dissemination of research findings."
 
 
@@ -989,7 +997,7 @@ This section provides information about the publications resulting from a study.
 
 ## CGM Meta Data and Associated information
 
-```sql drh/dashboard/cgm-associated-data.sql{ route: { caption: "CGM Meta Data and Associated information" } }
+```sql drh/cgm-associated-data.sql{ route: { caption: "CGM Meta Data and Associated information" } }
 -- @route.description "This section provides detailed information about the CGM device used, the relationship between the participant''s raw CGM tracing file and related metadata, and other pertinent information."
 
 SELECT 'text' AS component, $page_title AS title;
@@ -1033,7 +1041,7 @@ ${pagination.navigation}
 
 ## Combined CGM Tracing
 
-```sql drh/dashboard/cgm-combined-data.sql{ route: { caption: "Combined CGM Tracing" } }
+```sql drh/cgm-combined-data.sql{ route: { caption: "Combined CGM Tracing" } }
 -- @route.description "Explore the comprehensive CGM dataset, integrating glucose monitoring data from all participants for in-depth analysis of glycemic patterns and trends across the study."
 
 SELECT 'text' AS component, $page_title AS title;
@@ -1069,7 +1077,7 @@ ${pagination.navigation}
 
 ## Raw CGM Data Description
 
-```sql drh/dashboard/cgm-data.sql{ route: { caption: "Raw CGM Data Description" } }
+```sql drh/cgm-data.sql{ route: { caption: "Raw CGM Data Description" } }
 -- @route.description "Explore detailed information about glucose levels over time, including timestamp, and glucose value."
 
 SELECT 'text' AS component, $page_title AS title;
@@ -1105,7 +1113,7 @@ ORDER BY
 
 ## Meal Data
 
-```sql drh/dashboard/combined-meal-data.sql{ route: { caption: "Combined Meal Data" } }
+```sql drh/combined-meal-data.sql{ route: { caption: "Combined Meal Data" } }
 -- @page.description "Detailed logs of dietary intake across all study participants, including meal type and calorie information."
 
 SELECT 'text' AS component, $page_title AS title;
@@ -1153,7 +1161,7 @@ ${pagination.navigation};
 
 ## Fitness Data
 
-```sql drh/dashboard/combined-fitness-data.sql{ route: { caption: "Combined Fitness Data" } }
+```sql drh/combined-fitness-data.sql{ route: { caption: "Combined Fitness Data" } }
 -- @page.description "Summary of physical activity metrics (steps, heart rate, distance) captured by tracking devices for all participants."
 
 SELECT 'text' AS component, $page_title AS title;
@@ -1200,7 +1208,7 @@ ${pagination.navigation};
 
 ## PHI De-Identification Results
 
-```sql drh/dashboard/deidentification-log.sql{ route: { caption: "PHI De-Identification Results" } }
+```sql drh/deidentification-log.sql{ route: { caption: "PHI De-Identification Results" } }
 -- @route.description "Explore the results of PHI de-identification and review which columns have been modified."
 
 SELECT
@@ -1366,7 +1374,7 @@ SELECT 'json' AS component,
   SELECT 'gri_component' AS component; 
 ```
 
-```sql drh/dashboard/participant-info.sql
+```sql drh/participant-info.sql
 -- @route.caption "Participant Information"
 -- @route.description "The Participants Detail page is a comprehensive report that includes glucose statistics, such as the Ambulatory Glucose Profile (AGP), Glycemia Risk Index (GRI), Daily Glucose Profile, and all other metrics data."
 SELECT
