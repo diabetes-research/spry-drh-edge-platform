@@ -4,6 +4,12 @@ sqlpage-conf:
   web_root: "./dev-src.auto"
   allow_exec: true
   port: ${env.PORT}
+  host: "localhost:9227"
+  oidc_issuer_url: "https://quality-fol-test-s0ei2d.us1.zitadel.cloud"
+  oidc_client_id: ${env.CLIENT_ID}
+  oidc_client_secret: ${env.CLIENT_SECRET}
+  oidc_scopes: "openid email"
+  oidc_protected_paths: ["/home.sql"]
 ---
 
 # Diabetes Research Hub (DRH) SQLPage Application
@@ -290,7 +296,19 @@ https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js .
 
 Index page which automatically generates links to all `/drh` pages.
 
-```sql index.sql { route: { caption: "DRH Edge UI Home" } }
+```sql index.sql { route: { caption: "DRH Edge UI Login" } }
+SELECT 'hero' AS component,
+  'Choose Login Provider' AS title,
+  'Select how you want to authenticate.' AS description;
+
+SELECT 'button' AS component, 'center' AS justify;
+SELECT 'Login with Zitadel' AS title,
+  'home.sql' AS link,
+  'dark' AS color,
+  '/zitadel-light.png' AS icon;    
+```
+
+```sql home.sql { route: { caption: "DRH Edge UI Home" } }
 -- @route.description "Welcome to Diabetes Research Hub Edge UI."
 
 SELECT

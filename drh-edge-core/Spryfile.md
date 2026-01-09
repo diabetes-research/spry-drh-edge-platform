@@ -9,7 +9,7 @@ sqlpage-conf:
   oidc_client_id: ${env.CLIENT_ID}
   oidc_client_secret: ${env.CLIENT_SECRET}
   oidc_scopes: "openid email"
-  oidc_protected_paths: ["/protected_page.sql"]
+  oidc_protected_paths: ["/home.sql"]
 ---
 
 # Diabetes Research Hub (DRH) SQLPage Application
