@@ -73,7 +73,7 @@ Then run `direnv allow` in this project directory to load the `.envrc` into your
 Why these variables matter here
 
 - The YAML header at the top of this `drh-refactor-sample.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
-- The `diagnostics-check` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
+- The `prepare-db-deploy-server` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
 - If `SPRY_DB` is not set, the tooling may fail to find the database or fall back to defaults; explicitly setting it ensures predictable, repeatable dev runs.
 
 Quick troubleshooting
@@ -91,25 +91,48 @@ Quick troubleshooting
   - **surveilr** (latest release): [https://github.com/surveilr/packages/releases](https://github.com/surveilr/packages/releases)  
   
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
-  - ` spry rb task diagnostics-check drh-refactor-sample.md `
-- The `diagnostics-check` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
+  - ` spry rb task prepare-db-deploy-server drh-refactor-sample.md `
+- The `prepare-db-deploy-server` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
-```bash diagnostics-check  --descr "Performs pre-etl-validation "
+```bash prepare-db-deploy-server  --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
 #!/bin/bash
-# Define variables for clarity (assuming they are set by Spry/environment)
+set -u
+# Variables
 STUDY_DATA_PATH="${STUDY_DATA_PATH}"
 TENANT_ID="${TENANT_ID}"
 TENANT_NAME="${TENANT_NAME}"
-TOOL_CMD="surveilr"
-# 2. Cleanup
-rm -f resource-surveillance.sqlite.db
-rm -f *.sql
-rm -rf dev-src.auto 
-"${TOOL_CMD}" ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}"
-"${TOOL_CMD}" shell --engine duckdb duckdb-etl-sql/drh-preflight-validation.sql
-"${TOOL_CMD}" shell common-sql/drh-pipeline.sql
-spry sp spc --package --conf sqlpage/sqlpage.json -m drh-refactor-sample.md | sqlite3 resource-surveillance.sqlite.db  
+# 1. Cleanup
+rm -f resource-surveillance.sqlite.db *.sql
+rm -rf dev-src.auto validation-reports
+# 2. RUN PREFLIGHT VALIDATION (Mandatory)
+# This step must run first to create the drh_validation_reports table
+surveilr ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}"
+surveilr shell --engine duckdb duckdb-etl-sql/drh-preflight-validation.sql
+# 3. EXTRACT STATUS FROM JSON
+# We use jq to grab the value of 'overall_status'
+RAW_STATUS=$(surveilr shell "select overall_status from drh_validation_reports ORDER BY timestamp DESC LIMIT 1;")
+VALIDATION_STATUS=$(echo "$RAW_STATUS" | jq -r '.[0].overall_status')
+# 4. CONDITIONAL ETL EXECUTION
+if [ "$VALIDATION_STATUS" == "PASS" ]; then    
+    (
+        set -e
+        surveilr orchestrate transform-csv
+        surveilr shell common-sql/drh-data-validation.sql    
+        surveilr shell common-sql/drh-anonymize-prepare.sql           
+        surveilr shell --engine duckdb duckdb-etl-sql/drh-master-etl.sql
+        surveilr shell common-sql/drh-metrics-pipeline.sql 
+    )
+    
+    if [ $? -ne 0 ]; then        
+        exit 1
+    fi
+else
+    echo "Validation FAILED ($VALIDATION_STATUS). Skipping ETL steps."    
+fi
+# 5. INITIALIZE SQLPAGE (Runs in both PASS and FAIL scenarios)
+# This allows the UI to show either the 'Launch' or 'Error' buttons based on your SQL queries
+spry sp spc --package --conf sqlpage/sqlpage.json -m drh-refactor-sample.md | sqlite3 resource-surveillance.sqlite.db
 ```
 
 ```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"
@@ -154,7 +177,8 @@ SELECT 'shell' AS component,
 
 SET resource_json = sqlpage.read_file_as_text('spry.d/auto/resource/${path}.auto.json');
 SET page_title  = json_extract($resource_json, '$.route.caption');
-
+SET page_description  = json_extract($resource_json, '$.route.description');
+SET page_path = json_extract($resource_json, '$.route.path');
 ${ctx.breadcrumbs()}
 -- END: PARTIAL global-layout.sql
 -- this is the `${cell.info}` cell on line ${cell.startLine}
@@ -201,38 +225,8 @@ https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js .
 
 Index page which automatically generates links to all `/drh` pages.
 
-```sql index.sql { route: { caption: "DRH Edge Home" } }
+```sql index.sql { route: { caption: "Home" } }
 -- @route.description "Welcome to Diabetes Research Hub Edge UI."
-
--- 1. HERO SECTION: The Product "Hook"
-SELECT 
-    'hero' as component,
-    'Diabetes Research Hub' as title,
-    'The Edge UI for Centralized CGM Data Management' as subtitle,
-    'The DRH platform empowers researchers to harmonize, validate, and analyze continuous glucose monitor data with clinical precision.' as description,
-    'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=1000&q=80' as image,
-    'teal' as color;
-
--- 2. CORE UTILITY SECTION (Horizontal Product Features)
-SELECT 'card' as component, 3 as columns;
-
-SELECT 
-    'Study Management' as title,
-    'Centralized collection of various research studies.' as description,
-    'microscope' as icon,
-    'azure' as color;
-
-SELECT 
-    'Data Diagnostics' as title,
-    'Real-time validation against clinical schemas.' as description,
-    'shield-check' as icon,
-    'teal' as color;
-
-SELECT 
-    'Orchestration' as title,
-    'Seamless transformation of CSV to research-ready data.' as description,
-    'adjustments' as icon,
-    'indigo' as color;
 
 -- 3. STATUS DISPLAY (The White/Green Border Design)
 SELECT 'html' AS component;
@@ -266,34 +260,85 @@ FROM drh_validation_reports ORDER BY timestamp DESC LIMIT 1;
 -- 4. ACTION CENTER (Product-style Buttons)
 SELECT 'button' AS component, 'center' AS justify;
 
--- Primary Action (If Success)
+-- 1. PRIMARY SUCCESS ACTION
+-- Only shows if the status is PASS
 SELECT 
-    'Launch Data Orchestration' AS title,
-    '/drh/pipeline-monitor.sql' AS link,
+    'Launch Data Dashboard' AS title,
+    '/drh/research-dashboard.sql' AS link,
     'circle-chevrons-right' AS icon,
-    'teal' AS color,
-    'outline' AS variant
-FROM drh_validation_reports WHERE overall_status = 'PASS' ORDER BY timestamp DESC LIMIT 1;
+    'teal' AS color
+FROM drh_validation_reports 
+WHERE overall_status = 'PASS' 
+ORDER BY timestamp DESC LIMIT 1;
 
+-- 2. PRIMARY ERROR ACTION
+-- Only shows if the status is NOT PASS
 SELECT 
     'Review Error Details' AS title,
     '/drh/diagnostics-report.sql' AS link,
     'alert-circle' AS icon,
     'red' AS color
-FROM drh_validation_reports WHERE overall_status <> 'PASS' ORDER BY timestamp DESC LIMIT 1;
+FROM drh_validation_reports 
+WHERE overall_status <> 'PASS' 
+ORDER BY timestamp DESC LIMIT 1;
 
--- Detailed Report (Always available, but looks like a "Secondary" product action)
+-- 3. SECONDARY DIAGNOSTICS ACTION (The "Avoid Duplication" fix)
+-- We only show this if status is PASS. 
+-- If status is FAIL, the red button above covers this navigation.
 SELECT 
     'Explore Diagnostics' AS title,
     '/drh/diagnostics-report.sql' AS link,
     'database-search' AS icon,
-    'azure' AS color;
+    'azure' AS color,
+    'outline' AS variant
+FROM drh_validation_reports 
+WHERE overall_status = 'PASS' 
+ORDER BY timestamp DESC LIMIT 1;
+
+Select 'divider' as component;
+
+-- 2. CORE UTILITY SECTION (Horizontal Product Features)
+SELECT 'card' as component, 3 as columns;
+
+SELECT 
+    'Study Management' as title,
+    'Centralized collection of various research studies.' as description,
+    'microscope' as icon,
+    'azure' as color;
+
+SELECT 
+    'Data Diagnostics' as title,
+    'Real-time validation against clinical schemas.' as description,
+    'shield-check' as icon,
+    'teal' as color;
+
+SELECT 
+    'Orchestration' as title,
+    'Seamless transformation of CSV to research-ready data.' as description,
+    'adjustments' as icon,
+    'indigo' as color;
+
+
+Select 'divider' as component;
+
+-- 1. HERO SECTION: The Product "Hook"
+SELECT 
+    'hero' as component,
+    'Diabetes Research Hub' as title,
+    'The Edge UI for Centralized CGM Data Management' as subtitle,
+    'The DRH platform empowers researchers to harmonize, validate, and analyze continuous glucose monitor data with clinical precision.' as description,
+    'https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=1000&q=80' as image,
+    'teal' as color;
+
 ```
 
 ## Diagnostics Report
 
 ```sql drh/diagnostics-report.sql { route: { caption: "Diagnostics Report" } }
 -- @route.description "Detailed diagnostic Report."
+
+-- Place this immediately after the shell
+SELECT 'button' AS component, 'start' AS justify;
 
 SELECT 'html' AS component;
 
@@ -375,180 +420,32 @@ ORDER BY
 
 ```
 
-## Pipleline Monitor
+## Research Dashboard
 
-```sql drh/pipeline-monitor.sql { route: { caption: "Data Orchestration Pipeline"} }
-
--- 1. Check if everything is succeeded
-SET all_done = (SELECT COUNT(*) FROM drh_pipeline_steps WHERE status != 'succeeded');
-
-
--- 3. Hero Section (Professional Teal Theme)
-SELECT 'hero' AS component, 
-    'Data Orchestration' AS title, 
-    'Securely processing and validating medical research data.' AS description,
-    'teal' AS color;
-
--- 4. Visual Progress Bar (Using Indigo for the "Ready" state)
-SELECT 'steps' AS component, TRUE AS counter;
-SELECT 
-    name AS title,
-    CASE status 
-        WHEN 'succeeded' THEN 'Succeeded' 
-        WHEN 'failed' THEN 'Failed'
-        WHEN 'pending' THEN 'Waiting'
-        ELSE 'Processing...' 
-    END AS description,
-    CASE status 
-        WHEN 'succeeded' THEN 'greeen' 
-        WHEN 'failed' THEN 'red' 
-        WHEN 'pending' THEN 'teal' 
-        ELSE 'cyan' 
-    END AS color,
-    status = 'succeeded' AS completed
-FROM drh_pipeline_steps 
-ORDER BY step;
-
--- 5. Detailed Status Cards
-SELECT 'card' AS component, 3 AS columns;
-SELECT 
-    name AS title,
-    'Pipeline status: ' || status AS description,
-    CASE status 
-        WHEN 'succeeded' THEN 'shield-check'   -- More "verified" look
-        WHEN 'failed' THEN 'alert-triangle'     -- High visibility error
-        WHEN 'pending' THEN 'pin-invoke'   -- Waiting to start
-        ELSE 'microscope' 
-    END AS icon,
-    CASE status 
-        WHEN 'succeeded' THEN 'green' 
-        WHEN 'failed' THEN 'red' 
-        WHEN 'pending' THEN 'teal' 
-        ELSE 'cyan' 
-    END AS color,
-    CASE 
-        WHEN completed_at IS NOT NULL THEN 'Completed at: ' || completed_at
-        WHEN started_at IS NOT NULL THEN 'Started at: ' || started_at 
-        ELSE 'Queue Position: ' || step 
-    END AS footer
-FROM drh_pipeline_steps;
-
--- 6. Central Action Button
-SELECT 'divider' AS component;
-
-SELECT 'button' AS component, 'center' AS justify;
-SELECT 
-    'Execute ' || name AS title,
-    '/drh/pipeline/trigger-step' || step || '.sql' AS link,
-    'bolt' AS icon,
-    'teal' AS color
-FROM drh_pipeline_steps 
-WHERE status = 'pending' 
-ORDER BY step LIMIT 1;
-
-SELECT
-    'Proceed to Research Data Dashboard' AS title,
-    '/drh/post-pipeline-research-dashboard.sql' AS link,
-    'arrow-right' AS icon,
-    'green' AS color
-WHERE $all_done = 0;
-```
-
-## Pipeline Step
-
-```sql drh/pipeline/trigger-step1.sql { route: { caption: "Data transformation pipeline" } }
--- 1. Run the update and the shell command in a single 'hidden' step
-SET result = (
-  SELECT sqlpage.exec('surveilr', 'orchestrate', 'transform-csv')
-);
-
--- 2. Update the status now that the command above is finished
-UPDATE drh_pipeline_steps 
-SET status = 'succeeded', started_at = datetime('now', 'localtime'),
-    completed_at = datetime('now', 'localtime') 
-WHERE step = 1;
-
--- 3. NOW the redirect will work because it is the first 'component' sent
-SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
-```
-
-```sql drh/pipeline/trigger-step2.sql { route: { caption: "Data Validation pipeline" } }
-
-SET result = (
-  SELECT sqlpage.exec('surveilr', 'shell', 'common-sql/drh-data-validation.sql')
-);
-
-
-UPDATE drh_pipeline_steps 
-SET status = 'succeeded', 
-    started_at = CURRENT_TIMESTAMP,
-    completed_at = CURRENT_TIMESTAMP 
-WHERE step = 2;
-
-
-SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
-
-```
-
-```sql drh/pipeline/trigger-step3.sql { route: { caption: "Data Anonymization pipeline" } }
-SET result = (
-SELECT sqlpage.exec('surveilr', 'shell', 'common-sql/drh-anonymize-prepare.sql')
-);
-
-UPDATE drh_pipeline_steps 
-SET status = 'succeeded', 
-    started_at = CURRENT_TIMESTAMP,
-    completed_at = CURRENT_TIMESTAMP 
-WHERE step = 3;
-SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
-```
-
-```sql drh/pipeline/trigger-step4.sql { route: { caption: "Data ETL pipeline" } }
-SET result = (
-SELECT sqlpage.exec('surveilr', 'shell', '--engine', 'duckdb', 'duckdb-etl-sql/drh-master-etl.sql'))
-;
-UPDATE drh_pipeline_steps 
-SET status = 'succeeded', 
-    started_at = CURRENT_TIMESTAMP,
-    completed_at = CURRENT_TIMESTAMP 
-WHERE step = 4;
-SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
-```
-
-```sql drh/pipeline/trigger-step5.sql { route: { caption: "Data Metrics pipeline" } }
-SET result = (
-SELECT sqlpage.exec('surveilr', 'shell', 'common-sql/drh-metrics-pipeline.sql') 
-);
-UPDATE drh_pipeline_steps 
-SET status = 'succeeded', 
-    started_at = CURRENT_TIMESTAMP,
-    completed_at = CURRENT_TIMESTAMP 
-WHERE step = 5;
-SELECT 'redirect' AS component, '/drh/pipeline-monitor.sql' AS link;
-```
-
-## Post Pipeline Research Dashboard
-
-```sql drh/post-pipeline-research-dashboard.sql{ route: { caption: "Research Data Dashboard" } }
+```sql drh/research-dashboard.sql{ route: { caption: "Research Data Dashboard" } }
+-- @route.description "Research Data Dashboard"
 
 -- 1. BRANDING HERO
 SELECT 'hero' AS component, 
-    'Research Data Hub' AS title, 
+    'Research Data Dashboard' AS title, 
     'Precision analytics platform for synchronized glycemic, nutritional, and metabolic activity research.' AS description,
     'teal' AS color;
 
 -- 2. STUDY PROFILE SECTION
-SELECT 'title' AS component, 
-    (SELECT study_name FROM drh_study_vanity_metrics_details) AS contents,
-    'Study Profile & Metadata' AS subtitle;
+
+SELECT 'datagrid' AS component;
+SELECT 'Study Name' AS title, study_name AS description FROM drh_study_vanity_metrics_details;
+
 
 SELECT 'datagrid' AS component;
 SELECT 'NCT ID' AS title, nct_number AS description FROM drh_study_vanity_metrics_details;
 SELECT 'Clinical Investigators' AS title, investigators AS description FROM drh_study_vanity_metrics_details;
 SELECT 'Timeline' AS title, start_date || ' to ' || end_date AS description FROM drh_study_vanity_metrics_details;
 
--- 3. STUDY DESCRIPTION
-SELECT 'text' AS component, (SELECT study_description FROM drh_study_vanity_metrics_details) AS contents;
+-- Long description in a dedicated text area
+
+SELECT 'datagrid' AS component;
+SELECT 'Study Description' AS title, study_description AS description FROM drh_study_vanity_metrics_details;
 
 -- 4. DYNAMIC STUDY SNAPSHOT
 SELECT 'big_number' AS component, 4 AS columns;
@@ -625,6 +522,17 @@ SELECT 'Authors & Publications' AS title, '/drh/author-pub-data.sql' AS link,
 ```sql drh/ingestion-log.sql { route: { caption: "Study Files Log" } }
 -- @route.description "This section provides an overview of the files that have been accepted and converted into database format for research purposes"
 
+-- Place this immediately after the shell
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
+
 SELECT 'text' AS component, $page_title AS title;
 
 ${paginate("drh_study_files_table_info")}
@@ -654,6 +562,15 @@ ${pagination.navigation}
 ```sql drh/verification-validation-log.sql { route: { caption: "Verification And Validation Results" } }
 -- @route.description "This section provides the verification and valdiation results performed on the study files"
 
+-- Place this immediately after the shell
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
 
 SELECT 'text' AS component, $page_title AS title;
 
@@ -753,6 +670,17 @@ ${pagination.navigation}
 
 ```sql drh/study-participant-dashboard.sql{ route: { caption: "Study Participant Dashboard" } }
 -- @route.description "The dashboard presents key study details and participant-specific metrics in a clear, organized table format"
+
+-- Place this immediately after the shell
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
 -- 1. CLEAN HEADER (No more duplicated study description)
 SELECT 'title' AS component, 
     'Study Participant Metrics' AS contents,
@@ -761,7 +689,7 @@ SELECT 'title' AS component,
 -- 2. COMPACT DEVICE SNAPSHOT (Using a single row card)
 SELECT 'card' AS component, 1 AS columns;
 SELECT 
-    'Hardware Profile' AS title, 
+    'CGM Device Profile' AS title, 
     'Device Distribution: ' || GROUP_CONCAT(devicename || ' (' || number_of_files || ')') AS description,
     'device-heart-monitor' AS icon,
     'teal' AS color
@@ -812,6 +740,15 @@ ${pagination.navigation}
 
 SELECT 'text' AS component, $page_title AS title;
 
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
 SELECT
   'text' as component,
   'The Diabetes Research Hub collaborates with a diverse group of researchers or investigators dedicated to advancing diabetes research. This section provides detailed information about the individuals and institutions involved in the research studies.' as contents;
@@ -851,6 +788,15 @@ SELECT * from drh_lab;
 -- @route.description "This section provides detailed information about the study , and sites involved in the research study."
 
 SELECT 'text' AS component, $page_title AS title;
+
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
 
 
 
@@ -903,6 +849,14 @@ Research sites are locations where the studies are conducted. They include clini
 ```sql drh/participant-related-data.sql{ route: { caption: "Participant Demographics" } }
 -- @route.description "This section provides detailed information about the the participants involved in the research study."
 
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
 
 ${paginate("drh_participant")}
 
@@ -954,6 +908,15 @@ ${pagination.navigation}
 -- @route.description "Information about research publications and the authors involved in the studies are also collected, contributing to the broader understanding and dissemination of research findings."
 
 
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
 SELECT
   'text' as component,
   '
@@ -1003,6 +966,17 @@ This section provides information about the publications resulting from a study.
 ```sql drh/cgm-associated-data.sql{ route: { caption: "CGM Meta Data and Associated information" } }
 -- @route.description "This section provides detailed information about the CGM device used, the relationship between the participant''s raw CGM tracing file and related metadata, and other pertinent information."
 
+
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
+
 SELECT 'text' AS component, $page_title AS title;
 
 ${paginate("drh_cgmfilemetadata_view")}
@@ -1049,6 +1023,15 @@ ${pagination.navigation}
 
 SELECT 'text' AS component, $page_title AS title;
 
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
 ${paginate("combined_cgm_tracing_cached")}
 
  SELECT
@@ -1080,8 +1063,17 @@ ${pagination.navigation}
 
 ## Raw CGM Data Description
 
-```sql drh/cgm-data.sql{ route: { caption: "Raw CGM Data Description" } }
+```sql drh/cgm-data.sql{ route: { caption: "Raw CGM Data " } }
 -- @route.description "Explore detailed information about glucose levels over time, including timestamp, and glucose value."
+
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
 
 SELECT 'text' AS component, $page_title AS title;
 
@@ -1091,9 +1083,9 @@ SELECT
 The raw CGM data includes the following key elements.
 
 - **Date_Time**:
-The exact date and time when the glucose level was recorded. This is crucial for tracking glucose trends and patterns over time. The timestamp is usually formatted as YYYY-MM-DD HH:MM:SS.
+The exact date and time when the glucose level was recorded. This is crucial for tracking glucose trends and patterns over time. 
 - **CGM_Value**:
-The measured glucose level at the given timestamp. This value is typically recorded in milligrams per deciliter (mg/dL) or millimoles per liter (mmol/L) and provides insight into the participant''s glucose fluctuations throughout the day.' as contents_md;
+The measured glucose level at the given timestamp. This value is typically recorded in milligrams per deciliter (mg/dL).' as contents_md;
 
 SELECT 
     'table' AS component,
@@ -1102,15 +1094,16 @@ SELECT
     TRUE AS search;
 
 SELECT 
-    '[' || REPLACE(r.table_name, 'uniform_resource_', '') || '](cgm-data/raw-cgm/' || r.table_name || '.sql)' AS "RAW FILES"
+    -- Added leading / and removed the redundant 'cgm-data' from middle of path
+    '[' || REPLACE(r.table_name, 'uniform_resource_', '') || '](/drh/cgm-data/raw-cgm/' || r.table_name || '.sql)' AS "RAW FILES"
 FROM 
     drh_raw_cgm_table_lst AS r
 JOIN 
     sqlpage_files AS f 
+    -- Ensure this path matches your INSERT statement exactly
     ON f.path = 'drh/cgm-data/raw-cgm/' || r.table_name || '.sql'
 ORDER BY 
     r.table_name;
-
 
 ```
 
@@ -1120,6 +1113,15 @@ ORDER BY
 -- @page.description "Detailed logs of dietary intake across all study participants, including meal type and calorie information."
 
 SELECT 'text' AS component, $page_title AS title;
+
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
 
 SELECT
 'text' as component,
@@ -1169,6 +1171,15 @@ ${pagination.navigation};
 
 SELECT 'text' AS component, $page_title AS title;
 
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
 SELECT
 'text' as component,
 '
@@ -1214,6 +1225,15 @@ ${pagination.navigation};
 ```sql drh/deidentification-log.sql{ route: { caption: "PHI De-Identification Results" } }
 -- @route.description "Explore the results of PHI de-identification and review which columns have been modified."
 
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/research-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
 SELECT
   'text' as component,
   'DeIdentification Results' as title;
@@ -1225,6 +1245,174 @@ SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_ro
 SELECT input_text as "deidentified column", orch_started_at,orch_finished_at ,diagnostics_md from drh_vw_orchestration_deidentify;
 
 
+```
+
+## Participant Information
+
+```sql drh/participant-info.sql
+-- @route.caption "Participant Information"
+-- @route.description "The Participants Detail page is a comprehensive report that includes glucose statistics, such as the Ambulatory Glucose Profile (AGP), Glycemia Risk Index (GRI), Daily Glucose Profile, and all other metrics data."
+
+SELECT 'button' AS component, 'start' AS justify;
+
+SELECT 'button' AS component, 'xs' AS size; -- Very small
+SELECT 
+    'Back' AS title,
+    '/drh/study-participant-dashboard.sql' AS link, 
+    'chevron-left' AS icon,
+    'outline-secondary' AS outline;
+
+SELECT
+     'card'     as component,
+     '' as title,
+      1         as columns;
+    SELECT 
+     'The Participants Detail page is a comprehensive report that includes glucose statistics, such as the Ambulatory Glucose Profile (AGP), Glycemia Risk Index (GRI), Daily Glucose Profile, and all other metrics data.' as description;
+  
+     
+
+    SELECT 
+        'form'            as component,
+        'Filter by Date Range'   as title,
+        'Submit' as validate,    
+        'Clear'           as reset;
+    SELECT 
+        'start_date' as name,
+        'Start Date' as label,
+         strftime('%Y-%m-%d', MIN(Date_Time))  as value, 
+        'date'       as type,
+        6            as width,
+        'mt-1' as class
+    FROM     
+        combined_cgm_tracing        
+    WHERE 
+        participant_id = $participant_id;  
+    SELECT 
+        'end_date' as name,
+        'End Date' as label,
+         strftime('%Y-%m-%d', MAX(Date_Time))  as value, 
+        'date'       as type,
+         6             as width,
+         'mt-1' as class
+    FROM     
+        combined_cgm_tracing        
+    WHERE 
+        participant_id = $participant_id; 
+
+
+
+  SELECT
+    'datagrid' AS component;
+  SELECT
+      'MRN: ' || participant_id || '' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      'Study: ' || study_arm || '' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  
+  SELECT
+      'Age: '|| age || ' Years' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      'hba1c: ' || baseline_hba1c || '' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      'BMI: '|| bmi || '' AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      'Diabetes Type: '|| diabetes_type || ''  AS title,
+      ' ' AS description
+  FROM
+      drh_participant
+  WHERE participant_id = $participant_id;
+
+  SELECT
+      strftime('Generated: %Y-%m-%d %H:%M:%S', 'now') AS title,
+      ' ' AS description;
+      
+
+   SELECT 'participant_hidden_input' as component, $participant_id as participant_id;
+
+    SELECT 
+    'card' as component,    
+    2      as columns;
+SELECT 
+    '' AS title,
+    'white' As background_color,
+    "/drh/chart/glucose-statistics-and-targets/index.sql?_sqlpage_embed&participant_id=" || $participant_id ||
+    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
+    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed
+FROM 
+    (SELECT participant_id, 
+            MIN(Date_Time) AS cgm_start_date, 
+            MAX(Date_Time) AS cgm_end_date
+     FROM combined_cgm_tracing
+     GROUP BY participant_id) AS participant_cgm_dates
+WHERE 
+    participant_cgm_dates.participant_id = $participant_id;  
+
+         
+SELECT 
+    '' as title,
+    'white' As background_color,    
+    "/drh/chart/goals-for-type-1-and-type-2-diabetes/index.sql?_sqlpage_embed&participant_id=" || $participant_id ||
+    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
+    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed
+FROM 
+    (SELECT participant_id, 
+            MIN(Date_Time) AS cgm_start_date, 
+            MAX(Date_Time) AS cgm_end_date
+     FROM combined_cgm_tracing
+     GROUP BY participant_id) AS participant_cgm_dates
+WHERE 
+    participant_cgm_dates.participant_id = $participant_id;  
+
+SELECT 
+    '' as title,
+    'white' As background_color,    
+    "/drh/chart/ambulatory-glucose-profile/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
+SELECT 
+    '' as title,
+    'white' As background_color,
+     "/drh/chart/daily-glucose-profile/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
+SELECT 
+    '' as title,
+    'white' As background_color,
+     "/drh/chart/glycemic_risk_indicator/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
+  SELECT 
+    '' as title,
+    'white' As background_color,
+    "/drh/chart/advanced_metrics/index.sql?_sqlpage_embed&participant_id=" || $participant_id  || 
+    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
+    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed 
+    FROM 
+        (SELECT participant_id, 
+                MIN(Date_Time) AS cgm_start_date, 
+                MAX(Date_Time) AS cgm_end_date
+        FROM combined_cgm_tracing
+        GROUP BY participant_id) AS participant_cgm_dates
+    WHERE 
+        participant_cgm_dates.participant_id = $participant_id;  
 ```
 
 ## api
@@ -1377,161 +1565,6 @@ SELECT 'json' AS component,
   SELECT 'gri_component' AS component; 
 ```
 
-```sql drh/participant-info.sql
--- @route.caption "Participant Information"
--- @route.description "The Participants Detail page is a comprehensive report that includes glucose statistics, such as the Ambulatory Glucose Profile (AGP), Glycemia Risk Index (GRI), Daily Glucose Profile, and all other metrics data."
-SELECT
-     'card'     as component,
-     '' as title,
-      1         as columns;
-    SELECT 
-     'The Participants Detail page is a comprehensive report that includes glucose statistics, such as the Ambulatory Glucose Profile (AGP), Glycemia Risk Index (GRI), Daily Glucose Profile, and all other metrics data.' as description;
-  
-     
-
-    SELECT 
-        'form'            as component,
-        'Filter by Date Range'   as title,
-        'Submit' as validate,    
-        'Clear'           as reset;
-    SELECT 
-        'start_date' as name,
-        'Start Date' as label,
-         strftime('%Y-%m-%d', MIN(Date_Time))  as value, 
-        'date'       as type,
-        6            as width,
-        'mt-1' as class
-    FROM     
-        combined_cgm_tracing        
-    WHERE 
-        participant_id = $participant_id;  
-    SELECT 
-        'end_date' as name,
-        'End Date' as label,
-         strftime('%Y-%m-%d', MAX(Date_Time))  as value, 
-        'date'       as type,
-         6             as width,
-         'mt-1' as class
-    FROM     
-        combined_cgm_tracing        
-    WHERE 
-        participant_id = $participant_id; 
-
-
-
-  SELECT
-    'datagrid' AS component;
-  SELECT
-      'MRN: ' || participant_id || '' AS title,
-      ' ' AS description
-  FROM
-      drh_participant
-  WHERE participant_id = $participant_id;
-
-  SELECT
-      'Study: ' || study_arm || '' AS title,
-      ' ' AS description
-  FROM
-      drh_participant
-  WHERE participant_id = $participant_id;
-
-  
-  SELECT
-      'Age: '|| age || ' Years' AS title,
-      ' ' AS description
-  FROM
-      drh_participant
-  WHERE participant_id = $participant_id;
-
-  SELECT
-      'hba1c: ' || baseline_hba1c || '' AS title,
-      ' ' AS description
-  FROM
-      drh_participant
-  WHERE participant_id = $participant_id;
-
-  SELECT
-      'BMI: '|| bmi || '' AS title,
-      ' ' AS description
-  FROM
-      drh_participant
-  WHERE participant_id = $participant_id;
-
-  SELECT
-      'Diabetes Type: '|| diabetes_type || ''  AS title,
-      ' ' AS description
-  FROM
-      drh_participant
-  WHERE participant_id = $participant_id;
-
-  SELECT
-      strftime('Generated: %Y-%m-%d %H:%M:%S', 'now') AS title,
-      ' ' AS description;
-      
-
-   SELECT 'participant_hidden_input' as component, $participant_id as participant_id;
-
-    SELECT 
-    'card' as component,    
-    2      as columns;
-SELECT 
-    '' AS title,
-    'white' As background_color,
-    "/drh/chart/glucose-statistics-and-targets/index.sql?_sqlpage_embed&participant_id=" || $participant_id ||
-    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
-    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed
-FROM 
-    (SELECT participant_id, 
-            MIN(Date_Time) AS cgm_start_date, 
-            MAX(Date_Time) AS cgm_end_date
-     FROM combined_cgm_tracing
-     GROUP BY participant_id) AS participant_cgm_dates
-WHERE 
-    participant_cgm_dates.participant_id = $participant_id;  
-
-         
-SELECT 
-    '' as title,
-    'white' As background_color,    
-    "/drh/chart/goals-for-type-1-and-type-2-diabetes/index.sql?_sqlpage_embed&participant_id=" || $participant_id ||
-    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
-    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed
-FROM 
-    (SELECT participant_id, 
-            MIN(Date_Time) AS cgm_start_date, 
-            MAX(Date_Time) AS cgm_end_date
-     FROM combined_cgm_tracing
-     GROUP BY participant_id) AS participant_cgm_dates
-WHERE 
-    participant_cgm_dates.participant_id = $participant_id;  
-
-SELECT 
-    '' as title,
-    'white' As background_color,    
-    "/drh/chart/ambulatory-glucose-profile/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
-SELECT 
-    '' as title,
-    'white' As background_color,
-     "/drh/chart/daily-gluecose-profile/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
-SELECT 
-    '' as title,
-    'white' As background_color,
-     "/drh/chart/glycemic_risk_indicator/index.sql?_sqlpage_embed&participant_id=" || $participant_id as embed;  
-  SELECT 
-    '' as title,
-    'white' As background_color,
-    "/drh/chart/advanced_metrics/index.sql?_sqlpage_embed&participant_id=" || $participant_id  || 
-    '&start_date=' || COALESCE($start_date, participant_cgm_dates.cgm_start_date) ||
-    '&end_date=' || COALESCE($end_date, participant_cgm_dates.cgm_end_date) AS embed 
-    FROM 
-        (SELECT participant_id, 
-                MIN(Date_Time) AS cgm_start_date, 
-                MAX(Date_Time) AS cgm_end_date
-        FROM combined_cgm_tracing
-        GROUP BY participant_id) AS participant_cgm_dates
-    WHERE 
-        participant_cgm_dates.participant_id = $participant_id;  
-```
 
 ```sql drh/chart/glucose-statistics-and-targets/index.sql
 SELECT  
@@ -1646,7 +1679,7 @@ SELECT 'stacked_bar_chart' AS component, $start_date AS start_date,$end_date AS 
     SELECT 'agp-chart' AS component;
 ```
 
-```sql drh/chart/daily-gluecose-profile/index.sql
+```sql drh/chart/daily-glucose-profile/index.sql
     SELECT 'dgp-chart' AS component;
 ```
 
@@ -1810,4 +1843,3 @@ FROM (
 WHERE daily_diff IS NOT NULL;
 
 ```
-

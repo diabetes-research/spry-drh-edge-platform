@@ -14,7 +14,7 @@ The goal is to provide a centralized platform for managing and analyzing continu
 
 The platform performs a complete workflow for converting raw diabetes research data (CGM, meal, fitness) into a structured SQLite database and presenting it via a rich, interactive web UI.
 
-* **Pre-Validation Gate:** Checks file structure, metadata, and dependencies (Deno, surveilr). The pipeline halts if this step fails.
+* **Pre-Validation Gate:** Checks file structure, metadata, and dependencies . The pipeline halts if this step fails.
 * **Data Conversion:** Automates the ingestion and conversion of raw study files (e.g., CSV) into a structured format using the `surveilr` tool.
 * **DuckDB ETL:** Utilizes DuckDB for complex data transformation and integration, including combining CGM tracings and generating derived meal and fitness metadata using surveilr tool.
 * **SQLPage UI:** Generates a modern, interactive data dashboard using SQLPage powered by the resulting SQLite database.
@@ -263,7 +263,7 @@ spry rb task prepare-env drh-simplera-spry.md
 This script performs cleanup, validation, ingestion, and the complete complex ETL sequence.
 
 ```bash
-spry rb task prepare-db
+spry rb task prepare-db-deploy-server
 ```
 
 If you need to explicitly reference the specific datset based markdown, refer the following sample:
@@ -277,26 +277,8 @@ spry rb task [taskname] [markdownfilename]
 **Example:**
 
 ```bash
-spry rb task prepare-db drh-simplera-spry.md
+spry rb task prepare-db-deploy-server drh-simplera-spry.md
 ```
-
-#### Step 3: Integrated Build
-
-This is the preferred method for running the application. This command executes the following pipeline: it performs the data build `build-server`, compiling the SQLPage content files, generating the necessary SQL, and pushing the entire application structure into the database `$SPRY_DB`.
-
-**command:**
-
-```bash
-spry rb task [taskname] [markdownfilename] 
-```
-
-**Example:**
-
-```bash
-spry rb task build-server drh-simplera-spry.md
-```
-
-Expected Result: The console will display messages for the application build, and finally, the URL where the server is running (e.g., <http://localhost:9227/>).
 
 #### Step 3: Start the Local SQLPage Server manually
 

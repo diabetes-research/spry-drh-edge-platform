@@ -720,6 +720,13 @@ SELECT
        ''/static/agp-chart.js'' AS javascript_module,
        ''/static/formula-component.js'' AS javascript_module
        ;
+
+
+       -- 1. ADD BREADCRUMB COMPONENT MANUALLY
+    SELECT ''breadcrumb'' AS component;
+    SELECT ''Home'' AS title, ''/'' AS link;
+    SELECT ''Raw CGM Data'' AS title, ''/drh/cgm-data.sql'' AS link;
+    SELECT REPLACE(''' || table_name || ''', ''uniform_resource_'', '''') AS title, ''#'' AS link;
    
     SELECT ''title'' AS component, 
        REPLACE(REPLACE(''' ||table_name ||''', ''uniform_resource_'', ''''), ''.sql'', '''') 
