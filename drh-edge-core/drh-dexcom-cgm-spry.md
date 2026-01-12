@@ -28,7 +28,7 @@ sql * --interpolate --injectable
 
 This project reads configuration from environment variables. All variables listed below must be set in your `.envrc` file for the pipeline to run.
 
-### Pipeline & Study Configuration (Required for `prepare-db-deploy-server ` task)
+### Pipeline & Study Configuration (Required for `prepare-db-deploy-server` task)
 
 These variables link your study data to the ETL process:
 
@@ -95,7 +95,7 @@ Quick troubleshooting
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
   - ` spry rb task prepare-db-deploy-server  drh-dexcom-cgm-spry.md `
-- The `prepare-db-deploy-server ` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
+- The `prepare-db-deploy-server` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
 ```bash prepare-db-deploy-server -deploy-server  --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
@@ -135,7 +135,7 @@ else
 fi
 # 5. INITIALIZE SQLPAGE (Runs in both PASS and FAIL scenarios)
 # This allows the UI to show either the 'Launch' or 'Error' buttons based on your SQL queries
-spry sp spc --package --conf sqlpage/sqlpage.json -m drh-refactor-sample.md | sqlite3 resource-surveillance.sqlite.db
+spry sp spc --package --conf sqlpage/sqlpage.json -m drh-dexcom-cgm-spry.md | sqlite3 resource-surveillance.sqlite.db
 ```
 
 ```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"

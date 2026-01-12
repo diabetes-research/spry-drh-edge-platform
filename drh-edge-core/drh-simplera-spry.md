@@ -135,7 +135,7 @@ else
 fi
 # 5. INITIALIZE SQLPAGE (Runs in both PASS and FAIL scenarios)
 # This allows the UI to show either the 'Launch' or 'Error' buttons based on your SQL queries
-spry sp spc --package --conf sqlpage/sqlpage.json -m drh-refactor-sample.md | sqlite3 resource-surveillance.sqlite.db
+spry sp spc --package --conf sqlpage/sqlpage.json -m drh-simplera-spry.md | sqlite3 resource-surveillance.sqlite.db
 ```
 
 ```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"
