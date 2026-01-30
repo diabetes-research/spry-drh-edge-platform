@@ -73,7 +73,7 @@ bootstrap_venv()
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # from drh_sdk import DRHSingerEmitter # Removed
 import importlib.resources
-from drh_target.loader import DRHLoader
+from drh_target.loader import DRHLoader # type: ignore
 
 def load_schema(stream_name):
     try:
