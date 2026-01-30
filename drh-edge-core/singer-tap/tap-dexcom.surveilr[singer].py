@@ -29,7 +29,7 @@ def bootstrap_venv():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
     venv_dir = os.path.join(project_root, ".venv")
-    requirements_file = os.path.join(project_root, "requirements.txt")
+    #requirements_file = os.path.join(project_root, "requirements.txt")
     
     # Determine python executable in venv
     if sys.platform == "win32":
@@ -45,18 +45,25 @@ def bootstrap_venv():
         builder.create(venv_dir)
 
     # Install dependencies
-    if os.path.exists(requirements_file):
-        # Always try to install/upgrade dependencies to ensure state is correct
-        # print("Bootstrapping: Checking/Installing dependencies...", file=sys.stderr)
-        try:
-            subprocess.check_call(
-                [venv_python, "-m", "pip", "install", "-r", requirements_file],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-        except subprocess.CalledProcessError:
-             print("Bootstrapping: Failed to install dependencies.", file=sys.stderr)
-             sys.exit(1)
+    # Check if drh_target is installed to avoid repeated installs on every run
+    # For now, we'll try to install if not importable or just always upgrade
+    # Simpler: just try to install/upgrade.
+    try:
+        # Check if we can import to skip install if already present, but 
+        # for a robust bootstrap, we might want to ensure it's there. 
+        # Given "git+" it might be slow to check every run.
+        # Let's check if the package is installed via pip list or just try expecting it.
+        # But to match user request: "we can give ... so that i can remove requirement.txt"
+        
+        # We will use subprocess to install.
+        subprocess.check_call(
+            [venv_python, "-m", "pip", "install", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+    except subprocess.CalledProcessError:
+            print("Bootstrapping: Failed to install dependencies.", file=sys.stderr)
+            sys.exit(1)
     
     # Re-execute script
     # print("Bootstrapping: Re-executing script within virtual environment...", file=sys.stderr)
@@ -126,6 +133,7 @@ FILES = {
     "meal_data": os.path.basename(os.environ.get("MEAL_DATA_FILE", "meal_data.csv")),
     "fitness_data": os.path.basename(os.environ.get("FITNESS_DATA_FILE", "fitness_data.csv"))
 }
+
 
 MANDATORY_CSVS = [
     FILES["participant"], FILES["institution"], FILES["lab"], FILES["study"], FILES["site"],
@@ -777,8 +785,8 @@ def process_cgm_file_metadata(emitter, filepath):
                     "map_field_of_cgm_value": row.get("map_field_of_cgm_value"),
                     "study_id": row.get("study_id"),
                     "map_field_of_patient_id": row.get("map_field_of_patient_id"),
-                    "tenant_id": row.get("tenant_id"),
-                    "tenant_name": row.get("tenant_name")
+                    "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")),
+                    "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
 
                 # Normalize dates if present and likely just Date strings (YYYY-MM-DD)
@@ -804,8 +812,8 @@ def process_publication(emitter, filepath):
                      "digital_object_identifier": row.get("digital_object_identifier"),
                      "publication_site": row.get("publication_site"),
                      "study_id": row.get("study_id"),
-                     "tenant_id": row.get("tenant_id"),
-                     "tenant_name": row.get("tenant_name")
+                     "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")),
+                     "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -917,8 +925,8 @@ def process_participant(emitter, filepath):
                     "diabetes_type": row.get("diabetes_type"),
                     "study_arm": row.get("study_arm"),
                     # New fields requested by user, likely not in this source file
-                    "tenant_id": row.get("tenant_id"), 
-                    "tenant_name": row.get("tenant_name")
+                    "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")), 
+                    "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -941,8 +949,8 @@ def process_study(emitter, filepath):
                     "nct_number": row.get("nct_number"),
                     "study_description": row.get("study_description"),
                     # New fields requested by user
-                    "tenant_id": row.get("tenant_id"),
-                    "tenant_name": row.get("tenant_name")
+                    "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")),
+                    "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -962,8 +970,8 @@ def process_investigator(emitter, filepath):
                     "institution_id": row.get("institution_id"),
                     "study_id": row.get("study_id"),
                     # New fields requested by user
-                    "tenant_id": row.get("tenant_id"),
-                    "tenant_name": row.get("tenant_name")
+                    "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")),
+                    "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -983,8 +991,8 @@ def process_institution(emitter, filepath):
                     "state": row.get("state"),
                     "country": row.get("country"),
                     # New fields requested by user
-                    "tenant_id": row.get("tenant_id"),
-                    "tenant_name": row.get("tenant_name")
+                    "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")),
+                    "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -1004,8 +1012,8 @@ def process_lab(emitter, filepath):
                     "institution_id": row.get("institution_id"),
                     "study_id": row.get("study_id"),
                     # New fields requested by user
-                    "tenant_id": row.get("tenant_id"),
-                    "tenant_name": row.get("tenant_name")
+                    "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")),
+                    "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -1061,8 +1069,8 @@ def process_author(emitter, filepath):
                     "investigator_id": row.get("investigator_id"),
                     "study_id": row.get("study_id"),
                     # New fields requested by user
-                    "tenant_id": row.get("tenant_id"),
-                    "tenant_name": row.get("tenant_name")
+                    "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")),
+                    "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -1128,8 +1136,8 @@ def process_site(emitter, filepath):
                     "site_name": row.get("site_name"),
                     "site_type": row.get("site_type"),
                     # New fields requested by user
-                    "tenant_id": row.get("tenant_id"), 
-                    "tenant_name": row.get("tenant_name")
+                    "tenant_id": os.environ.get("TENANT_ID", row.get("tenant_id")), 
+                    "tenant_name": os.environ.get("TENANT_NAME", row.get("tenant_name"))
                 }
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -1163,7 +1171,7 @@ def process_combined_cgm_tracing(emitter, data_dir):
                 col_val = row.get("map_field_of_cgm_value")
                 # User instruction: "metadata_id column change to patient_id"
                 participant_id = row.get("patient_id") 
-                tenant_id = row.get("tenant_id")
+                tenant_id = os.environ.get("TENANT_ID", row.get("tenant_id"))
                 study_id = row.get("study_id")
                 
                 data_path = os.path.join(data_dir, file_name)
@@ -1395,14 +1403,14 @@ def main():
          report_record = {
             "timestamp": timestamp,
             "folder_name": os.path.basename(os.path.normpath(data_dir)) if data_dir else "unknown",
-            "tenant_id": "T-unknown", 
-            "tenant_name": "Unknown",
+            "tenant_id": os.environ.get("TENANT_ID", "T-unknown"),
+            "tenant_name": os.environ.get("TENANT_NAME", "Unknown"),
             "overall_status": overall_status,
             "report_json": json.dumps({
                 "timestamp": timestamp,
                 "folderName": os.path.basename(os.path.normpath(data_dir)) if data_dir else "unknown",
-                "tenantId": "T-unknown",
-                "tenantName": "Unknown",
+                "tenantId": os.environ.get("TENANT_ID", "T-unknown"),
+                "tenantName": os.environ.get("TENANT_NAME", "Unknown"),
                 "overallStatus": overall_status,
                 "results": diagnostic_logs
             })
@@ -1501,14 +1509,14 @@ def main():
     report_record = {
         "timestamp": timestamp,
         "folder_name": os.path.basename(os.path.normpath(data_dir)),
-        "tenant_id": "T-unknown", 
-        "tenant_name": "Unknown",
+        "tenant_id": os.environ.get("TENANT_ID", "T-unknown"),
+        "tenant_name": os.environ.get("TENANT_NAME", "Unknown"),
         "overall_status": overall_status,
         "report_json": json.dumps({
             "timestamp": timestamp,
             "folderName": os.path.basename(os.path.normpath(data_dir)),
-            "tenantId": "T-unknown",
-            "tenantName": "Unknown",
+            "tenantId": os.environ.get("TENANT_ID", "T-unknown"),
+            "tenantName": os.environ.get("TENANT_NAME", "Unknown"),
             "overallStatus": overall_status,
             "results": diagnostic_logs
         })
