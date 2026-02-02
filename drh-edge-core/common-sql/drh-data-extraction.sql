@@ -272,6 +272,7 @@ WHERE json_extract(content, '$.stream') = 'drh_validation_reports'
 -- =====================================================================
 
 -- 1. View for otel_logs
+DROP VIEW IF EXISTS drh_otel_logs;
 CREATE VIEW IF NOT EXISTS drh_otel_logs AS
 SELECT 
     json_extract(content, '$.record.time_unix_nano') AS time_unix_nano,
@@ -287,6 +288,7 @@ WHERE json_extract(content, '$.stream') = 'otel_logs'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 2. View for otel_metrics
+DROP VIEW IF EXISTS drh_otel_metrics;
 CREATE VIEW IF NOT EXISTS drh_otel_metrics AS
 SELECT 
     json_extract(content, '$.record.name') AS metric_name,
@@ -301,6 +303,7 @@ WHERE json_extract(content, '$.stream') = 'otel_metrics'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 3. View for otel_resource
+DROP VIEW IF EXISTS drh_otel_resource;
 CREATE VIEW IF NOT EXISTS drh_otel_resource AS
 SELECT 
     json_extract(content, '$.record.resource_id') AS resource_id,
@@ -315,6 +318,7 @@ WHERE json_extract(content, '$.stream') = 'otel_resource'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 4. View for otel_spans
+DROP VIEW IF EXISTS drh_otel_spans;
 CREATE VIEW IF NOT EXISTS drh_otel_spans AS
 SELECT 
     json_extract(content, '$.record.trace_id') AS trace_id,
@@ -340,7 +344,7 @@ WHERE json_extract(content, '$.stream') = 'otel_spans'
 
 -- Drops and recreates the view for device information.
 DROP VIEW IF EXISTS drh_device;
-CREATE VIEW drh_device AS
+CREATE VIEW IF NOT EXISTS drh_device AS
 SELECT
     device_id,
     name,
