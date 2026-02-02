@@ -4,4 +4,4 @@ drh-edge-core/*.sql
 .envrc
 dev-src.auto
 validation-reports
-venv
+.venv

@@ -6,7 +6,6 @@ Dexcom Singer Tap (Supporting Clarity, API, Participant, Study, Author, Meal, Fi
 - Identifies file content type based on filename patterns or headers.
 - Emits standard DRH Singer messages.
 """
-
 import sys
 import os
 import csv
@@ -21,66 +20,74 @@ import uuid
 
 # Bootstrap Logic to auto-install venv and dependencies
 def bootstrap_venv():
-    # If we are already in a venv, do nothing
+    """
+    Handles environment setup. 
+    Crucial: Prints NOTHING to stdout to avoid breaking the capture tool's JSON parser.
+    """
+    # 1. Check if we are already inside the venv
     if sys.prefix != sys.base_prefix:
         return
 
-    # Determine paths
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
-    venv_dir = os.path.join(project_root, ".venv")
-    #requirements_file = os.path.join(project_root, "requirements.txt")
+    script_path = os.path.abspath(__file__)
+    # script_dir is 'singer-tap'
+    script_dir = os.path.dirname(script_path) 
+    # project_root is 'drh-edge-core'
+    project_root = os.path.dirname(script_dir) 
     
-    # Determine python executable in venv
+    # Path to venv in drh-edge-core
+    venv_dir = os.path.join(project_root, ".venv")
+    
     if sys.platform == "win32":
         venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
     else:
         venv_python = os.path.join(venv_dir, "bin", "python")
 
-    # Create venv if python executable doesn't exist
+    # 2. Create VENV if missing (Log to stderr only)
     if not os.path.exists(venv_python):
-        print(f"Bootstrapping: Creating virtual environment at {venv_dir}...", file=sys.stderr)
-        # prompt=None, with_pip=True
+        # We print to stderr so the capture tool ignores this text
+        print(f"DEBUG: Creating venv at {venv_dir}", file=sys.stderr)
         builder = venv.EnvBuilder(with_pip=True)
         builder.create(venv_dir)
 
-    # Install dependencies
-    # Check if drh_target is installed to avoid repeated installs on every run
-    # For now, we'll try to install if not importable or just always upgrade
-    # Simpler: just try to install/upgrade.
+    # 3. Install dependencies (Silent)
+    # Redirect BOTH stdout and stderr to DEVNULL or stderr to keep the pipe clean
     try:
-        # Check if we can import to skip install if already present, but 
-        # for a robust bootstrap, we might want to ensure it's there. 
-        # Given "git+" it might be slow to check every run.
-        # Let's check if the package is installed via pip list or just try expecting it.
-        # But to match user request: "we can give ... so that i can remove requirement.txt"
-        
-        # We will use subprocess to install.
-        subprocess.check_call(
-            [venv_python, "-m", "pip", "install", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-    except subprocess.CalledProcessError:
-            print("Bootstrapping: Failed to install dependencies.", file=sys.stderr)
-            sys.exit(1)
-    
-    # Re-execute script
-    # print("Bootstrapping: Re-executing script within virtual environment...", file=sys.stderr)
-    try:
-        os.execv(venv_python, [venv_python] + sys.argv)
-    except OSError as e:
-        print(f"Bootstrapping: Failed to re-execute script: {e}", file=sys.stderr)
+        # Check if already installed to avoid slow git-clones
+        check_cmd = [venv_python, "-c", "import drh_target"]
+        if subprocess.call(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
+            print("DEBUG: Installing drh-protocol...", file=sys.stderr)
+            subprocess.check_call(
+                [venv_python, "-m", "pip", "install", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg"],
+                stdout=subprocess.DEVNULL, 
+                stderr=sys.stderr  # Errors go to stderr for debugging
+            )
+    except Exception as e:
+        print(f"FATAL: Bootstrap failed: {e}", file=sys.stderr)
         sys.exit(1)
+
+    # 4. Re-execute the script inside the VENV
+    os.environ["PYTHONUNBUFFERED"] = "1"
+    
+    # Ensure the script path is absolute and clean
+    normalized_script_path = os.path.abspath(script_path)
+    
+    # Use the venv python to run the script
+    # We pass normalized_script_path as the first argument to python
+    print(f"DEBUG: Re-executing with {venv_python}", file=sys.stderr)
+    os.execv(venv_python, [venv_python, normalized_script_path] + sys.argv[1:])
 
 # Run bootstrap before anything else
 bootstrap_venv()
+
 
 # Ensure we can import the SDK
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # from drh_sdk import DRHSingerEmitter # Removed
 import importlib.resources
 from drh_target.loader import DRHLoader # type: ignore
+
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 def load_schema(stream_name):
     try:
@@ -91,68 +98,70 @@ def load_schema(stream_name):
         LOGGER.error(f"Failed to load schema for {stream_name}: {e}")
         return {}
 
-STREAM_KEYS = {
-    "cgm_tracing": ["participant_id", "timestamp"],
-    "combined_cgm_tracing": ["participant_id", "Date_Time"],
-    "cgm_file_metadata": ["file_name"],
-    "participant": ["participant_id"],
-    "site": ["site_id"],
-    "study": ["study_id"],
-    "investigator": ["investigator_id"],
-    "institution": ["institution_id"],
-    "lab": ["lab_id"],
-    "author": ["author_id"],
-    "publication": ["publication_id"],
-    "fitness_data": ["participant_id", "timestamp"],
-    "fitness_file_metadata": ["file_name"],
-    "meal_data": ["participant_id", "timestamp"],
-    "meal_file_metadata": ["file_name"],
-    "drh_validation_reports": ["timestamp"],
-    "drh_diagnostics": ["record_id"],
-    "raw_cgm_tracing": ["raw_id"],
-    "raw_meal_data": ["raw_id"],
-    "raw_fitness_data": ["raw_id"]
-}
-
-logging.basicConfig(stream=sys.stderr, level=logging.INFO)
-LOGGER = logging.getLogger(__name__)
-
-# File Configuration from Environment
-FILES = {
-    "cgm_file_metadata": os.path.basename(os.environ.get("CGM_FILE_METADATA_FILE", "cgm_file_metadata.csv")),
-    "participant": os.path.basename(os.environ.get("PARTICIPANT_FILE", "participant.csv")),
-    "institution": os.path.basename(os.environ.get("INSTITUTION_FILE", "institution.csv")),
-    "lab": os.path.basename(os.environ.get("LAB_FILE", "lab.csv")),
-    "study": os.path.basename(os.environ.get("STUDY_FILE", "study.csv")),
-    "site": os.path.basename(os.environ.get("SITE_FILE", "site.csv")),
-    "investigator": os.path.basename(os.environ.get("INVESTIGATOR_FILE", "investigator.csv")),
-    "publication": os.path.basename(os.environ.get("PUBLICATION_FILE", "publication.csv")),
-    "author": os.path.basename(os.environ.get("AUTHOR_FILE", "author.csv")),
-    "meal_file_metadata": os.path.basename(os.environ.get("MEAL_FILE_METADATA_FILE", "meal_file_metadata.csv")),
-    "fitness_file_metadata": os.path.basename(os.environ.get("FITNESS_FILE_METADATA_FILE", "fitness_file_metadata.csv")),
-    "meal_data": os.path.basename(os.environ.get("MEAL_DATA_FILE", "meal_data.csv")),
-    "fitness_data": os.path.basename(os.environ.get("FITNESS_DATA_FILE", "fitness_data.csv"))
-}
-
-
-MANDATORY_CSVS = [
-    FILES["participant"], FILES["institution"], FILES["lab"], FILES["study"], FILES["site"],
-    FILES["investigator"], FILES["publication"], FILES["author"], FILES["cgm_file_metadata"]
+ALL_STREAM_NAMES = [
+    "combined_cgm_tracing", "cgm_file_metadata",
+    "participant", "site", "study", "investigator", "institution",
+    "lab", "author", "publication", "combined_fitness_data", "fitness_file_metadata",
+    "combined_meal_data", "meal_file_metadata", "drh_validation_reports",
+    "drh_diagnostics", "raw_cgm_tracing", "raw_meal_data", "raw_fitness_data"
 ]
 
-EXPECTED_HEADERS = {
-    "institution": ["institution_id", "institution_name", "city", "state", "country"],
-    "lab": ["lab_id", "lab_name", "lab_pi", "institution_id", "study_id"],
-    "study": ["study_id", "study_name", "start_date", "end_date", "treatment_modalities", "funding_source", "nct_number", "study_description"],
-    "participant": ["participant_id", "study_id", "site_id", "diagnosis_icd", "med_rxnorm", "treatment_modality", "gender", "race_ethnicity", "age", "bmi", "baseline_hba1c", "diabetes_type", "study_arm"],
-    "site": ["site_id", "study_id", "site_name", "site_type"],
-    "investigator": ["investigator_id", "investigator_name", "email", "institution_id", "study_id"],
-    "publication": ["publication_id", "publication_title", "digital_object_identifier", "publication_site", "study_id"],
-    "author": ["author_id", "name", "email", "investigator_id", "study_id"],
-    "cgm_file_metadata": ["metadata_id", "devicename", "device_id", "source_platform", "patient_id", "file_name", "file_format", "file_upload_date", "data_start_date", "data_end_date", "map_field_of_cgm_date", "map_field_of_cgm_value", "study_id"],
-    "meal_file_metadata": ["meal_meta_id", "participant_id", "file_name"],
-    "fitness_file_metadata": ["fitness_meta_id", "participant_id", "file_name"]
-}
+def get_stream_keys():
+    keys = {}
+    for stream in ALL_STREAM_NAMES:
+        schema = load_schema(stream)
+        if schema and "key_properties" in schema:
+             keys[stream] = schema["key_properties"]
+        else:
+             keys[stream] = []
+    return keys
+
+STREAM_KEYS = get_stream_keys()
+
+STREAM_KEYS = get_stream_keys()
+
+# File Configuration from Environment
+def get_files_config():
+    files = {}
+    for stream in ALL_STREAM_NAMES:
+        # Construct env var name: e.g. PARTICIPANT_FILE
+        env_var = f"{stream.upper()}_FILE"
+        default_name = f"{stream}.csv"
+        files[stream] = os.path.basename(os.environ.get(env_var, default_name))
+    
+    # Add legacy/simple keys for validation usage if they are missing
+    if "meal_data" not in files:
+         files["meal_data"] = os.path.basename(os.environ.get("MEAL_DATA_FILE", "meal_data.csv"))
+    if "fitness_data" not in files:
+         files["fitness_data"] = os.path.basename(os.environ.get("FITNESS_DATA_FILE", "fitness_data.csv"))
+         
+    return files
+
+FILES = get_files_config()
+
+
+
+MANDATORY_STREAM_NAMES = [
+    "participant", "institution", "lab", "study", "site",
+    "investigator", "publication", "author", "cgm_file_metadata"
+]
+
+MANDATORY_CSVS = [FILES[s] for s in MANDATORY_STREAM_NAMES if s in FILES]
+
+def get_expected_headers():
+    headers = {}
+    for stream in ALL_STREAM_NAMES:
+        schema = load_schema(stream)
+        if schema and "required" in schema:
+            headers[stream] = schema["required"]
+        else:
+             # Fallback or warn if schema not found or has no required fields
+             # For now, we default to empty list or basic logging
+             # LOGGER.warning(f"No required fields found in schema for {stream}") 
+             headers[stream] = []
+    return headers
+
+EXPECTED_HEADERS = get_expected_headers()
 
 
 def check_file_headers(data_dir):
@@ -182,8 +191,11 @@ def check_file_headers(data_dir):
                             if col in header:
                                 col_status.append(f"{col}: OK")
                             else:
-                                col_status.append(f"{col}: MISSING")
-                                missing_cols.append(col)
+                                if col not in ("tenant_id", "tenant_name"): # Skip checking tenant fields in header
+                                     col_status.append(f"{col}: MISSING")
+                                     missing_cols.append(col)
+                                else:
+                                     col_status.append(f"{col}: OPTIONAL(ENV)")
                         
                         check_name = f"File Schema Check: {fname}"
                         details = " | ".join(col_status)
@@ -1343,15 +1355,8 @@ def main():
         sys.exit(1)
     
     # Emit schemas for all supported streams
-    streams = [
-        # "combined_cgm_tracing", 
-        "participant", "study", "author", "meal_data", "fitness_data", 
-        "site", "investigator", "institution", "lab", "publication", 
-        "cgm_file_metadata", "meal_file_metadata", "fitness_file_metadata",
-        "drh_validation_reports", "drh_diagnostics", "raw_cgm_tracing",
-        "raw_meal_data", "raw_fitness_data"
-    ]
-    for s in streams:
+    # Emit schemas for all supported streams
+    for s in ALL_STREAM_NAMES:
         schema = load_schema(s)
         keys = STREAM_KEYS.get(s, [])
         emitter.emit_schema(s, schema, keys)
@@ -1532,43 +1537,55 @@ def main():
     process_raw_meal_data(emitter, data_dir)
     process_raw_fitness_data(emitter, data_dir)
 
+    # Map streams to their processing functions
+    STREAM_PROCESSORS = {
+        "participant": process_participant,
+        "study": process_study,
+        "author": process_author,
+        "meal_data": process_meal,
+        "fitness_data": process_fitness,
+        "site": process_site,
+        "investigator": process_investigator,
+        "institution": process_institution,
+        "lab": process_lab,
+        "publication": process_publication,
+        "cgm_file_metadata": process_cgm_file_metadata,
+        "meal_file_metadata": process_meal_file_metadata,
+        "fitness_file_metadata": process_fitness_file_metadata
+        # combined_cgm_tracing is disabled/custom
+        # raw data is handled separately or via metadata
+    }
+
+    # Create reverse mapping: filename -> stream_name
+    filename_to_stream = {v: k for k, v in FILES.items()}
+
     # Process files based on patterns
     for filepath in glob.glob(os.path.join(data_dir, "**", "*.csv"), recursive=True):
         filename = os.path.basename(filepath)
         LOGGER.info(f"Processing {filename}...")
         
+        # 1. Check for exact match via Configuration (User's request)
+        if filename in filename_to_stream:
+            stream_name = filename_to_stream[filename]
+            processor = STREAM_PROCESSORS.get(stream_name)
+            if processor:
+                processor(emitter, filepath)
+                continue
+            else:
+                LOGGER.warning(f"No processor defined for stream {stream_name} (file: {filename})")
+
+        # 2. Fallback / Special Pattern Matching
         if "cgm_tracing" in filename:
             process_raw_cgm_tracing(emitter, filepath)
-            continue # specific processing handled by combined_cgm_tracing
+            continue 
         
-        if filename == FILES['participant']:
-            process_participant(emitter, filepath)
-        elif filename == FILES['study']:
-            process_study(emitter, filepath)
-        elif filename == FILES['author']:
-            process_author(emitter, filepath)
-        elif filename == FILES['meal_data']:
-            process_meal(emitter, filepath)
-        elif filename == FILES['fitness_data']:
-            process_fitness(emitter, filepath)
-        elif filename == FILES['site']:
-             process_site(emitter, filepath)
-        elif filename == FILES['investigator']:
-             process_investigator(emitter, filepath)
-        elif filename == FILES['institution']:
-             process_institution(emitter, filepath)
-        elif filename == FILES['lab']:
-             process_lab(emitter, filepath)
-        elif filename == FILES['publication']:
-             process_publication(emitter, filepath)
-        elif filename == FILES['cgm_file_metadata']:
-             process_cgm_file_metadata(emitter, filepath)
-        elif filename == FILES['meal_file_metadata']:
-             process_meal_file_metadata(emitter, filepath)
-        elif filename == FILES['fitness_file_metadata']:
-             process_fitness_file_metadata(emitter, filepath)
-        else:
-            LOGGER.info(f"Skipping unknown file type: {filename}")
+        # If we reached here, it didn't match any configured file or known pattern
+        # We only log if it's not one of the raw files we processed simply by metadata check previously
+        # (Though actually, process_raw_meal_data iterates the metadata, it doesn't consume the file in this loop.
+        # So we might want to skip logging "unknown" if it was handled by raw readers? 
+        # The original code processed raw via metadata + this loop for others. 
+        # We'll stick to logging unknown.)
+        LOGGER.info(f"Skipping unknown file type: {filename}")
     
     # Emit final state
     state = {"last_execution": timestamp}
