@@ -39,9 +39,12 @@ WHERE json_extract(content, '$.type') = 'RECORD'
 CREATE VIEW IF NOT EXISTS drh_author AS
 SELECT     
     json_extract(content, '$.record.author_id') AS author_id,
-    json_extract(content, '$.record.first_name') AS first_name,
-    json_extract(content, '$.record.last_name') AS last_name,
-    json_extract(content, '$.record.email') AS email
+    json_extract(content, '$.record.name') AS name,    
+    json_extract(content, '$.record.email') AS email,
+    json_extract(content, '$.record.investigator_id') AS investigator_id,
+    json_extract(content, '$.record.study_id') AS study_id,    
+    json_extract(content, '$.record.tenant_id') AS tenant_id,   
+    json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
 WHERE json_extract(content, '$.stream') = 'author'
   AND json_extract(content, '$.type') = 'RECORD';
@@ -51,7 +54,11 @@ CREATE VIEW IF NOT EXISTS drh_lab AS
 SELECT 
     json_extract(content, '$.record.lab_id') AS lab_id,
     json_extract(content, '$.record.lab_name') AS lab_name,
-    json_extract(content, '$.record.site_id') AS site_id
+    json_extract(content, '$.record.lab_pi') AS lab_pi,
+    json_extract(content, '$.record.institution_id') AS institution_id,
+    json_extract(content, '$.record.study_id') AS study_id,    
+    json_extract(content, '$.record.tenant_id') AS tenant_id,   
+    json_extract(content, '$.record.tenant_name') AS tenant_name 
 FROM uniform_resource
 WHERE json_extract(content, '$.stream') = 'lab'
   AND json_extract(content, '$.type') = 'RECORD';
@@ -125,10 +132,10 @@ WHERE json_extract(content, '$.stream') = 'publication'
 -- 7. View for site
 CREATE VIEW IF NOT EXISTS drh_site AS
 SELECT     
-    json_extract(content, '$.record.study_id') AS study_id,
     json_extract(content, '$.record.site_id') AS site_id,
     json_extract(content, '$.record.site_name') AS site_name,
     json_extract(content, '$.record.site_type') AS site_type,
+    json_extract(content, '$.record.study_id') AS study_id,
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
@@ -169,9 +176,9 @@ SELECT
     json_extract(content, '$.record.data_start_date') AS data_start_date,
     json_extract(content, '$.record.data_end_date') AS data_end_date,
     json_extract(content, '$.record.map_field_of_cgm_date') AS map_field_of_cgm_date,
-    json_extract(content, '$.record.map_field_of_cgm_value') AS map_field_of_cgm_value,
-    json_extract(content, '$.record.study_id') AS study_id,
+    json_extract(content, '$.record.map_field_of_cgm_value') AS map_field_of_cgm_value,    
     json_extract(content, '$.record.map_field_of_patient_id') AS map_field_of_patient_id,
+    json_extract(content, '$.record.study_id') AS study_id,
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource

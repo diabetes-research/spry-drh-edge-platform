@@ -54,13 +54,9 @@ POSIX-style example (bash/zsh):
 ```envrc prepare-env -C ./.envrc --gitignore -X  --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
-export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
-export TENANT_ID="FLCG"
-export TENANT_NAME="Florida Clinical Group"
-export PARTICIPANT_FILE="raw-data/simplera-synthetic-cgm/participant.csv"
-export CGM_DIR="raw-data/simplera-synthetic-cgm/"
-export SIMPLERA_CGM_FILE_PATTERN="cgm_tracing"
-direnv allow
+export STUDY_DATA_PATH="raw-data/dexcom-synthetic-cgm/"
+export TENANT_ID="DSG"
+export TENANT_NAME="DSG"
 ```
 
 Then run `direnv allow` in this project directory to load the `.envrc` into your shell environment. direnv will evaluate `.envrc` only after you explicitly allow it.
@@ -104,30 +100,21 @@ Quick troubleshooting
 ```bash prepare-db-deploy-server -deploy-server  --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
 #!/bin/bash
 set -u
-# Variables
-STUDY_DATA_PATH="${STUDY_DATA_PATH}"
-TENANT_ID="${TENANT_ID}"
-TENANT_NAME="${TENANT_NAME}"
 # 1. Cleanup
-rm -f resource-surveillance.sqlite.db *.sql
-rm -rf dev-src.auto validation-reports
-# 2. RUN PREFLIGHT VALIDATION (Mandatory)
-# This step must run first to create the drh_validation_reports table
-surveilr ingest files -r "${STUDY_DATA_PATH}" --tenant-id "${TENANT_ID}" --tenant-name "${TENANT_NAME}"
-surveilr shell --engine duckdb duckdb-etl-sql/drh-preflight-validation.sql
-# 3. EXTRACT STATUS FROM JSON
-# We use jq to grab the value of 'overall_status'
+rm -f resource-surveillance.sqlite.db 
+rm -rf dev-src.auto 
+# 2. Execute Dataset specific Singer Tap
+surveilr ingest files -r singer-tap/tap-dexcom.surveilr\[singer]\.py 
+# 3. EXTRACT VIEWS FROM TAP OUTPUT
+surveilr shell common-sql/drh-data-extraction.sql  
 RAW_STATUS=$(surveilr shell "select overall_status from drh_validation_reports ORDER BY timestamp DESC LIMIT 1;")
 VALIDATION_STATUS=$(echo "$RAW_STATUS" | jq -r '.[0].overall_status')
 # 4. CONDITIONAL ETL EXECUTION
 if [ "$VALIDATION_STATUS" == "PASS" ]; then    
     (
-        set -e
-        surveilr orchestrate transform-csv
-        surveilr shell common-sql/drh-data-validation.sql    
-        surveilr shell common-sql/drh-anonymize-prepare.sql           
-        surveilr shell --engine duckdb duckdb-etl-sql/drh-master-etl.sql
-        surveilr shell common-sql/drh-metrics-pipeline.sql 
+        set -e   
+        surveilr shell common-sql/drh-master-etl-v1.sql
+        surveilr shell common-sql/drh-metrics.sql 
     )
     
     if [ $? -ne 0 ]; then        
@@ -138,7 +125,7 @@ else
 fi
 # 5. INITIALIZE SQLPAGE (Runs in both PASS and FAIL scenarios)
 # This allows the UI to show either the 'Launch' or 'Error' buttons based on your SQL queries
-spry sp spc --package --conf sqlpage/sqlpage.json -m drh-simplera-spry.md | sqlite3 resource-surveillance.sqlite.db
+spry sp spc --package --conf sqlpage/sqlpage.json -m drh-singer-sample.md | sqlite3 resource-surveillance.sqlite.db
 ```
 
 ```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"

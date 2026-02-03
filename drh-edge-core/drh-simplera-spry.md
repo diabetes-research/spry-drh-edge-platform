@@ -57,7 +57,6 @@ export PORT=9227
 export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
 export TENANT_ID="FLCG"
 export TENANT_NAME="Florida Clinical Group"
-direnv allow
 ```
 
 Then run `direnv allow` in this project directory to load the `.envrc` into your shell environment. direnv will evaluate `.envrc` only after you explicitly allow it.
