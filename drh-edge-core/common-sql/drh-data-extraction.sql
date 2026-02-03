@@ -191,6 +191,18 @@ FROM uniform_resource
 WHERE json_extract(content, '$.stream') = 'meal_file_metadata'
   AND json_extract(content, '$.type') = 'RECORD';
 
+--  View for fitness_file_metadata
+CREATE VIEW IF NOT EXISTS drh_fitness_file_metadata AS
+SELECT     
+    json_extract(content, '$.record.fitness_meta_id') AS fitness_meta_id,
+    json_extract(content, '$.record.participant_id') AS participant_id,
+    json_extract(content, '$.record.file_name') AS file_name,
+    json_extract(content, '$.record.source') AS source,
+    json_extract(content, '$.record.file_format') AS file_format
+FROM uniform_resource
+WHERE json_extract(content, '$.stream') = 'fitness_file_metadata'
+  AND json_extract(content, '$.type') = 'RECORD';
+
 
 -- =====================================================================
 -- RAW VIEWS FOR CGM, FITNESS, MEAL
@@ -226,17 +238,7 @@ FROM uniform_resource
 WHERE json_extract(content, '$.stream') = 'raw_meal_data'
   AND json_extract(content, '$.type') = 'RECORD';
 
---  View for fitness_file_metadata
-CREATE VIEW IF NOT EXISTS drh_fitness_file_metadata AS
-SELECT     
-    json_extract(content, '$.record.fitness_meta_id') AS fitness_meta_id,
-    json_extract(content, '$.record.participant_id') AS participant_id,
-    json_extract(content, '$.record.file_name') AS file_name,
-    json_extract(content, '$.record.source') AS source,
-    json_extract(content, '$.record.file_format') AS file_format
-FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'fitness_file_metadata'
-  AND json_extract(content, '$.type') = 'RECORD';
+
 
 -- =====================================================================
 -- DRH DIAGONOSTIC VIEWS
