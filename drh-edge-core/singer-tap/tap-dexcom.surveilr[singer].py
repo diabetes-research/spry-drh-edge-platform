@@ -17,38 +17,39 @@ import argparse
 import subprocess
 import venv
 import uuid
+import re
 
 # Bootstrap Logic to auto-install venv and dependencies
 def bootstrap_venv():
     """
-    Handles environment setup. 
+    Handles environment setup.
     Crucial: Prints NOTHING to stdout to avoid breaking the capture tool's JSON parser.
     """
     # 1. Check if we are already inside the venv
     if sys.prefix != sys.base_prefix:
         return
-
+ 
     script_path = os.path.abspath(__file__)
     # script_dir is 'singer-tap'
-    script_dir = os.path.dirname(script_path) 
+    script_dir = os.path.dirname(script_path)
     # project_root is 'drh-edge-core'
-    project_root = os.path.dirname(script_dir) 
-    
+    project_root = os.path.dirname(script_dir)
+   
     # Path to venv in drh-edge-core
     venv_dir = os.path.join(project_root, ".venv")
-    
+   
     if sys.platform == "win32":
         venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
     else:
         venv_python = os.path.join(venv_dir, "bin", "python")
-
+ 
     # 2. Create VENV if missing (Log to stderr only)
     if not os.path.exists(venv_python):
         # We print to stderr so the capture tool ignores this text
         print(f"DEBUG: Creating venv at {venv_dir}", file=sys.stderr)
         builder = venv.EnvBuilder(with_pip=True)
         builder.create(venv_dir)
-
+ 
     # 3. Install dependencies (Silent)
     # Redirect BOTH stdout and stderr to DEVNULL or stderr to keep the pipe clean
     try:
@@ -57,20 +58,20 @@ def bootstrap_venv():
         if subprocess.call(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
             print("DEBUG: Installing drh-protocol...", file=sys.stderr)
             subprocess.check_call(
-                [venv_python, "-m", "pip", "install", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg"],
-                stdout=subprocess.DEVNULL, 
+                [venv_python, "-m", "pip", "install","--upgrade", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg"],
+                stdout=subprocess.DEVNULL,
                 stderr=sys.stderr  # Errors go to stderr for debugging
             )
     except Exception as e:
         print(f"FATAL: Bootstrap failed: {e}", file=sys.stderr)
         sys.exit(1)
-
+ 
     # 4. Re-execute the script inside the VENV
     os.environ["PYTHONUNBUFFERED"] = "1"
-    
+   
     # Ensure the script path is absolute and clean
     normalized_script_path = os.path.abspath(script_path)
-    
+   
     # Use the venv python to run the script
     # We pass normalized_script_path as the first argument to python
     print(f"DEBUG: Re-executing with {venv_python}", file=sys.stderr)
@@ -78,7 +79,6 @@ def bootstrap_venv():
 
 # Run bootstrap before anything else
 bootstrap_venv()
-
 
 # Ensure we can import the SDK
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -88,6 +88,62 @@ from drh_target.loader import DRHLoader # type: ignore
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
+
+class ValidatingDRHLoader(DRHLoader):
+    """
+    Extension of DRHLoader that validates records against Key Properties and Schema Required fields.
+    """
+    def __init__(self):
+        super().__init__()
+        self.schemas = {}
+        self.otel_resource_id = None
+
+    def load_schema_if_needed(self, stream_name):
+        if stream_name not in self.schemas:
+            self.schemas[stream_name] = load_schema(stream_name)
+        return self.schemas[stream_name]
+
+    def emit_record(self, stream_name, record):
+        # Prevent recursion: Don't validate/log errors for OTel streams themselves
+        if stream_name.startswith("otel_"):
+             super().emit_record(stream_name, record)
+             return
+
+        # Ensure schema is loaded
+        schema = self.load_schema_if_needed(stream_name)
+        
+        # 1. Check Key Properties (Primary Keys)
+        # These are critical for unique identification in Singer
+        key_props = STREAM_KEYS.get(stream_name, [])
+        if key_props:
+             missing_keys = [k for k in key_props if k not in record or record.get(k) is None]
+             # Filter out tenant fields from validation as per user request
+             missing_keys = [k for k in missing_keys if k not in ("tenant_id", "tenant_name")]
+             
+             if missing_keys:
+                 msg = f"Validation Error [Integrity]: Stream '{stream_name}' record missing KEY properties: {missing_keys}. Record skipped."
+                 LOGGER.error(msg)
+                 if self.otel_resource_id:
+                      emit_otel_log(self, self.otel_resource_id, "ERROR", msg, {"stream": stream_name, "error_type": "integrity"})
+                 return # Skip emitting
+
+        # 2. Check Required Fields (Mandatory Columns from Schema)
+        if schema:
+            required_fields = schema.get("required", [])
+            if required_fields:
+                missing_required = [field for field in required_fields if field not in record]
+                # Filter out tenant fields from validation as per user request
+                missing_required = [k for k in missing_required if k not in ("tenant_id", "tenant_name")]
+
+                if missing_required:
+                    msg = f"Validation Error [Schema]: Stream '{stream_name}' record missing REQUIRED fields: {missing_required}. Record skipped."
+                    LOGGER.error(msg)
+                    if self.otel_resource_id:
+                         emit_otel_log(self, self.otel_resource_id, "ERROR", msg, {"stream": stream_name, "error_type": "schema", "missing_fields": str(missing_required)})
+                    return # Skip emitting
+
+        # If validation passes, emit normally
+        super().emit_record(stream_name, record)
 
 def load_schema(stream_name):
     try:
@@ -99,11 +155,12 @@ def load_schema(stream_name):
         return {}
 
 ALL_STREAM_NAMES = [
-    "combined_cgm_tracing", "cgm_file_metadata",
+     "cgm_file_metadata",
     "participant", "site", "study", "investigator", "institution",
-    "lab", "author", "publication", "combined_fitness_data", "fitness_file_metadata",
-    "combined_meal_data", "meal_file_metadata", "drh_validation_reports",
-    "drh_diagnostics", "raw_cgm_tracing", "raw_meal_data", "raw_fitness_data"
+    "lab", "author", "publication",  "fitness_file_metadata",
+     "meal_file_metadata", "drh_validation_reports",
+    "drh_diagnostics", "raw_cgm_tracing", "raw_meal_data", "raw_fitness_data",
+    "otel_resource", "otel_logs", "otel_metrics", "otel_spans"
 ]
 
 def get_stream_keys():
@@ -115,8 +172,6 @@ def get_stream_keys():
         else:
              keys[stream] = []
     return keys
-
-STREAM_KEYS = get_stream_keys()
 
 STREAM_KEYS = get_stream_keys()
 
@@ -164,9 +219,10 @@ def get_expected_headers():
 EXPECTED_HEADERS = get_expected_headers()
 
 
-def check_file_headers(data_dir):
+
+def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=None, trace_id=None):
     """
-    Check if existing files have required headers.
+    Check if existing files have required headers AND validate data formats.
     Returns a list of result dicts: {"name": str, "status": str, "details": str}
     """
     results = []
@@ -178,6 +234,17 @@ def check_file_headers(data_dir):
         
         fpath = os.path.join(data_dir, fname)
         if os.path.exists(fpath):
+            file_span_id = None
+            file_start_time = None # Initialize to None
+            if emitter and resource_id:
+                # Start File Span
+                file_start_time = get_time_nano()
+                # Use simplified name for span
+                file_span_name = f"Validate File: {fname}"
+                # We emit the start/end in one go usually, but here we calculate end time later.
+                # Since our helper emits the record (which is an event), we just need to capture start time now
+                # and call emit_otel_span later.
+            
             try:
                 with open(fpath, 'r', encoding='utf-8-sig') as f:
                     reader = csv.reader(f)
@@ -197,34 +264,148 @@ def check_file_headers(data_dir):
                                 else:
                                      col_status.append(f"{col}: OPTIONAL(ENV)")
                         
-                        check_name = f"File Schema Check: {fname}"
+                        check_name = f"File Schema and Required Columns + Field Format Check: {fname}"
                         details = " | ".join(col_status)
                         
+                        
                         if missing_cols:
+                            status = "FAILED"
+                            # Header failure - stop here for this file
                             results.append({
-                                "name": check_name,
+                                "name": f"File Schema and Required Columns + Field Format Check: {fname}",
                                 "status": "FAILED",
                                 "details": details
                             })
+                            if emitter and resource_id:
+                                emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                               parent_span_id=parent_span_id, 
+                                               attributes={"validation.level": "schema", "file.name": fname, "error": "Missing Columns"}, 
+                                               status_code="ERROR", trace_id=trace_id)
+                            continue
+
+                        # Header OK, now check Data Types & Formats
+                        schema = load_schema(key)
+                        properties = schema.get("properties", {})
+                        
+                        # We need to map header index to column name
+                        header_map = {col: i for i, col in enumerate(header)}
+                        
+                        row_errors = []
+                        line_num = 1 # 1-based, starting after header
+                        
+                        for row in reader:
+                            line_num += 1
+                            for field_name, field_def in properties.items():
+                                # Only check if field is in CSV
+                                if field_name not in header_map:
+                                    continue
+                                
+                                idx = header_map[field_name]
+                                if idx >= len(row): continue # Should not happen in well-formed CSV
+                                
+                                val = row[idx].strip()
+                                if not val: continue # Skip empty values (assuming nullable/optional handled elsewhere or allowed)
+
+                                # 1. Type Check
+                                field_type = field_def.get("type")
+                                if isinstance(field_type, list):
+                                     field_type = [t for t in field_type if t != "null"][0] if [t for t in field_type if t != "null"] else "string"
+
+                                if field_type == "integer":
+                                    if not re.match(r"^-?\d+$", val):
+                                         row_errors.append(f"Line {line_num} {field_name}: '{val}' is not an integer")
+                                elif field_type == "number":
+                                    try:
+                                        float(val)
+                                    except ValueError:
+                                        row_errors.append(f"Line {line_num} {field_name}: '{val}' is not a number")
+                                elif field_type == "boolean":
+                                    if val.lower() not in ("true", "false", "1", "0"):
+                                         row_errors.append(f"Line {line_num} {field_name}: '{val}' is not a boolean")
+
+                                # 2. Format Check
+                                fmt = field_def.get("format")
+                                if fmt == "date-time":
+                                    # Simple ISO Check: YYYY-MM-DD...
+                                    # Allows T or space separator, but requires components
+                                    if not re.match(r"^\d{4}-\d{2}-\d{2}", val):
+                                         row_errors.append(f"Line {line_num} {field_name}: '{val}' is not a date-time")
+                                elif fmt == "date":
+                                     if not re.match(r"^\d{4}-\d{2}-\d{2}", val):
+                                         row_errors.append(f"Line {line_num} {field_name}: '{val}' is not a date")
+
+                                # 3. Pattern Check
+                                pattern = field_def.get("pattern")
+                                if pattern:
+                                    # User Request: Exclude pattern check for date fields in these specific files
+                                    is_excluded_file = any(x in fname for x in ["cgm_tracing", "fitness_data", "meal_data"])
+                                    is_date_format = field_def.get("format") in ["date", "date-time"]
+                                    
+                                    if is_excluded_file and is_date_format:
+                                         pass # Skip pattern check
+                                    else:
+                                        try:
+                                            if not re.match(pattern, val):
+                                                 row_errors.append(f"Line {line_num} {field_name}: '{val}' does not match pattern '{pattern}'")
+                                        except re.error:
+                                            pass # Invalid regex in schema, ignore
+
+                            if len(row_errors) > 10: # Cap errors per file
+                                row_errors.append("... (too many errors)")
+                                break
+                        
+                        if row_errors:
+                            results.append({
+                                "name": f"File Schema and Required Columns + Field Format Check: {fname}",
+                                "status": "FAILED",
+                                "details": "; ".join(row_errors[:5])
+                            })
+                            if emitter and resource_id:
+                                emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                               parent_span_id=parent_span_id, 
+                                               attributes={"validation.level": "schema", "file.name": fname, "error_count": len(row_errors)}, 
+                                               status_code="ERROR", trace_id=trace_id)
                         else:
                             results.append({
-                                "name": check_name,
+                                "name": f"File Schema and Required Columns + Field Format Check: {fname}",
                                 "status": "PASSED",
-                                "details": details
+                                "details": "Header & Data Validation OK"
                             })
+                            if emitter and resource_id:
+                                emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                               parent_span_id=parent_span_id, 
+                                               attributes={"validation.level": "schema", "file.name": fname}, 
+                                               status_code="OK", trace_id=trace_id)
+
                     except StopIteration:
                         results.append({
                             "name": f"File Schema Check: {fname}",
                             "status": "FAILED",
                             "details": "Empty file - no headers found"
                         })
+                        if emitter and resource_id:
+                                emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                               parent_span_id=parent_span_id, 
+                                               attributes={"validation.level": "schema", "file.name": fname, "error": "Empty File"}, 
+                                               status_code="ERROR", trace_id=trace_id)
+
             except Exception as e:
                 results.append({
                     "name": f"File Schema Check: {fname}",
                     "status": "FAILED",
                     "details": f"Error reading file: {e}"
                 })
-    
+                # Note: We can't access file_start_time here if it wasn't initialized, but it is inside the 'if exists' block
+                if emitter and resource_id and file_start_time is not None: # Check if file_start_time was initialized
+                     emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                   parent_span_id=parent_span_id, 
+                                   attributes={"validation.level": "schema", "file.name": fname, "error": str(e)}, 
+                                   status_code="ERROR", trace_id=trace_id)
+
+        else:
+            # File does not exist, but it might be optional or handled by other checks
+            # For now, we don't add a result if the file isn't found here.
+            pass
     return results
 
 
@@ -751,8 +932,6 @@ def check_fitness_data_integrity(data_dir):
             
     return results
 
-
-
 def check_required_files(data_dir):
     """Check if all mandatory files exist."""
     missing_files = []
@@ -810,6 +989,8 @@ def process_cgm_file_metadata(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in cgm_file_metadata file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in cgm_file_metadata file {filepath}: {e}", {"file": filepath})
 
 def process_publication(emitter, filepath):
     """Process Publication Metadata."""
@@ -830,6 +1011,8 @@ def process_publication(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in publication file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in publication file {filepath}: {e}", {"file": filepath})
 
 def normalize_timestamp(ts_str):
     """Normalize timestamp to ISO 8601."""
@@ -864,6 +1047,8 @@ def process_raw_cgm_tracing(emitter, filepath):
         
     except Exception as e:
         LOGGER.error(f"Error processing raw CGM tracing {filepath}: {e}")
+        if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+             emit_otel_log(emitter, emitter.otel_resource_id, "ERROR", f"Error processing raw CGM tracing {filepath}: {e}", {"file": filepath})
 
 def process_cgm_clarity(emitter, filepath):
 
@@ -891,6 +1076,8 @@ def process_cgm_clarity(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in file {filepath}: {e}", {"file": filepath})
 
 def process_cgm_api(emitter, filepath):
     """Process API Export Format."""
@@ -912,6 +1099,8 @@ def process_cgm_api(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in file {filepath}: {e}", {"file": filepath})
 
 def process_participant(emitter, filepath):
     """Process Participant Metadata."""
@@ -943,6 +1132,8 @@ def process_participant(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                  LOGGER.warning(f"Error in participant file {filepath}: {e}")
+                 if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                      emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in participant file {filepath}: {e}", {"file": filepath})
 
 def process_study(emitter, filepath):
     """Process Study Metadata."""
@@ -967,6 +1158,8 @@ def process_study(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in study file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in study file {filepath}: {e}", {"file": filepath})
 
 def process_investigator(emitter, filepath):
     """Process Investigator Metadata."""
@@ -988,6 +1181,8 @@ def process_investigator(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in investigator file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in investigator file {filepath}: {e}", {"file": filepath})
 
 def process_institution(emitter, filepath):
     """Process Institution Metadata."""
@@ -1009,6 +1204,8 @@ def process_institution(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in institution file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in institution file {filepath}: {e}", {"file": filepath})
 
 def process_lab(emitter, filepath):
     """Process Lab Metadata."""
@@ -1030,6 +1227,8 @@ def process_lab(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in lab file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in lab file {filepath}: {e}", {"file": filepath})
 
 def process_meal_file_metadata(emitter, filepath):
     """Process Meal File Metadata."""
@@ -1048,6 +1247,8 @@ def process_meal_file_metadata(emitter, filepath):
                  emitter.emit_record(stream_name, record)
              except Exception as e:
                  LOGGER.warning(f"Error in meal_file_metadata file {filepath}: {e}")
+                 if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                      emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in meal_file_metadata file {filepath}: {e}", {"file": filepath})
 
 def process_fitness_file_metadata(emitter, filepath):
     """Process Fitness File Metadata."""
@@ -1066,6 +1267,8 @@ def process_fitness_file_metadata(emitter, filepath):
                  emitter.emit_record(stream_name, record)
              except Exception as e:
                  LOGGER.warning(f"Error in fitness_file_metadata file {filepath}: {e}")
+                 if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                      emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in fitness_file_metadata file {filepath}: {e}", {"file": filepath})
 
 def process_author(emitter, filepath):
     """Process Author Metadata."""
@@ -1087,6 +1290,8 @@ def process_author(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in author file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in author file {filepath}: {e}", {"file": filepath})
 
 def process_meal(emitter, filepath):
     """Process Meal Data."""
@@ -1110,6 +1315,8 @@ def process_meal(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                 LOGGER.warning(f"Error in meal file {filepath}: {e}")
+                if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                     emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in meal file {filepath}: {e}", {"file": filepath})
 
 def process_fitness(emitter, filepath):
     """Process Fitness Data."""
@@ -1134,6 +1341,8 @@ def process_fitness(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                  LOGGER.warning(f"Error in fitness file {filepath}: {e}")
+                 if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                      emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in fitness file {filepath}: {e}", {"file": filepath})
 
 def process_site(emitter, filepath):
     """Process Site Metadata."""
@@ -1154,6 +1363,8 @@ def process_site(emitter, filepath):
                 emitter.emit_record(stream_name, record)
             except Exception as e:
                  LOGGER.warning(f"Error in site file {filepath}: {e}")
+                 if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                      emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error in site file {filepath}: {e}", {"file": filepath})
 
 def process_combined_cgm_tracing(emitter, data_dir):
     """
@@ -1216,9 +1427,13 @@ def process_combined_cgm_tracing(emitter, data_dir):
                                     pass # Skip invalid numbers
                 except Exception as e:
                      LOGGER.warning(f"Error processing CGM data file {file_name}: {e}")
+                     if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                          emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error processing CGM data file {file_name}: {e}", {"file": file_name})
 
     except Exception as e:
         LOGGER.error(f"Error processing combined CGM tracing: {e}")
+        if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+             emit_otel_log(emitter, emitter.otel_resource_id, "ERROR", f"Error processing combined CGM tracing: {e}")
 
 def process_raw_meal_data(emitter, data_dir):
     """
@@ -1267,9 +1482,13 @@ def process_raw_meal_data(emitter, data_dir):
                         emitter.emit_record("raw_meal_data", record)
                 except Exception as e:
                      LOGGER.warning(f"Error processing raw meal file {file_name}: {e}")
+                     if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                          emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error processing raw meal file {file_name}: {e}", {"file": file_name})
 
     except Exception as e:
         LOGGER.error(f"Error processing raw meal metadata: {e}")
+        if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+             emit_otel_log(emitter, emitter.otel_resource_id, "ERROR", f"Error processing raw meal metadata: {e}")
 
 def process_raw_fitness_data(emitter, data_dir):
     """
@@ -1318,9 +1537,102 @@ def process_raw_fitness_data(emitter, data_dir):
                         emitter.emit_record("raw_fitness_data", record)
                 except Exception as e:
                      LOGGER.warning(f"Error processing raw fitness file {file_name}: {e}")
+                     if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+                          emit_otel_log(emitter, emitter.otel_resource_id, "WARN", f"Error processing raw fitness file {file_name}: {e}", {"file": file_name})
 
     except Exception as e:
         LOGGER.error(f"Error processing raw fitness metadata: {e}")
+        if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
+             emit_otel_log(emitter, emitter.otel_resource_id, "ERROR", f"Error processing raw fitness metadata: {e}")
+
+
+# OTel Helper Functions
+def get_time_nano():
+    """Returns current UTC time in nanoseconds."""
+    return int(datetime.now(timezone.utc).timestamp() * 1e9)
+
+def emit_otel_resource(emitter):
+    """Emits the OTel Resource definition and returns the resource_id."""
+    resource_id = str(uuid.uuid4())
+    record = {
+        "resource_id": resource_id,
+        "service.name": "tap-dexcom",
+        "service.version": "1.0.0",
+        "service.instance.id": resource_id,
+        "deployment.environment": os.environ.get("DEPLOY_ENV", "production"),
+        "singer.role": "tap",
+        "singer.stream": "all"
+    }
+    emitter.emit_record("otel_resource", record)
+    return resource_id
+
+def emit_otel_log(emitter, resource_id, severity, body, attributes=None, span_id="", trace_id=""):
+    """Emits an OTel Log record."""
+    if attributes is None:
+        attributes = {}
+    
+    # Map severity text to number (approximate)
+    severity_map = {
+        "DEBUG": 5, "INFO": 9, "WARN": 13, "ERROR": 17, "FATAL": 21
+    }
+    
+    record = {
+        "time_unix_nano": get_time_nano(),
+        "trace_id": trace_id, 
+        "span_id": span_id,
+        "severity_number": severity_map.get(severity, 9),
+        "severity_text": severity,
+        "body": str(body),
+        "attributes": attributes,
+        "resource_id": resource_id
+    }
+    emitter.emit_record("otel_logs", record)
+
+def emit_otel_metric(emitter, resource_id, name, value, unit="1", attributes=None):
+    """Emits an OTel Metric data point."""
+    if attributes is None:
+        attributes = {}
+    
+    record = {
+        "name": name,
+        "description": f"Metric for {name}",
+        "unit": unit,
+        "time_unix_nano": get_time_nano(),
+        "value": float(value),
+        "attributes": attributes,
+        "resource_id": resource_id
+    }
+    emitter.emit_record("otel_metrics", record)
+
+def emit_otel_span(emitter, resource_id, name, start_time_nano, end_time_nano, parent_span_id=None, attributes=None, status_code="OK", span_id=None, trace_id=None):
+    """Emits an OTel Span record."""
+    if attributes is None:
+        attributes = {}
+    
+    if not span_id:
+        span_id = str(uuid.uuid4()).replace("-", "")[:16] # 16-char hex
+    
+    if not trace_id:
+        trace_id = str(uuid.uuid4()).replace("-", "") # 32-char hex
+    
+    # Simple model: random new trace for each root, or link if parent provided (complexity skipped for now)
+    # Ideally reuse trace_id if passing context, here we treat each span as fresh or linked locally
+    
+    record = {
+        "name": name,
+        "trace_id": trace_id,
+        "span_id": span_id,
+        "parent_span_id": parent_span_id if parent_span_id else "",
+        "start_time_unix_nano": start_time_nano,
+        "end_time_unix_nano": end_time_nano,
+        "attributes": attributes,
+        "status": {
+            "code": status_code
+        },
+        "resource_id": resource_id
+    }
+    emitter.emit_record("otel_spans", record)
+    return span_id, trace_id
 
 
 def main():
@@ -1330,7 +1642,10 @@ def main():
     parser.add_argument("--discover", action="store_true", help="Do discovery")
     args = parser.parse_args()
 
-    emitter = DRHLoader()
+    execution_span_start = get_time_nano()
+    root_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+    root_trace_id = str(uuid.uuid4()).replace("-", "")
+    emitter = ValidatingDRHLoader()
 
     if args.discover:
         for s in STREAM_KEYS:
@@ -1339,6 +1654,14 @@ def main():
              keys = STREAM_KEYS.get(s, [])
              emitter.emit_schema(s, schema, keys)
         return
+
+    # Initialize OTel Resource
+    try:
+        otel_resource_id = emit_otel_resource(emitter)
+        emitter.otel_resource_id = otel_resource_id # Provide ID to loader for logging
+    except Exception as e:
+        LOGGER.warning(f"Failed to emit OTel resource: {e}")
+        otel_resource_id = "unknown"
 
     data_dir = os.environ.get("STUDY_DATA_PATH")
     if args.config:
@@ -1349,12 +1672,15 @@ def main():
                       data_dir = conf["study_data_path"]
         except Exception as e:
              LOGGER.warning(f"Failed to load config file: {e}")
+             emit_otel_log(emitter, otel_resource_id, "WARN", f"Failed to load config file: {e}")
 
     if not data_dir:
-        LOGGER.error("STUDY_DATA_PATH environment variable or config not set.")
+        msg = "STUDY_DATA_PATH environment variable or config not set."
+        LOGGER.error(msg)
+        emit_otel_log(emitter, otel_resource_id, "FATAL", msg)
+        emit_otel_span(emitter, otel_resource_id, "tap-dexcom-execution", execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
         sys.exit(1)
     
-    # Emit schemas for all supported streams
     # Emit schemas for all supported streams
     for s in ALL_STREAM_NAMES:
         schema = load_schema(s)
@@ -1365,6 +1691,11 @@ def main():
     overall_status = "SUCCESS"
     check_counter = 1 # Not used for ID anymore, strictly for internal counting if needed
     diagnostic_logs = []
+    
+    # Simple Metrics Tracking
+    files_processed_count = 0
+    records_emitted_count_dummy = 0 # DRHLoader doesn't return count, so we'd need to wrap it specifically to count per record. 
+    # For now, we'll just track files processed.
 
     def emit_diagnostic(check_id_static, name, status, details):
         nonlocal check_counter
@@ -1376,6 +1707,11 @@ def main():
             "details": details
         }
         emitter.emit_record("drh_diagnostics", record)
+        
+        # Mirror to OTel Logs
+        otel_severity = "INFO" if status == "PASSED" else "ERROR"
+        emit_otel_log(emitter, otel_resource_id, otel_severity, f"Diagnostic {status}: {name}", attributes={"check_id": check_id_static, "details": details})
+
         diagnostic_logs.append({
             "check": name,
             "status": status,
@@ -1383,37 +1719,256 @@ def main():
         })
         check_counter += 1
 
-    # 1. Folder & Resource Check (Static ID: 1)
-    if not os.path.exists(data_dir):
-        msg = f"Data directory does not exist: {data_dir}"
-        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
-        overall_status = "FAILED"
-    elif not os.path.isdir(data_dir):
-        msg = f"Path is not a directory: {data_dir}"
-        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
-        overall_status = "FAILED"
-    elif not os.access(data_dir, os.R_OK):
-        msg = f"Directory is not readable: {data_dir}"
-        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
-        overall_status = "FAILED"
-    else:
-        # Count files in directory
-        file_count = sum(1 for _ in glob.glob(os.path.join(data_dir, "**", "*"), recursive=True) if os.path.isfile(_))
-        emit_diagnostic(1, "Folder & Resource Check", "PASSED", f"Detected {file_count} files from folder: {data_dir}")
-
-    # If folder check failed, we cannot proceed with other checks
-    if overall_status == "FAILED":
-         LOGGER.error("Folder check failed. See drh_diagnostics for details.")
-         # Emit failure report immediately
+    def fail_and_exit(stage_name, errors_count=1):
+         """Helper to emit failure report and exit immediately."""
+         LOGGER.error(f"Validation failed at stage: {stage_name}. See drh_diagnostics for details.")
          report_record = {
             "timestamp": timestamp,
             "folder_name": os.path.basename(os.path.normpath(data_dir)) if data_dir else "unknown",
             "tenant_id": os.environ.get("TENANT_ID", "T-unknown"),
             "tenant_name": os.environ.get("TENANT_NAME", "Unknown"),
-            "overall_status": overall_status,
+            "overall_status": "FAILED",
             "report_json": json.dumps({
                 "timestamp": timestamp,
                 "folderName": os.path.basename(os.path.normpath(data_dir)) if data_dir else "unknown",
+                "tenantId": os.environ.get("TENANT_ID", "T-unknown"),
+                "tenantName": os.environ.get("TENANT_NAME", "Unknown"),
+                "overallStatus": "FAILED",
+                "results": diagnostic_logs
+            })
+         }
+         emitter.emit_record("drh_validation_reports", report_record)
+         emit_otel_log(emitter, otel_resource_id, "ERROR", f"Validation failed ({stage_name})", {"folder": data_dir, "errors": str(errors_count)})
+         
+         # Emit Failure Span
+         emit_otel_span(emitter, otel_resource_id, "tap-dexcom-execution", execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
+         
+         sys.exit(0)
+
+    # 1. Folder & Resource Check (Static ID: 1)
+    folder_val_start = get_time_nano()
+    folder_msg = ""
+    folder_status = "OK"
+    
+    # 1. Folder & Resource Check (Static ID: 1)
+    folder_val_start = get_time_nano()
+    folder_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+    folder_msg = ""
+    folder_status = "OK"
+    
+    # Emit Start of Folder Span (optional, usually we emit at end, but for context we might want it visible? No, span is emitted at end)
+    
+    if not os.path.exists(data_dir):
+        msg = f"Data directory does not exist: {data_dir}"
+        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
+        emit_otel_span(emitter, otel_resource_id, "Folder Validation", folder_val_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={"validation.level": "folder", "folder.path": data_dir}, status_code="ERROR")
+        fail_and_exit("Folder Check")
+    elif not os.path.isdir(data_dir):
+        msg = f"Path is not a directory: {data_dir}"
+        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
+        emit_otel_span(emitter, otel_resource_id, "Folder Validation", folder_val_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={"validation.level": "folder", "folder.path": data_dir}, status_code="ERROR")
+        fail_and_exit("Folder Check")
+    elif not os.access(data_dir, os.R_OK):
+        msg = f"Directory is not readable: {data_dir}"
+        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
+        emit_otel_span(emitter, otel_resource_id, "Folder Validation", folder_val_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={"validation.level": "folder", "folder.path": data_dir}, status_code="ERROR")
+        fail_and_exit("Folder Check")
+    else:
+        # Count files in directory
+        file_count = sum(1 for _ in glob.glob(os.path.join(data_dir, "**", "*"), recursive=True) if os.path.isfile(_))
+        emit_diagnostic(1, "Folder & Resource Check", "PASSED", f"Detected {file_count} files from folder: {data_dir}")
+        emit_otel_span(emitter, otel_resource_id, "Folder Validation", folder_val_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={"validation.level": "folder", "folder.path": data_dir, "files.found": file_count}, status_code="OK")
+
+    # 2. MANDATORY FILE EXISTENCE (Static ID: 2)
+    check2_start = get_time_nano()
+    check2_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+    missing = check_required_files(data_dir)
+    if missing:
+        emit_diagnostic(2, "Mandatory File Presence", "FAILED", f"Missing files: {', '.join(missing)}")
+        emit_otel_span(emitter, otel_resource_id, "Check 2: Mandatory Files", check2_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=check2_span_id, trace_id=root_trace_id, attributes={"validation.level": "file_presence", "missing": str(missing)}, status_code="ERROR")
+        fail_and_exit("Mandatory File Presence", len(missing))
+    else:
+        emit_diagnostic(2, "Mandatory File Presence", "PASSED", "All mandatory files present")
+        emit_otel_span(emitter, otel_resource_id, "Check 2: Mandatory Files", check2_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=check2_span_id, trace_id=root_trace_id, attributes={"validation.level": "file_presence"}, status_code="OK")
+    
+    # 3. Extension Checks (Static ID: 3)
+    check3_start = get_time_nano()
+    check3_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+    extension_errors = check_file_extensions(data_dir)
+    if extension_errors:
+        for err in extension_errors:
+             emit_diagnostic(3, "File Extension Validation", "FAILED", err)
+        emit_otel_span(emitter, otel_resource_id, "Check 3: Extensions", check3_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=check3_span_id, trace_id=root_trace_id, attributes={"validation.level": "extensions", "error_count": len(extension_errors)}, status_code="ERROR")
+        fail_and_exit("File Extension Validation", len(extension_errors))
+    else:
+         emit_diagnostic(3, "File Extension Validation", "PASSED", "All configured files have .csv extension")
+         emit_otel_span(emitter, otel_resource_id, "Check 3: Extensions", check3_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=check3_span_id, trace_id=root_trace_id, attributes={"validation.level": "extensions"}, status_code="OK")
+    
+    
+    # 4. File Schema and Required Columns + Field Format Check (Static ID: 4)
+    schema_val_start = get_time_nano()
+    # Create the ID for the schema validation span beforehand to pass it down
+    schema_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+    
+    # We call the function passing the parent span ID AND root_trace_id
+    schema_results = check_file_headers(data_dir, emitter=emitter, resource_id=otel_resource_id, parent_span_id=schema_span_id, trace_id=root_trace_id)
+    
+    schema_failures = 0
+    for res in schema_results:
+         emit_diagnostic(4, res["name"], res["status"], res["details"])
+         if res["status"] == "FAILED":
+             schema_failures += 1
+             
+    # Now emit completion of the Schema Validation parent span
+    # We'll determine status based on results
+    schema_status_code = "OK"
+    if schema_failures > 0:
+        schema_status_code = "ERROR"
+        
+    emit_otel_span(emitter, otel_resource_id, "Check 4: File Schema", schema_val_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=schema_span_id, trace_id=root_trace_id, 
+                   attributes={"validation.level": "schema", "files.checked": len(schema_results), "failures": schema_failures}, 
+                   status_code=schema_status_code)
+    
+    if schema_failures > 0:
+        fail_and_exit("File Schema Headers", schema_failures)
+
+
+    # 5. CGM Metadata Consistency Check (Static ID: 5)
+    check5_start = get_time_nano()
+    check5_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+    consistency_results = check_cgm_metadata_consistency(data_dir)
+    consistency_failures = 0
+    for res in consistency_results:
+         emit_diagnostic(5, res["name"], res["status"], res["details"])
+         if res["status"] == "FAILED":
+             consistency_failures += 1
+    
+    emit_otel_span(emitter, otel_resource_id, "Check 5: CGM Metadata", check5_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check5_span_id, trace_id=root_trace_id, attributes={"validation.level": "cgm_meta", "failures": consistency_failures}, status_code="ERROR" if consistency_failures > 0 else "OK")
+
+    if consistency_failures > 0:
+        fail_and_exit("CGM Metadata Consistency", consistency_failures)
+
+
+    # 6. CGM Data Integrity Check (Static ID: 6)
+    check6_start = get_time_nano()
+    check6_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+    integrity_results = check_cgm_data_integrity(data_dir)
+    integrity_failures = 0
+    for res in integrity_results:
+         emit_diagnostic(6, res["name"], res["status"], res["details"])
+         if res["status"] == "FAILED":
+             integrity_failures += 1
+    
+    emit_otel_span(emitter, otel_resource_id, "Check 6: CGM Data", check6_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check6_span_id, trace_id=root_trace_id, attributes={"validation.level": "cgm_data", "failures": integrity_failures}, status_code="ERROR" if integrity_failures > 0 else "OK")
+    
+    if integrity_failures > 0:
+        fail_and_exit("CGM Data Integrity", integrity_failures)
+
+    
+    # Tracks for conditional execution
+    meal_failed = False
+    
+    # 7. Meal Data Validation (Static ID: 7) & 8. Meal Data Integrity (Static ID: 8)
+    # Conditional Execution: Only if meal_file_metadata exists
+    if os.path.exists(os.path.join(data_dir, FILES["meal_file_metadata"])):
+        # Check 7
+        check7_start = get_time_nano()
+        check7_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+        
+        meal_consistency_results = check_meal_data_consistency(data_dir)
+        meal_cons_failures = 0
+        for res in meal_consistency_results:
+             emit_diagnostic(7, res["name"], res["status"], res["details"])
+             if res["status"] == "FAILED":
+                 overall_status = "FAILED"
+                 meal_cons_failures += 1
+        
+        emit_otel_span(emitter, otel_resource_id, "Check 7: Meal Meta", check7_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check7_span_id, trace_id=root_trace_id, attributes={"validation.level": "meal_meta"}, status_code="ERROR" if meal_cons_failures > 0 else "OK")
+
+        if meal_cons_failures > 0:
+             meal_failed = True
+             # Do NOT run check 8
+        else:
+             # Check 8: Only if 7 passed
+             check8_start = get_time_nano()
+             check8_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+
+             meal_integrity_results = check_meal_data_integrity(data_dir)
+             meal_int_failures = 0
+             for res in meal_integrity_results:
+                  emit_diagnostic(8, res["name"], res["status"], res["details"])
+                  if res["status"] == "FAILED":
+                      overall_status = "FAILED"
+                      meal_int_failures += 1
+             
+             emit_otel_span(emitter, otel_resource_id, "Check 8: Meal Data", check8_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check8_span_id, trace_id=root_trace_id, attributes={"validation.level": "meal_data"}, status_code="ERROR" if meal_int_failures > 0 else "OK")
+
+    # 9. Fitness Data Validation (Static ID: 9) & 10. Fitness Data Integrity (Static ID: 10)
+    # Conditional Execution: Only if fitness_file_metadata exists
+    if os.path.exists(os.path.join(data_dir, FILES["fitness_file_metadata"])):
+        # Check 9
+        check9_start = get_time_nano()
+        check9_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+
+        fitness_consistency_results = check_fitness_data_consistency(data_dir)
+        fitness_cons_failures = 0
+        for res in fitness_consistency_results:
+             emit_diagnostic(9, res["name"], res["status"], res["details"])
+             if res["status"] == "FAILED":
+                 overall_status = "FAILED"
+                 fitness_cons_failures += 1
+        
+        emit_otel_span(emitter, otel_resource_id, "Check 9: Fitness Meta", check9_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check9_span_id, trace_id=root_trace_id, attributes={"validation.level": "fitness_meta"}, status_code="ERROR" if fitness_cons_failures > 0 else "OK")
+
+        if fitness_cons_failures > 0:
+             # Do NOT run check 10
+             pass
+        else:
+             # Check 10: Only if 9 passed
+             check10_start = get_time_nano()
+             check10_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+
+             fitness_integrity_results = check_fitness_data_integrity(data_dir)
+             fitness_int_failures = 0
+             for res in fitness_integrity_results:
+                  emit_diagnostic(10, res["name"], res["status"], res["details"])
+                  if res["status"] == "FAILED":
+                      overall_status = "FAILED"
+                      fitness_int_failures += 1
+                      
+             emit_otel_span(emitter, otel_resource_id, "Check 10: Fitness Data", check10_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check10_span_id, trace_id=root_trace_id, attributes={"validation.level": "fitness_data"}, status_code="ERROR" if fitness_int_failures > 0 else "OK")
+    
+    if overall_status == "FAILED":
+         # We do not use fail_and_exit here because it exits immediately.
+         # This block ensures we ran both Meal/Fitness branches if applicable before final exit.
+         LOGGER.error("Validation failed in Meal or Fitness checks. See drh_diagnostics for details.")
+         emit_otel_log(emitter, otel_resource_id, "ERROR", "Validation failed (Meal/Fitness Phase)", {"folder": data_dir})
+         
+         # Emit Report
+         report_record = {
+            "timestamp": timestamp,
+            "folder_name": os.path.basename(os.path.normpath(data_dir)),
+            "tenant_id": os.environ.get("TENANT_ID", "T-unknown"),
+            "tenant_name": os.environ.get("TENANT_NAME", "Unknown"),
+            "overall_status": overall_status,
+            "report_json": json.dumps({
+                "timestamp": timestamp,
+                "folderName": os.path.basename(os.path.normpath(data_dir)),
                 "tenantId": os.environ.get("TENANT_ID", "T-unknown"),
                 "tenantName": os.environ.get("TENANT_NAME", "Unknown"),
                 "overallStatus": overall_status,
@@ -1421,96 +1976,13 @@ def main():
             })
          }
          emitter.emit_record("drh_validation_reports", report_record)
-         return
+         
+         # Emit Failure Span
+         emit_otel_span(emitter, otel_resource_id, "tap-dexcom-execution", execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
+         sys.exit(0)
 
-    # 2. MANDATORY FILE EXISTENCE (Static ID: 2)
-    missing = check_required_files(data_dir)
-    if missing:
-        overall_status = "FAILED"
-        emit_diagnostic(2, "Mandatory File Presence", "FAILED", f"Missing files: {', '.join(missing)}")
-    else:
-        emit_diagnostic(2, "Mandatory File Presence", "PASSED", "All mandatory files present")
-
-    # 3. Extension Checks (Static ID: 3)
-    extension_errors = check_file_extensions(data_dir)
-    if extension_errors:
-        overall_status = "FAILED"
-        for err in extension_errors:
-             emit_diagnostic(3, "File Extension Validation", "FAILED", err)
-    else:
-         emit_diagnostic(3, "File Extension Validation", "PASSED", "All configured files have .csv extension")
-    
-    
-    # 4. File Schema Check (Static ID: 4)
-    schema_results = check_file_headers(data_dir)
-    schema_failures = 0
-    for res in schema_results:
-         emit_diagnostic(4, res["name"], res["status"], res["details"])
-         if res["status"] == "FAILED":
-             overall_status = "FAILED"
-             schema_failures += 1
-
-
-    # 5. CGM Metadata Consistency Check (Static ID: 5)
-    consistency_results = check_cgm_metadata_consistency(data_dir)
-    consistency_failures = 0
-    for res in consistency_results:
-         emit_diagnostic(5, res["name"], res["status"], res["details"])
-         if res["status"] == "FAILED":
-             overall_status = "FAILED"
-             consistency_failures += 1
-
-
-    # 6. CGM Data Integrity Check (Static ID: 6)
-    integrity_results = check_cgm_data_integrity(data_dir)
-    integrity_failures = 0
-    for res in integrity_results:
-         emit_diagnostic(6, res["name"], res["status"], res["details"])
-         if res["status"] == "FAILED":
-             overall_status = "FAILED"
-             integrity_failures += 1
-    
-    # 7. Meal Data Validation (Static ID: 7)
-    # Only run if meal_file_metadata exists
-    if os.path.exists(os.path.join(data_dir, FILES["meal_file_metadata"])):
-        meal_consistency_results = check_meal_data_consistency(data_dir)
-        for res in meal_consistency_results:
-             emit_diagnostic(7, res["name"], res["status"], res["details"])
-             if res["status"] == "FAILED":
-                 overall_status = "FAILED"
-                 integrity_failures += 1
-
-    # 8. Meal Data Integrity Check (Static ID: 8)
-    if os.path.exists(os.path.join(data_dir, FILES["meal_file_metadata"])):
-        meal_integrity_results = check_meal_data_integrity(data_dir)
-        for res in meal_integrity_results:
-             emit_diagnostic(8, res["name"], res["status"], res["details"])
-             if res["status"] == "FAILED":
-                 overall_status = "FAILED"
-                 integrity_failures += 1
-
-    # 9. Fitness Data Validation (Static ID: 9)
-    # Only run if fitness_file_metadata exists
-    if os.path.exists(os.path.join(data_dir, FILES["fitness_file_metadata"])):
-        fitness_consistency_results = check_fitness_data_consistency(data_dir)
-        for res in fitness_consistency_results:
-             emit_diagnostic(9, res["name"], res["status"], res["details"])
-             if res["status"] == "FAILED":
-                 overall_status = "FAILED"
-                 integrity_failures += 1
-
-    # 10. Fitness Data Integrity Check (Static ID: 10)
-    if os.path.exists(os.path.join(data_dir, FILES["fitness_file_metadata"])):
-        fitness_integrity_results = check_fitness_data_integrity(data_dir)
-        for res in fitness_integrity_results:
-             emit_diagnostic(10, res["name"], res["status"], res["details"])
-             if res["status"] == "FAILED":
-                 overall_status = "FAILED"
-                 integrity_failures += 1
-
-    # Emit Summary Report
-    total_failed = len(missing) + len(extension_errors) + schema_failures + consistency_failures + integrity_failures
-    
+    # Emit Summary Report (Success Path Only)
+    # Failures in 7-10 are handled in the block above
     report_record = {
         "timestamp": timestamp,
         "folder_name": os.path.basename(os.path.normpath(data_dir)),
@@ -1527,10 +1999,7 @@ def main():
         })
     }
     emitter.emit_record("drh_validation_reports", report_record)
-
-    if overall_status == "FAILED":
-         LOGGER.error(f"Validation failed with {total_failed} errors. See drh_diagnostics for details.")
-         return
+    # No fail check here needed, handled above
         
     # Process Combined CGM Tracing (Metadata Driven) - DISABLED
     # process_combined_cgm_tracing(emitter, data_dir)
@@ -1542,8 +2011,8 @@ def main():
         "participant": process_participant,
         "study": process_study,
         "author": process_author,
-        "meal_data": process_meal,
-        "fitness_data": process_fitness,
+        # "meal_data": process_meal,
+        # "fitness_data": process_fitness,
         "site": process_site,
         "investigator": process_investigator,
         "institution": process_institution,
@@ -1557,13 +2026,20 @@ def main():
     }
 
     # Create reverse mapping: filename -> stream_name
-    filename_to_stream = {v: k for k, v in FILES.items()}
+    filename_to_stream = {v: k for k, v in FILES.items() if k not in ("meal_data", "fitness_data")}
 
     # Process files based on patterns
     for filepath in glob.glob(os.path.join(data_dir, "**", "*.csv"), recursive=True):
+        files_processed_count += 1
         filename = os.path.basename(filepath)
+       
+        # Exclude meal_data and fitness_data as requested
+        if filename in (FILES.get("meal_data"), FILES.get("fitness_data")):
+             continue
+
         LOGGER.info(f"Processing {filename}...")
-        
+       
+
         # 1. Check for exact match via Configuration (User's request)
         if filename in filename_to_stream:
             stream_name = filename_to_stream[filename]
@@ -1586,10 +2062,19 @@ def main():
         # The original code processed raw via metadata + this loop for others. 
         # We'll stick to logging unknown.)
         LOGGER.info(f"Skipping unknown file type: {filename}")
-    
+        emit_otel_log(emitter, otel_resource_id, "WARN", f"Skipping unknown file type: {filename}")
+        
+    # Emit Metrics
+    emit_otel_metric(emitter, otel_resource_id, "files_processed", files_processed_count, "1")
+    # emit_otel_metric(emitter, otel_resource_id, "records_processed", records_emitted_count_dummy, "1")
+
     # Emit final state
     state = {"last_execution": timestamp}
     emitter.emit_state(state)
 
+    # Emit Final SUCCESS Span
+    emit_otel_span(emitter, otel_resource_id, "tap-dexcom-execution", execution_span_start, get_time_nano(), status_code="OK", span_id=root_span_id, trace_id=root_trace_id)
+
 if __name__ == "__main__":
     main()
+
