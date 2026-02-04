@@ -90,6 +90,46 @@ from drh_target.loader import DRHLoader # type: ignore
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
+class OTelNames:
+    # Root Span
+    ROOT_VV = "V&V Orchestration Session"
+
+    # Category Spans (High-level checks) 
+    # Level 2: Categories (Parent Spans - Mapping to Check IDs)
+    CAT_FOLDER_SCAN = "1: Folder & Resource Scan"
+    CAT_MANDATORY_FILES = "2: Mandatory File Presence"
+    CAT_EXTENSION_CHECK = "3: File Extension Validation"
+    CAT_SCHEMA_VALIDATION = "4: File Schema Check"
+    CAT_CGM_TRACE_METADATA = "5: CGM Tracing Metadata Check"
+    CAT_CGM_INTEGRITY = "6: CGM Data Integrity"
+    CAT_MEAL_METADATA = "7: Meal Data Metadata Check"
+    CAT_MEAL_INTEGRITY = "8: Meal Data Integrity"
+    CAT_FITNESS_METADATA = "9: Fitness Metadata Check"
+    CAT_FITNESS_INTEGRITY = "10: Fitness Data Integrity"
+
+    # Sub-Spans for Schema Validation (Check 4)
+    CHK_FILE_VAL = "File Validation"
+    CHK_COLUMNS = "Required Columns"
+    CHK_TYPE = "Type Check"
+    CHK_PATTERNS = "Format & Pattern Check"
+    CHK_FK_INTEGRITY = "Foreign Key Check" # Currently commented out in code
+
+    # Attributes
+    ATTR_VALIDATION_LEVEL = "validation.level"
+    ATTR_FILE_NAME = "file.name"
+    ATTR_ERROR_COUNT = "error_count"
+
+     
+    ATTR_ROW_COUNT = "file.row_count"
+    ATTR_STATUS = "check.status"
+    ATTR_DETAILS = "details"
+   
+   # Metric Names
+    METRIC_PASS_COUNT = "vv.validation.pass_count"
+    METRIC_FAIL_COUNT = "vv.validation.fail_count"
+    METRIC_FILE_COUNT = "vv.files.processed_count"
+    METRIC_VALIDATION_DURATION = "vv.validation.duration"
+
 class ValidatingDRHLoader(DRHLoader):
     """
     Extension of DRHLoader that validates records against Key Properties and Schema Required fields.
@@ -278,23 +318,23 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                             })
                             if emitter and resource_id:
                                 # Emit Required Columns Span failure
-                                emit_otel_span(emitter, resource_id, f"Required Columns: {fname}", req_cols_start, get_time_nano(), 
+                                emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_COLUMNS}: {fname}", req_cols_start, get_time_nano(), 
                                                parent_span_id=file_span_id, span_id=req_cols_span_id,
-                                               attributes={"validation.level": "column_check", "file.name": fname, "missing": str(missing_cols)}, 
+                                               attributes={OTelNames.ATTR_VALIDATION_LEVEL: "column_check", OTelNames.ATTR_FILE_NAME: fname, "missing": str(missing_cols)}, 
                                                status_code="ERROR", trace_id=trace_id)
                                 
                                 # Emit File Span failure
-                                emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FILE_VAL}: {fname}", file_start_time, get_time_nano(), 
                                                parent_span_id=parent_span_id, span_id=file_span_id,
-                                               attributes={"validation.level": "schema", "file.name": fname, "error": "Missing Columns"}, 
+                                               attributes={OTelNames.ATTR_VALIDATION_LEVEL: "schema", OTelNames.ATTR_FILE_NAME: fname, "error": "Missing Columns"}, 
                                                status_code="ERROR", trace_id=trace_id)
                             continue
                         else:
                             # Required Columns PASSED
                             if emitter and resource_id:
-                                emit_otel_span(emitter, resource_id, f"Required Columns: {fname}", req_cols_start, get_time_nano(), 
+                                emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_COLUMNS}: {fname}", req_cols_start, get_time_nano(), 
                                                parent_span_id=file_span_id, span_id=req_cols_span_id,
-                                               attributes={"validation.level": "column_check", "file.name": fname}, 
+                                               attributes={OTelNames.ATTR_VALIDATION_LEVEL: "column_check", OTelNames.ATTR_FILE_NAME: fname}, 
                                                status_code="OK", trace_id=trace_id)
 
 
@@ -378,14 +418,14 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                             sub_status = "ERROR" if row_errors else "OK"
                             err_attr = {"error_count": len(row_errors)} if row_errors else {}
                             
-                            emit_otel_span(emitter, resource_id, f"Type Check: {fname}", data_val_start, data_val_end, 
+                            emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_TYPE}: {fname}", data_val_start, data_val_end, 
                                            parent_span_id=file_span_id, span_id=type_span_id,
-                                           attributes={"validation.level": "type_check", **err_attr}, 
+                                           attributes={OTelNames.ATTR_VALIDATION_LEVEL: "type_check", **err_attr}, 
                                            status_code=sub_status, trace_id=trace_id)
                                            
-                            emit_otel_span(emitter, resource_id, f"Format & Pattern Check: {fname}", data_val_start, data_val_end, 
+                            emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_PATTERNS}: {fname}", data_val_start, data_val_end, 
                                            parent_span_id=file_span_id, span_id=pattern_span_id,
-                                           attributes={"validation.level": "pattern_check", **err_attr}, 
+                                           attributes={OTelNames.ATTR_VALIDATION_LEVEL: "pattern_check", **err_attr}, 
                                            status_code=sub_status, trace_id=trace_id)
 
                         # --- 4.1.4 Foreign Key Check (Commented) ---
@@ -393,9 +433,9 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                         #    fk_start = get_time_nano()
                         #    fk_span_id = str(uuid.uuid4()).replace("-", "")[:16]
                         #    # ... Logic to check FKs ...
-                        #    emit_otel_span(emitter, resource_id, f"Foreign Key Check: {fname}", fk_start, get_time_nano(), 
+                        #    emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FK_INTEGRITY}: {fname}", fk_start, get_time_nano(), 
                         #                   parent_span_id=file_span_id, span_id=fk_span_id,
-                        #                   attributes={"validation.level": "fk_check"}, status_code="OK", trace_id=trace_id)
+                        #                   attributes={OTelNames.ATTR_VALIDATION_LEVEL: "fk_check"}, status_code="OK", trace_id=trace_id)
 
 
                         if row_errors:
@@ -405,9 +445,9 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                                 "details": "; ".join(row_errors[:5])
                             })
                             if emitter and resource_id:
-                                emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FILE_VAL}: {fname}", file_start_time, get_time_nano(), 
                                                parent_span_id=parent_span_id, span_id=file_span_id,
-                                               attributes={"validation.level": "schema", "file.name": fname, "error_count": len(row_errors)}, 
+                                               attributes={OTelNames.ATTR_VALIDATION_LEVEL: "schema", OTelNames.ATTR_FILE_NAME: fname, OTelNames.ATTR_ERROR_COUNT: len(row_errors)}, 
                                                status_code="ERROR", trace_id=trace_id)
                         else:
                             results.append({
@@ -416,9 +456,9 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                                 "details": "Header & Data Validation OK"
                             })
                             if emitter and resource_id:
-                                emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FILE_VAL}: {fname}", file_start_time, get_time_nano(), 
                                                parent_span_id=parent_span_id, span_id=file_span_id,
-                                               attributes={"validation.level": "schema", "file.name": fname}, 
+                                               attributes={OTelNames.ATTR_VALIDATION_LEVEL: "schema", OTelNames.ATTR_FILE_NAME: fname}, 
                                                status_code="OK", trace_id=trace_id)
 
                     except StopIteration:
@@ -427,9 +467,9 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                              # Required Columns failed implies it couldn't read header
                              req_cols_span_id = str(uuid.uuid4()).replace("-", "")[:16] # Ensure ID exists
                              req_cols_start = file_start_time # Approx start
-                             emit_otel_span(emitter, resource_id, f"Required Columns: {fname}", req_cols_start, get_time_nano(), 
+                             emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_COLUMNS}: {fname}", req_cols_start, get_time_nano(), 
                                            parent_span_id=file_span_id, span_id=req_cols_span_id,
-                                           attributes={"validation.level": "column_check", "error": "Empty File"}, 
+                                           attributes={OTelNames.ATTR_VALIDATION_LEVEL: "column_check", "error": "Empty File"}, 
                                            status_code="ERROR", trace_id=trace_id)
                         
                         results.append({
@@ -438,9 +478,9 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                             "details": "Empty file - no headers found"
                         })
                         if emitter and resource_id:
-                                emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                                emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FILE_VAL}: {fname}", file_start_time, get_time_nano(), 
                                                parent_span_id=parent_span_id, span_id=file_span_id,
-                                               attributes={"validation.level": "schema", "file.name": fname, "error": "Empty File"}, 
+                                               attributes={OTelNames.ATTR_VALIDATION_LEVEL: "schema", OTelNames.ATTR_FILE_NAME: fname, "error": "Empty File"}, 
                                                status_code="ERROR", trace_id=trace_id)
 
             except Exception as e:
@@ -449,10 +489,11 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                     "status": "FAILED",
                     "details": f"Error reading file: {e}"
                 })
+                # Note: We can't access file_start_time here if it wasn't initialized, but it is inside the 'if exists' block
                 if emitter and resource_id and file_start_time is not None: 
-                     emit_otel_span(emitter, resource_id, f"File Validation: {fname}", file_start_time, get_time_nano(), 
+                     emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FILE_VAL}: {fname}", file_start_time, get_time_nano(), 
                                    parent_span_id=parent_span_id, span_id=file_span_id,
-                                   attributes={"validation.level": "schema", "file.name": fname, "error": str(e)}, 
+                                   attributes={OTelNames.ATTR_VALIDATION_LEVEL: "schema", OTelNames.ATTR_FILE_NAME: fname, "error": str(e)}, 
                                    status_code="ERROR", trace_id=trace_id)
 
         else:
@@ -1599,6 +1640,7 @@ def process_raw_fitness_data(emitter, data_dir):
              emit_otel_log(emitter, emitter.otel_resource_id, "ERROR", f"Error processing raw fitness metadata: {e}")
 
 
+
 # OTel Helper Functions
 def get_time_nano():
     """Returns current UTC time in nanoseconds."""
@@ -1734,7 +1776,7 @@ def main():
         msg = "STUDY_DATA_PATH environment variable or config not set."
         LOGGER.error(msg)
         emit_otel_log(emitter, otel_resource_id, "FATAL", msg, span_id=root_span_id, trace_id=root_trace_id)
-        emit_otel_span(emitter, otel_resource_id, "tap-dexcom-execution", execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
+        emit_otel_span(emitter, otel_resource_id, OTelNames.ROOT_VV, execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
         sys.exit(1)
     
     # Emit schemas for all supported streams
@@ -1796,7 +1838,7 @@ def main():
          emit_otel_log(emitter, otel_resource_id, "ERROR", f"Validation failed ({stage_name})", {"folder": data_dir, "errors": str(errors_count)}, span_id=current_span_id, trace_id=root_trace_id)
          
          # Emit Failure Span
-         emit_otel_span(emitter, otel_resource_id, "tap-dexcom-execution", execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
+         emit_otel_span(emitter, otel_resource_id, OTelNames.ROOT_VV, execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
          
          sys.exit(0)
 
@@ -1816,24 +1858,24 @@ def main():
         emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
         emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: Folder & Resource Check", attributes={"check_id": 1, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
         
-        emit_otel_span(emitter, otel_resource_id, "Folder Validation", folder_val_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={"validation.level": "folder", "folder.path": data_dir}, status_code="ERROR")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir}, status_code="ERROR")
         fail_and_exit("Folder Check")
     elif not os.path.isdir(data_dir):
         msg = f"Path is not a directory: {data_dir}"
         emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
         emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: Folder & Resource Check", attributes={"check_id": 1, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
 
-        emit_otel_span(emitter, otel_resource_id, "Folder Validation", folder_val_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={"validation.level": "folder", "folder.path": data_dir}, status_code="ERROR")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir}, status_code="ERROR")
         fail_and_exit("Folder Check")
     elif not os.access(data_dir, os.R_OK):
         msg = f"Directory is not readable: {data_dir}"
         emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
         emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: Folder & Resource Check", attributes={"check_id": 1, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
 
-        emit_otel_span(emitter, otel_resource_id, "Folder Validation", folder_val_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={"validation.level": "folder", "folder.path": data_dir}, status_code="ERROR")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir}, status_code="ERROR")
         fail_and_exit("Folder Check")
     else:
         # Count files in directory
@@ -1842,8 +1884,13 @@ def main():
         emit_diagnostic(1, "Folder & Resource Check", "PASSED", msg)
         emit_otel_log(emitter, otel_resource_id, "INFO", f"Diagnostic PASSED: Folder & Resource Check", attributes={"check_id": 1, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
         
-        emit_otel_span(emitter, otel_resource_id, "Folder Validation", folder_val_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={"validation.level": "folder", "folder.path": data_dir, "files.found": file_count}, status_code="OK")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir, "files.found": file_count}, status_code="OK")
+        
+        # Metrics for Check 1
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, 1, attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FILE_COUNT, file_count, attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - folder_val_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
 
     # 2. MANDATORY FILE EXISTENCE (Static ID: 2)
     check2_start = get_time_nano()
@@ -1855,15 +1902,22 @@ def main():
         emit_diagnostic(2, "Mandatory File Presence", "FAILED", msg)
         emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: Mandatory File Presence", attributes={"check_id": 2, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
 
-        emit_otel_span(emitter, otel_resource_id, "Check 2: Mandatory Files", check2_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=check2_span_id, trace_id=root_trace_id, attributes={"validation.level": "file_presence", "missing": str(missing)}, status_code="ERROR")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_MANDATORY_FILES, check2_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=check2_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "file_presence", "missing": str(missing)}, status_code="ERROR")
+        
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, 1, attributes={"check.category": OTelNames.CAT_MANDATORY_FILES})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check2_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_MANDATORY_FILES})
+        
         fail_and_exit("Mandatory File Presence", len(missing))
     else:
         emit_diagnostic(2, "Mandatory File Presence", "PASSED", "All mandatory files present")
         emit_otel_log(emitter, otel_resource_id, "INFO", f"Diagnostic PASSED: Mandatory File Presence", attributes={"check_id": 2, "details": "All mandatory files present"}, span_id=current_span_id, trace_id=root_trace_id)
 
-        emit_otel_span(emitter, otel_resource_id, "Check 2: Mandatory Files", check2_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=check2_span_id, trace_id=root_trace_id, attributes={"validation.level": "file_presence"}, status_code="OK")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_MANDATORY_FILES, check2_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=check2_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "file_presence"}, status_code="OK")
+        
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, 1, attributes={"check.category": OTelNames.CAT_MANDATORY_FILES})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check2_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_MANDATORY_FILES})
     
     # 3. Extension Checks (Static ID: 3)
     check3_start = get_time_nano()
@@ -1875,16 +1929,20 @@ def main():
              emit_diagnostic(3, "File Extension Validation", "FAILED", err)
              emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: File Extension Validation", attributes={"check_id": 3, "details": err}, span_id=current_span_id, trace_id=root_trace_id)
              
-        emit_otel_span(emitter, otel_resource_id, "Check 3: Extensions", check3_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=check3_span_id, trace_id=root_trace_id, attributes={"validation.level": "extensions", "error_count": len(extension_errors)}, status_code="ERROR")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_EXTENSION_CHECK, check3_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=check3_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "extensions", OTelNames.ATTR_ERROR_COUNT: len(extension_errors)}, status_code="ERROR")
+
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, len(extension_errors), attributes={"check.category": OTelNames.CAT_EXTENSION_CHECK})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check3_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_EXTENSION_CHECK})
+        
         fail_and_exit("File Extension Validation", len(extension_errors))
     else:
          msg = "All configured files have .csv extension"
          emit_diagnostic(3, "File Extension Validation", "PASSED", msg)
          emit_otel_log(emitter, otel_resource_id, "INFO", f"Diagnostic PASSED: File Extension Validation", attributes={"check_id": 3, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
 
-         emit_otel_span(emitter, otel_resource_id, "Check 3: Extensions", check3_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=check3_span_id, trace_id=root_trace_id, attributes={"validation.level": "extensions"}, status_code="OK")
+         emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_EXTENSION_CHECK, check3_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=check3_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "extensions"}, status_code="OK")
     
     
     # 4. File Schema and Required Columns + Field Format Check (Static ID: 4)
@@ -1912,10 +1970,17 @@ def main():
     if schema_failures > 0:
         schema_status_code = "ERROR"
         
-    emit_otel_span(emitter, otel_resource_id, "Check 4: File Schema", schema_val_start, get_time_nano(), 
+    emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_SCHEMA_VALIDATION, schema_val_start, get_time_nano(), 
                    parent_span_id=root_span_id, span_id=schema_span_id, trace_id=root_trace_id, 
-                   attributes={"validation.level": "schema", "files.checked": len(schema_results), "failures": schema_failures}, 
+                   attributes={OTelNames.ATTR_VALIDATION_LEVEL: "schema", "files.checked": len(schema_results), "failures": schema_failures}, 
                    status_code=schema_status_code)
+
+    # Metrics for Check 4
+    file_pass_count = len(schema_results) - schema_failures
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, file_pass_count, attributes={"check.category": OTelNames.CAT_SCHEMA_VALIDATION})
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, schema_failures, attributes={"check.category": OTelNames.CAT_SCHEMA_VALIDATION})
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FILE_COUNT, len(schema_results), attributes={"check.category": OTelNames.CAT_SCHEMA_VALIDATION})
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - schema_val_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_SCHEMA_VALIDATION})
     
     if schema_failures > 0:
         fail_and_exit("File Schema Headers", schema_failures)
@@ -1936,8 +2001,15 @@ def main():
          if res["status"] == "FAILED":
              consistency_failures += 1
     
-    emit_otel_span(emitter, otel_resource_id, "Check 5: CGM Metadata", check5_start, get_time_nano(), 
-                   parent_span_id=root_span_id, span_id=check5_span_id, trace_id=root_trace_id, attributes={"validation.level": "cgm_meta", "failures": consistency_failures}, status_code="ERROR" if consistency_failures > 0 else "OK")
+    emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_CGM_TRACE_METADATA, check5_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check5_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "cgm_meta", "failures": consistency_failures}, status_code="ERROR" if consistency_failures > 0 else "OK")
+
+    # Metrics for Check 5
+    checked_count = len(consistency_results)
+    passed_count = checked_count - consistency_failures
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, passed_count, attributes={"check.category": OTelNames.CAT_CGM_TRACE_METADATA})
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, consistency_failures, attributes={"check.category": OTelNames.CAT_CGM_TRACE_METADATA})
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check5_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_CGM_TRACE_METADATA})
 
     if consistency_failures > 0:
         fail_and_exit("CGM Metadata Consistency", consistency_failures)
@@ -1958,8 +2030,15 @@ def main():
          if res["status"] == "FAILED":
              integrity_failures += 1
     
-    emit_otel_span(emitter, otel_resource_id, "Check 6: CGM Data", check6_start, get_time_nano(), 
-                   parent_span_id=root_span_id, span_id=check6_span_id, trace_id=root_trace_id, attributes={"validation.level": "cgm_data", "failures": integrity_failures}, status_code="ERROR" if integrity_failures > 0 else "OK")
+    emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_CGM_INTEGRITY, check6_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check6_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "cgm_data", "failures": integrity_failures}, status_code="ERROR" if integrity_failures > 0 else "OK")
+    
+    # Metrics for Check 6
+    checked_count = len(integrity_results)
+    passed_count = checked_count - integrity_failures
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, passed_count, attributes={"check.category": OTelNames.CAT_CGM_INTEGRITY})
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, integrity_failures, attributes={"check.category": OTelNames.CAT_CGM_INTEGRITY})
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check6_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_CGM_INTEGRITY})
     
     if integrity_failures > 0:
         fail_and_exit("CGM Data Integrity", integrity_failures)
@@ -1988,8 +2067,15 @@ def main():
                  overall_status = "FAILED"
                  meal_cons_failures += 1
         
-        emit_otel_span(emitter, otel_resource_id, "Check 7: Meal Meta", check7_start, get_time_nano(), 
-                   parent_span_id=root_span_id, span_id=check7_span_id, trace_id=root_trace_id, attributes={"validation.level": "meal_meta"}, status_code="ERROR" if meal_cons_failures > 0 else "OK")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_MEAL_METADATA, check7_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check7_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "meal_meta"}, status_code="ERROR" if meal_cons_failures > 0 else "OK")
+
+        # Metrics for Check 7
+        checked_count = len(meal_consistency_results)
+        passed_count = checked_count - meal_cons_failures
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, passed_count, attributes={"check.category": OTelNames.CAT_MEAL_METADATA})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, meal_cons_failures, attributes={"check.category": OTelNames.CAT_MEAL_METADATA})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check7_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_MEAL_METADATA})
 
         if meal_cons_failures > 0:
              meal_failed = True
@@ -2012,8 +2098,15 @@ def main():
                       overall_status = "FAILED"
                       meal_int_failures += 1
              
-             emit_otel_span(emitter, otel_resource_id, "Check 8: Meal Data", check8_start, get_time_nano(), 
-                   parent_span_id=root_span_id, span_id=check8_span_id, trace_id=root_trace_id, attributes={"validation.level": "meal_data"}, status_code="ERROR" if meal_int_failures > 0 else "OK")
+             emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_MEAL_INTEGRITY, check8_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check8_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "meal_integrity"}, status_code="ERROR" if meal_int_failures > 0 else "OK")
+
+             # Metrics for Check 8
+             checked_count = len(meal_integrity_results)
+             passed_count = checked_count - meal_int_failures
+             emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, passed_count, attributes={"check.category": OTelNames.CAT_MEAL_INTEGRITY})
+             emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, meal_int_failures, attributes={"check.category": OTelNames.CAT_MEAL_INTEGRITY})
+             emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check8_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_MEAL_INTEGRITY})
 
     # 9. Fitness Data Validation (Static ID: 9) & 10. Fitness Data Integrity (Static ID: 10)
     # Conditional Execution: Only if fitness_file_metadata exists
@@ -2035,8 +2128,15 @@ def main():
                  overall_status = "FAILED"
                  fitness_cons_failures += 1
         
-        emit_otel_span(emitter, otel_resource_id, "Check 9: Fitness Meta", check9_start, get_time_nano(), 
-                   parent_span_id=root_span_id, span_id=check9_span_id, trace_id=root_trace_id, attributes={"validation.level": "fitness_meta"}, status_code="ERROR" if fitness_cons_failures > 0 else "OK")
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FITNESS_METADATA, check9_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check9_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "fitness_meta"}, status_code="ERROR" if fitness_cons_failures > 0 else "OK")
+
+        # Metrics for Check 9
+        checked_count = len(fitness_consistency_results)
+        passed_count = checked_count - fitness_cons_failures
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, passed_count, attributes={"check.category": OTelNames.CAT_FITNESS_METADATA})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, fitness_cons_failures, attributes={"check.category": OTelNames.CAT_FITNESS_METADATA})
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check9_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_FITNESS_METADATA})
 
         if fitness_cons_failures > 0:
              # Do NOT run check 10
@@ -2059,8 +2159,15 @@ def main():
                       overall_status = "FAILED"
                       fitness_int_failures += 1
                       
-             emit_otel_span(emitter, otel_resource_id, "Check 10: Fitness Data", check10_start, get_time_nano(), 
-                   parent_span_id=root_span_id, span_id=check10_span_id, trace_id=root_trace_id, attributes={"validation.level": "fitness_data"}, status_code="ERROR" if fitness_int_failures > 0 else "OK")
+             emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FITNESS_INTEGRITY, check10_start, get_time_nano(), 
+                   parent_span_id=root_span_id, span_id=check10_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "fitness_integrity"}, status_code="ERROR" if fitness_int_failures > 0 else "OK")
+
+             # Metrics for Check 10
+             checked_count = len(fitness_integrity_results)
+             passed_count = checked_count - fitness_int_failures
+             emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, passed_count, attributes={"check.category": OTelNames.CAT_FITNESS_INTEGRITY})
+             emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, fitness_int_failures, attributes={"check.category": OTelNames.CAT_FITNESS_INTEGRITY})
+             emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - check10_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_FITNESS_INTEGRITY})
     
     if overall_status == "FAILED":
          # We do not use fail_and_exit here because it exits immediately.
@@ -2087,7 +2194,7 @@ def main():
          emitter.emit_record("drh_validation_reports", report_record)
          
          # Emit Failure Span
-         emit_otel_span(emitter, otel_resource_id, "tap-dexcom-execution", execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
+         emit_otel_span(emitter, otel_resource_id, OTelNames.ROOT_VV, execution_span_start, get_time_nano(), status_code="ERROR", span_id=root_span_id, trace_id=root_trace_id)
          sys.exit(0)
 
     # Emit Summary Report (Success Path Only)
@@ -2182,7 +2289,7 @@ def main():
     emitter.emit_state(state)
 
     # Emit Final SUCCESS Span
-    emit_otel_span(emitter, otel_resource_id, "tap-dexcom-execution", execution_span_start, get_time_nano(), status_code="OK", span_id=root_span_id, trace_id=root_trace_id)
+    emit_otel_span(emitter, otel_resource_id, OTelNames.ROOT_VV, execution_span_start, get_time_nano(), status_code="OK", span_id=root_span_id, trace_id=root_trace_id)
 
 if __name__ == "__main__":
     main()

@@ -346,6 +346,66 @@ WHERE json_extract(content, '$.stream') = 'otel_spans'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
+-- View 1: Identify the Latest Root Session based ONLY on the Orchestration Name
+CREATE VIEW IF NOT EXISTS drh_active_session AS
+SELECT 
+    s.trace_id, 
+    s.span_id AS root_span_id,
+    s.span_name AS session_name,
+    s.status_code,
+    s.resource_id, -- Dynamically capture the resource (tap-dexcom, tap-fitbit, etc.)    
+    s.start_time_unix_nano,
+    s.end_time_unix_nano
+FROM drh_otel_spans s
+WHERE (s.parent_span_id IS NULL OR s.parent_span_id = '') 
+  -- This is your only "Anchor". As long as Level 1 spans use this name, it works.
+  AND s.span_name = 'V&V Orchestration Session' 
+ORDER BY s.start_time_unix_nano DESC 
+LIMIT 1;
+
+-- View 2: Recursive Span Stats
+-- This calculates how many children (Level 3) and logs exist for every span
+CREATE VIEW IF NOT EXISTS drh_span_hierarchy AS
+SELECT 
+    s.trace_id,
+    s.span_id,
+    s.parent_span_id,
+    s.span_name,
+    s.status_code,
+    -- Dynamic Level: 1 if Root, 2 if Child of Root, 3 if Grandchild
+    CASE 
+        WHEN s.parent_span_id IS NULL OR s.parent_span_id = '' THEN 1
+        WHEN s.parent_span_id = (SELECT root_span_id FROM drh_active_session) THEN 2
+        ELSE 3
+    END as span_level,
+    (SELECT COUNT(*) FROM drh_otel_spans WHERE parent_span_id = s.span_id) as sub_check_count,
+    (SELECT COUNT(*) FROM drh_otel_logs WHERE span_id = s.span_id) as log_count,
+    s.start_time_unix_nano
+FROM drh_otel_spans s
+JOIN drh_active_session sess ON s.trace_id = sess.trace_id;
+
+DROP VIEW IF EXISTS drh_vv_session_summary;
+CREATE VIEW drh_vv_session_summary AS
+WITH latest_vv_root AS (
+    SELECT s.trace_id, s.span_id, s.start_time_unix_nano, s.end_time_unix_nano, s.status_code
+    FROM drh_otel_spans s
+    JOIN drh_otel_resource r ON s.resource_id = r.resource_id
+    WHERE (s.parent_span_id IS NULL OR s.parent_span_id = '')
+      -- Hardened Filters:
+      AND s.span_name = 'V&V Orchestration Session' -- Matches OTelNames.ROOT_VV
+      AND r.service_name = 'tap-dexcom'             -- Ensures it's our specific service
+    ORDER BY s.start_time_unix_nano DESC 
+    LIMIT 1
+)
+SELECT 
+    ls.trace_id,
+    ls.status_code AS overall_status,
+    -- Fetch Metrics specifically for THIS Trace ID
+    COALESCE((SELECT value FROM drh_otel_metrics WHERE trace_id = ls.trace_id AND name = 'vv.validation.pass_count'), 0) AS pass_count,
+    COALESCE((SELECT value FROM drh_otel_metrics WHERE trace_id = ls.trace_id AND name = 'vv.validation.fail_count'), 0) AS fail_count,
+    printf('%.2f ms', (ls.end_time_unix_nano - ls.start_time_unix_nano) / 1000000.0) AS total_duration
+FROM latest_vv_root ls;
+
 -- ***************************************************************
 -- DE-IDENTIFICATION PROCESS
 -- This section performs email anonymization and logs the process.

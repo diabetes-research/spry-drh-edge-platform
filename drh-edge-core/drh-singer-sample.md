@@ -479,9 +479,9 @@ SELECT 'Ingestion Log' AS title, '/drh/ingestion-log.sql' AS link,
     'Audit files accepted and converted into database format.' AS description,
     'database-import' AS icon, 'cyan' AS color;
 
-SELECT 'Verification Log' AS title, '/drh/verification-validation-log.sql' AS link,
-    'Quality review of file content and corrective actions taken.' AS description,
-    'folder-check' AS icon, 'cyan' AS color;
+-- SELECT 'Verification Log' AS title, '/drh/verification-validation-log.sql' AS link,
+--     'Quality review of file content and corrective actions taken.' AS description,
+--     'folder-check' AS icon, 'cyan' AS color;
 
 SELECT 'De-Identification Audit' AS title, '/drh/deidentification-log.sql' AS link,
     'Review results of PHI masking and column modifications.' AS description,
@@ -550,7 +550,7 @@ ${pagination.navigation}
 
 ```
 
-## Verification Validation log page
+<!-- ## Verification Validation log page
 
 ```sql drh/verification-validation-log.sql { route: { caption: "Verification And Validation Results" } }
 -- @route.description "This section provides the verification and valdiation results performed on the study files"
@@ -657,7 +657,7 @@ WHERE (SELECT COUNT(*) FROM drh_vandv_orch_issues) > 0
 ${pagination.limit}; 
 ${pagination.navigation}
 
-```
+``` -->
 
 ## Study Participant Dashboard
 
