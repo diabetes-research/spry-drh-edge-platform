@@ -346,65 +346,77 @@ WHERE json_extract(content, '$.stream') = 'otel_spans'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
--- View 1: Identify the Latest Root Session based ONLY on the Orchestration Name
-CREATE VIEW IF NOT EXISTS drh_active_session AS
+-- View 1: Identify the Latest V&V Root Session (The Level 1 Anchor)
+DROP VIEW IF EXISTS drh_active_session;
+CREATE VIEW drh_active_session AS
 SELECT 
     s.trace_id, 
     s.span_id AS root_span_id,
     s.span_name AS session_name,
-    s.status_code,
-    s.resource_id, -- Dynamically capture the resource (tap-dexcom, tap-fitbit, etc.)    
+    json_extract(s.status_code, '$.code') AS status,
+    s.resource_id,
+    r.service_name,
     s.start_time_unix_nano,
     s.end_time_unix_nano
 FROM drh_otel_spans s
-WHERE (s.parent_span_id IS NULL OR s.parent_span_id = '') 
-  -- This is your only "Anchor". As long as Level 1 spans use this name, it works.
-  AND s.span_name = 'V&V Orchestration Session' 
+JOIN drh_otel_resource r ON s.resource_id = r.resource_id
+WHERE (s.parent_span_id IS NULL OR s.parent_span_id = '')
+  AND s.span_name = 'V&V Orchestration Session' -- Your Hardcoded Root Constant
 ORDER BY s.start_time_unix_nano DESC 
 LIMIT 1;
 
--- View 2: Recursive Span Stats
--- This calculates how many children (Level 3) and logs exist for every span
-CREATE VIEW IF NOT EXISTS drh_span_hierarchy AS
+-- View 2: Session Summary (Aggregated Metrics & Health)
+DROP VIEW IF EXISTS drh_vv_session_summary;
+CREATE VIEW drh_vv_session_summary AS
 SELECT 
-    s.trace_id,
+    ls.trace_id,
+    ls.service_name,
+    ls.resource_id,
+    CASE WHEN ls.status = 'OK' THEN 'PASS' ELSE 'FAIL' END AS overall_status,
+    -- 1. Get Pass/Fail counts from metrics (if they exist, else 0)
+    COALESCE((SELECT SUM(metric_value) FROM drh_otel_metrics WHERE resource_id = ls.resource_id AND metric_name = 'vv.validation.pass_count'), 0) AS pass_count,
+    COALESCE((SELECT SUM(metric_value) FROM drh_otel_metrics WHERE resource_id = ls.resource_id AND metric_name = 'vv.validation.fail_count'), 0) AS fail_count,
+    -- 2. WALL CLOCK DURATION (Reliable even with minimal tracing)
+    printf('%.2f s', (ls.end_time_unix_nano - ls.start_time_unix_nano) / 1000000000.0) AS duration
+FROM drh_active_session ls;
+
+-- View 3: Dynamic Hierarchy (Levels 1, 2, and 3)
+DROP VIEW IF EXISTS drh_vv_hierarchy;
+CREATE VIEW drh_vv_hierarchy AS
+WITH span_attr_agg AS (
+    SELECT 
+        s.span_id,
+        GROUP_CONCAT(key || ': ' || value, ' • ') as attrs
+    FROM drh_otel_spans s, json_each(s.attributes)
+    GROUP BY s.span_id
+),
+log_attr_agg AS (
+    SELECT 
+        l.span_id,
+        l.body,
+        GROUP_CONCAT(key || ': ' || value, ' • ') as attrs
+    FROM drh_otel_logs l, json_each(l.attributes)
+    GROUP BY l.span_id, l.body
+)
+SELECT 
     s.span_id,
     s.parent_span_id,
     s.span_name,
-    s.status_code,
-    -- Dynamic Level: 1 if Root, 2 if Child of Root, 3 if Grandchild
+    json_extract(s.status_code, '$.code') AS status,
     CASE 
         WHEN s.parent_span_id IS NULL OR s.parent_span_id = '' THEN 1
         WHEN s.parent_span_id = (SELECT root_span_id FROM drh_active_session) THEN 2
         ELSE 3
-    END as span_level,
-    (SELECT COUNT(*) FROM drh_otel_spans WHERE parent_span_id = s.span_id) as sub_check_count,
-    (SELECT COUNT(*) FROM drh_otel_logs WHERE span_id = s.span_id) as log_count,
+    END as lvl,
+    -- Simple Text separation using a dash and bullet
+    COALESCE(la.body, 'No log message') || 
+    CASE WHEN la.attrs IS NOT NULL THEN ' — ' || la.attrs ELSE '' END ||
+    CASE WHEN sa.attrs IS NOT NULL THEN ' • ' || sa.attrs ELSE '' END AS evidence,
     s.start_time_unix_nano
 FROM drh_otel_spans s
-JOIN drh_active_session sess ON s.trace_id = sess.trace_id;
-
-DROP VIEW IF EXISTS drh_vv_session_summary;
-CREATE VIEW drh_vv_session_summary AS
-WITH latest_vv_root AS (
-    SELECT s.trace_id, s.span_id, s.start_time_unix_nano, s.end_time_unix_nano, s.status_code
-    FROM drh_otel_spans s
-    JOIN drh_otel_resource r ON s.resource_id = r.resource_id
-    WHERE (s.parent_span_id IS NULL OR s.parent_span_id = '')
-      -- Hardened Filters:
-      AND s.span_name = 'V&V Orchestration Session' -- Matches OTelNames.ROOT_VV
-      AND r.service_name = 'tap-dexcom'             -- Ensures it's our specific service
-    ORDER BY s.start_time_unix_nano DESC 
-    LIMIT 1
-)
-SELECT 
-    ls.trace_id,
-    ls.status_code AS overall_status,
-    -- Fetch Metrics specifically for THIS Trace ID
-    COALESCE((SELECT value FROM drh_otel_metrics WHERE trace_id = ls.trace_id AND name = 'vv.validation.pass_count'), 0) AS pass_count,
-    COALESCE((SELECT value FROM drh_otel_metrics WHERE trace_id = ls.trace_id AND name = 'vv.validation.fail_count'), 0) AS fail_count,
-    printf('%.2f ms', (ls.end_time_unix_nano - ls.start_time_unix_nano) / 1000000.0) AS total_duration
-FROM latest_vv_root ls;
+LEFT JOIN log_attr_agg la ON s.span_id = la.span_id
+LEFT JOIN span_attr_agg sa ON s.span_id = sa.span_id
+WHERE s.trace_id = (SELECT trace_id FROM drh_active_session);
 
 -- ***************************************************************
 -- DE-IDENTIFICATION PROCESS
@@ -515,7 +527,7 @@ VALUES
             limit
                 1
         ), -- Session ID from previous insert
-        'drh-singer-streams-extraction.sql', -- Replace with actual ingest source
+        'drh-data-extraction.sql', -- Replace with actual ingest source
         '', -- Placeholder for actual table name
         NULL -- Elaboration (if any)
     );
@@ -679,74 +691,5 @@ FROM
     JOIN orchestration_session os ON osex.session_id = os.orchestration_session_id
 WHERE
     os.orchestration_nature_id = 'deidentification';
-
-
-
--- =====================================================================
--- EDGE FUNCTIONAL VIEWS
--- =====================================================================
-
-DROP VIEW IF EXISTS drh_participant_file_names;
-CREATE VIEW drh_participant_file_names AS
-SELECT
-    patient_id,
-    -- Converted STRING_AGG to GROUP_CONCAT
-    GROUP_CONCAT(file_name, ', ') AS file_names
-FROM drh_cgm_file_metadata
-GROUP BY patient_id;
-
-
-DROP VIEW IF EXISTS drh_study_vanity_metrics_details;
-CREATE VIEW
-    drh_study_vanity_metrics_details AS
-SELECT
-    s.tenant_id,
-    s.study_id,
-    s.study_name,
-    s.study_description,
-    s.start_date,
-    s.end_date,
-    s.nct_number,
-    COUNT(DISTINCT p.participant_id) AS total_number_of_participants,
-    ROUND(AVG(p.age), 2) AS average_age,
-    ROUND(
-        (CAST(SUM(CASE WHEN p.gender = 'F' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
-        1
-    ) AS percentage_of_females,    
-    
-    ROUND(
-        (CAST(SUM(CASE WHEN p.gender = 'M' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
-        1
-    ) AS percentage_of_males,
-    GROUP_CONCAT (DISTINCT i.investigator_name) AS investigators
-FROM
-    drh_study s
-    LEFT JOIN drh_participant p ON s.study_id = p.study_id
-    LEFT JOIN drh_investigator i ON s.study_id = i.study_id
-GROUP BY
-    s.study_id,
-    s.study_name,
-    s.study_description,
-    s.start_date,
-    s.end_date,
-    s.nct_number;
-
-
-DROP VIEW IF EXISTS drh_raw_cgm_table_lst;
-CREATE VIEW
-    drh_raw_cgm_table_lst AS
-SELECT
-    raw_file_name as file_name    
-FROM
-    drh_raw_cgm_tracing;
-
-
-DROP VIEW IF EXISTS study_wise_number_cgm_raw_files_count;
-CREATE VIEW
-    drh_number_cgm_count AS
-SELECT
-    count(*) as number_of_cgm_raw_files
-FROM
-    drh_raw_cgm_tracing;
 
 

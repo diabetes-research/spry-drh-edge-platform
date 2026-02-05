@@ -429,6 +429,9 @@ WITH cgm_stats AS (
         SUM(CASE WHEN CGM_Value BETWEEN 181 AND 250 THEN 1 ELSE 0 END) as count_tar_h,
         SUM(CASE WHEN CGM_Value BETWEEN 54 AND 69 THEN 1 ELSE 0 END) as count_tbr_l,
         SUM(CASE WHEN CGM_Value < 54 THEN 1 ELSE 0 END) as count_tbr_vl,
+        -- Added for TAR/TBR totals
+        SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END) as count_tar,
+        SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) as count_tbr,
         AVG(CGM_Value) as avg_glucose,
         AVG(CGM_Value * CGM_Value) as avg_sq_glucose,
         COUNT(DISTINCT DATE(Date_Time)) AS days_of_wear,
@@ -456,20 +459,37 @@ SELECT
     dg.baseline_hba1c,
     ms.cgm_devices,
     ms.cgm_files,
+    -- Core Metrics
     ROUND(cs.count_tir * 100.0 / cs.total_count, 2) AS tir,
     ROUND(cs.count_tar_vh * 100.0 / cs.total_count, 2) AS tar_vh,
     ROUND(cs.count_tar_h * 100.0 / cs.total_count, 2) AS tar_h,
     ROUND(cs.count_tbr_l * 100.0 / cs.total_count, 2) AS tbr_l,
     ROUND(cs.count_tbr_vl * 100.0 / cs.total_count, 2) AS tbr_vl,
+    -- Missing TAR/TBR added
+    ROUND(cs.count_tar * 100.0 / cs.total_count, 2) AS tar,
+    ROUND(cs.count_tbr * 100.0 / cs.total_count, 2) AS tbr,
+    -- Clinical Indicators
     CEIL((cs.avg_glucose * 0.155) + 95) AS gmi,
     ROUND((SQRT(cs.avg_sq_glucose - (cs.avg_glucose * cs.avg_glucose)) / cs.avg_glucose) * 100, 2) AS percent_gv,
+    -- Added GRI (Glycemia Risk Index) calculation
+    ROUND((3.0 * ((cs.count_tbr_vl * 100.0 / cs.total_count) + 
+                  (0.8 * (cs.count_tbr_l * 100.0 / cs.total_count)))) + 
+          (1.6 * ((cs.count_tar_vh * 100.0 / cs.total_count) + 
+                  (0.5 * (cs.count_tar_h * 100.0 / cs.total_count)))), 2) AS gri,
+    -- Metadata
     cs.days_of_wear,
     cs.d_start AS data_start_date,
     cs.d_end AS data_end_date,
     ROUND(COALESCE((cs.days_of_wear * 1.0 / (JULIANDAY(cs.d_end) - JULIANDAY(cs.d_start) + 1)) * 100, 0), 2) AS wear_time_percentage
 FROM drh_participant dg
 JOIN cgm_stats cs ON dg.participant_id = cs.participant_id
-LEFT JOIN meta_stats ms ON dg.participant_id = ms.patient_id;
+LEFT JOIN meta_stats ms ON dg.participant_id = ms.patient_id
+ORDER BY      
+    CASE 
+        WHEN LENGTH(dg.participant_id) - LENGTH(REPLACE(dg.participant_id, '-', '')) = 1 THEN 
+            CAST(SUBSTR(dg.participant_id, INSTR(dg.participant_id, '-') + 1) AS INTEGER) 
+        ELSE dg.participant_id 
+    END ASC;
 
 
 ------cached tables-------------------------

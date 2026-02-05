@@ -1,3 +1,93 @@
+-- =====================================================================
+-- EDGE FUNCTIONAL VIEWS
+-- =====================================================================
+
+DROP VIEW IF EXISTS drh_participant_file_names;
+CREATE VIEW drh_participant_file_names AS
+SELECT
+    patient_id,
+    -- Converted STRING_AGG to GROUP_CONCAT
+    GROUP_CONCAT(file_name, ', ') AS file_names
+FROM drh_cgm_file_metadata
+GROUP BY patient_id;
+
+
+DROP VIEW IF EXISTS drh_study_vanity_metrics_details;
+CREATE VIEW
+    drh_study_vanity_metrics_details AS
+SELECT
+    s.tenant_id,
+    s.study_id,
+    s.study_name,
+    s.study_description,
+    s.start_date,
+    s.end_date,
+    s.nct_number,
+    COUNT(DISTINCT p.participant_id) AS total_number_of_participants,
+    ROUND(AVG(p.age), 2) AS average_age,
+    ROUND(
+        (CAST(SUM(CASE WHEN p.gender = 'F' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
+        1
+    ) AS percentage_of_females,    
+    
+    ROUND(
+        (CAST(SUM(CASE WHEN p.gender = 'M' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
+        1
+    ) AS percentage_of_males,
+    GROUP_CONCAT (DISTINCT i.investigator_name) AS investigators
+FROM
+    drh_study s
+    LEFT JOIN drh_participant p ON s.study_id = p.study_id
+    LEFT JOIN drh_investigator i ON s.study_id = i.study_id
+GROUP BY
+    s.study_id,
+    s.study_name,
+    s.study_description,
+    s.start_date,
+    s.end_date,
+    s.nct_number;
+
+
+DROP VIEW IF EXISTS drh_raw_cgm_table_lst;
+CREATE VIEW
+    drh_raw_cgm_table_lst AS
+SELECT
+    raw_file_name as file_name    
+FROM
+    drh_raw_cgm_tracing;
+
+
+DROP VIEW IF EXISTS study_wise_number_cgm_raw_files_count;
+CREATE VIEW
+    drh_number_cgm_count AS
+SELECT
+    count(*) as number_of_cgm_raw_files
+FROM
+    drh_raw_cgm_tracing;
+
+
+-- Drops and recreates the view to count the number of distinct files per device name (duplicate of VIEW 12).
+DROP VIEW IF EXISTS drh_device_file_count_view;
+
+CREATE VIEW
+    drh_device_file_count_view AS
+SELECT
+    devicename,
+    COUNT(DISTINCT file_name) AS number_of_files
+FROM
+    drh_cgm_file_metadata
+GROUP BY
+    devicename
+ORDER BY
+    number_of_files DESC;
+
+--drh_study_files_table_info
+
+-- =====================================================================
+-- ETL VIEWS
+-- =====================================================================
+
+
 DROP VIEW IF EXISTS combined_cgm_tracing;
 CREATE VIEW IF NOT EXISTS combined_cgm_tracing AS
 WITH joined_data AS (

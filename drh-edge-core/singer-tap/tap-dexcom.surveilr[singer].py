@@ -109,11 +109,11 @@ class OTelNames:
     CAT_FITNESS_INTEGRITY = "10: Fitness Data Integrity"
 
     # Sub-Spans for Schema Validation (Check 4)
-    CHK_FILE_VAL = "File Validation"
-    CHK_COLUMNS = "Required Columns"
-    CHK_TYPE = "Type Check"
-    CHK_PATTERNS = "Format & Pattern Check"
-    CHK_FK_INTEGRITY = "Foreign Key Check" # Currently commented out in code
+    CHK_FILE_VAL = "4.1: File Validation"
+    CHK_COLUMNS = "4.1.a: Required Columns"
+    CHK_TYPE = "4.1.b: Type Check"
+    CHK_PATTERNS = "4.1.c: Format & Pattern Check"
+    CHK_FK_INTEGRITY = "4.1.d: Foreign Key Check" # Currently commented out in code
 
     # Attributes
     ATTR_VALIDATION_LEVEL = "validation.level"
