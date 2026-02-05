@@ -1075,10 +1075,10 @@ def process_cgm_file_metadata(emitter, filepath):
                 }
 
                 # Normalize dates if present and likely just Date strings (YYYY-MM-DD)
-                for date_field in ["file_upload_date", "data_start_date", "data_end_date"]:
-                    val = record.get(date_field)
-                    if val and "T" not in val:
-                        record[date_field] = val + "T00:00:00Z"
+                # for date_field in ["file_upload_date", "data_start_date", "data_end_date"]:
+                #     val = record.get(date_field)
+                #     if val and "T" not in val:
+                #         record[date_field] = val + "T00:00:00Z"
                 
                 emitter.emit_record(stream_name, record)
             except Exception as e:
@@ -1239,8 +1239,8 @@ def process_study(emitter, filepath):
                 record = {
                     "study_id": row.get("study_id"),
                     "study_name": row.get("study_name"),
-                    "start_date": row.get("start_date") + "T00:00:00Z" if row.get("start_date") else None,
-                    "end_date": row.get("end_date") + "T00:00:00Z" if row.get("end_date") else None,
+                    "start_date": row.get("start_date"),
+                    "end_date": row.get("end_date"),
                     "treatment_modalities": row.get("treatment_modalities"),
                     "funding_source": row.get("funding_source"),
                     "nct_number": row.get("nct_number"),

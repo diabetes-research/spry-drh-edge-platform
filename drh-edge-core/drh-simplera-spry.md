@@ -97,7 +97,7 @@ Quick troubleshooting
 - The `prepare-db-deploy-server ` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
-```bash prepare-db-deploy-server -deploy-server  --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
+```bash prepare-db-deploy-server  --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
 #!/bin/bash
 set -u
 # Variables

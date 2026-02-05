@@ -97,7 +97,7 @@ Quick troubleshooting
 - The `prepare-db-deploy-server ` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
-```bash prepare-db-deploy-server -deploy-server  --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
+```bash prepare-db-deploy-server   --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
 #!/bin/bash
 set -u
 # 1. Cleanup
@@ -114,7 +114,7 @@ if [ "$VALIDATION_STATUS" == "PASS" ]; then
     (
         set -e   
         surveilr shell common-sql/drh-data-etl.sql
-        surveilr shell common-sql/drh-metrics.sql 
+        # surveilr shell common-sql/drh-metrics.sql 
     )
     
     if [ $? -ne 0 ]; then        
@@ -426,11 +426,11 @@ SELECT 'Raw CGM Data' AS title, '/drh/cgm-data.sql' AS link,
     'device-airtag' AS icon, 'teal' AS color;
 
 -- 6. DIAGNOSTICS & SYSTEM AUDIT
-SELECT 'card' AS component, 'Data Deidentification' AS title, 1 AS columns;
+SELECT 'card' AS component, 'Data Deidentification And File Logs' AS title, 2 AS columns;
 
--- SELECT 'Ingestion Log' AS title, '/drh/ingestion-log.sql' AS link,
---     'Audit files accepted and converted into database format.' AS description,
---     'database-import' AS icon, 'cyan' AS color;
+SELECT 'Ingestion Log' AS title, '/drh/ingestion-log.sql' AS link,
+    'Raw Data files accepted and converted into database format.' AS description,
+    'database-import' AS icon, 'cyan' AS color;
 
 -- SELECT 'Verification Log' AS title, '/drh/verification-validation-log.sql' AS link,
 --     'Quality review of file content and corrective actions taken.' AS description,
@@ -463,45 +463,70 @@ SELECT 'Authors & Publications' AS title, '/drh/author-pub-data.sql' AS link,
     'news' AS icon, 'teal' AS color;
 ```
 
-<!-- ## Study Files Log Page
+## Raw Data Files Log Page
 
-```sql drh/ingestion-log.sql { route: { caption: "Study Files Log" } }
--- @route.description "This section provides an overview of the files that have been accepted and converted into database format for research purposes"
+```sql drh/ingestion-log.sql { route: { caption: "Raw Data Files Log" } }
 
--- Place this immediately after the shell
+-- @route.description "Ingestion log documenting "
+
+-- 1. Navigation & Header
 SELECT 'button' AS component, 'start' AS justify;
-
-SELECT 'button' AS component, 'xs' AS size; -- Very small
 SELECT 
     'Back' AS title,
     '/drh/research-dashboard.sql' AS link, 
     'chevron-left' AS icon,
     'outline-secondary' AS outline;
 
+SELECT 'text' AS component, 'Raw Data Ingestion Log' AS title;
 
-SELECT 'text' AS component, $page_title AS title;
+-- 2. Refactored Output Description
+-- Modified to explicitly mention the focus on CGM, Meal, and Fitness streams.
+SELECT 'text' AS component, 
+'The ingestion process monitors source folders for specific research data types. Each detected file is processed through a specialized Singer Tap, standardized into structured tables, and logged for auditability. 
+This log specifically tracks the availability of raw data across the **CGM**, **Meal**, and **Fitness** research streams.' AS contents_md;
 
-${paginate("drh_study_files_table_info")}
+-- 3. Folder & File Count Summary (Based on raw research data views)
+SELECT 'datagrid' AS component, 'Research Data Stream Summary' AS title;
 
-SELECT
-  '
-  This section provides an overview of the files that have been accepted and converted into database format for research purposes. The conversion process ensures that data from various sources is standardized, making it easier for researchers to analyze and draw meaningful insights.
-  Additionally, the corresponding database table names generated from these files are listed for reference.' as contents;
+SELECT 
+    'Raw CGM File Count' AS title, 
+    COUNT(*) || ' files' AS description,    
+    'blue' AS color
+FROM drh_raw_cgm_tracing;
 
-SELECT 'table' AS component,
-  TRUE AS sort,
-  TRUE AS search;
+SELECT 
+    'Raw Meal File Count' AS title, 
+    COUNT(*) || ' files' AS description,    
+    'orange' AS color
+FROM drh_raw_meal_data;
 
-SELECT
-  file_name,
-  file_format,
-  table_name
-FROM drh_study_files_table_info
-ORDER BY file_name ASC
-${pagination.limit}; 
-${pagination.navigation} 
+SELECT 
+    'Raw Fitness File Count' AS title, 
+    COUNT(*) || ' files' AS description,       
+    'green' AS color
+FROM drh_raw_fitness_data;
 
-``` -->
+-- 4. Audit Table (Optional: Listing actual files logged in the tracing table)
+SELECT 'table' AS component, 'Ingested Raw File Audit' AS title, TRUE AS sort, TRUE AS search;
+SELECT 
+    raw_file_name AS "File Name",
+    'CGM' AS "Stream",
+    'drh_raw_cgm_tracing' AS "Destination Table"
+FROM drh_raw_cgm_tracing
+UNION ALL
+SELECT 
+    raw_file_name,
+    'Meal',
+    'drh_raw_meal_data'
+FROM drh_raw_meal_data
+UNION ALL
+SELECT 
+    raw_file_name,
+    'Fitness',
+    'drh_raw_fitness_data'
+FROM drh_raw_fitness_data;
+
+```
 
 ## Study Participant Dashboard
 
@@ -902,6 +927,7 @@ ${pagination.navigation}
 
 ```sql drh/cgm-data.sql{ route: { caption: "Raw CGM Data " } }
 -- @route.description "Explore detailed information about glucose levels over time, including timestamp, and glucose value."
+-- @route.description "Explore detailed information about glucose levels over time, including timestamp, and glucose value."
 
 SELECT 'button' AS component, 'start' AS justify;
 
@@ -931,17 +957,23 @@ SELECT
     TRUE AS search;
 
 SELECT 
-    -- Added leading / and removed the redundant 'cgm-data' from middle of path
-    '[' || REPLACE(r.table_name, 'uniform_resource_', '') || '](/drh/cgm-data/raw-cgm/' || r.table_name || '.sql)' AS "RAW FILES"
+    -- Label: Display the original file name exactly as it is in the database
+    '[' || r.raw_file_name || ']' ||
+    -- Link: Still points to the cleaned .sql path generated by the script
+    '(/drh/cgm-data/raw-cgm/' || 
+    LOWER(TRIM(CASE WHEN instr(r.raw_file_name, '.') > 0 
+             THEN substr(r.raw_file_name, 1, instr(r.raw_file_name, '.') - 1) 
+             ELSE r.raw_file_name END)) || '.sql)' 
+    AS "RAW FILES",
+    'drh_raw_cgm_tracing' AS "Destination",
+    json_array_length(r.raw_data_payload) AS "Records"
 FROM 
-    drh_raw_cgm_table_lst AS r
+    drh_raw_cgm_tracing AS r
 JOIN 
     sqlpage_files AS f 
-    -- Ensure this path matches your INSERT statement exactly
-    ON f.path = 'drh/cgm-data/raw-cgm/' || r.table_name || '.sql'
+    ON f.path = 'drh/cgm-data/raw-cgm/' || LOWER(TRIM(CASE WHEN instr(r.raw_file_name, '.') > 0 THEN substr(r.raw_file_name, 1, instr(r.raw_file_name, '.') - 1) ELSE r.raw_file_name END)) || '.sql'
 ORDER BY 
-    r.table_name;
-
+    r.raw_file_name;
 ```
 
 ## Meal Data
