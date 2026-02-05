@@ -1651,7 +1651,7 @@ def emit_otel_resource(emitter):
     resource_id = str(uuid.uuid4())
     record = {
         "resource_id": resource_id,
-        "service.name": "tap-dexcom",
+        "service.name": "tap-simplera",
         "service.version": "1.0.0",
         "service.instance.id": resource_id,
         "deployment.environment": os.environ.get("DEPLOY_ENV", "production"),
