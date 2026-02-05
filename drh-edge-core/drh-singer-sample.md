@@ -94,7 +94,7 @@ Quick troubleshooting
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
   - `spry rb task prepare-db-deploy-server  drh-simplera-spry.md`
-- The `prepare-db-deploy-server ` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
+- The `prepare-db-deploy-server` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
 
 ```bash prepare-db-deploy-server   --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
@@ -113,8 +113,7 @@ VALIDATION_STATUS=$(echo "$RAW_STATUS" | jq -r '.[0].overall_status')
 if [ "$VALIDATION_STATUS" == "PASS" ]; then    
     (
         set -e   
-        surveilr shell common-sql/drh-data-etl.sql
-        # surveilr shell common-sql/drh-metrics.sql 
+        surveilr shell common-sql/drh-data-etl.sql        
     )
     
     if [ $? -ne 0 ]; then        
