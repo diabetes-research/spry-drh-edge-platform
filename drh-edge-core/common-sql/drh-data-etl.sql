@@ -26,12 +26,12 @@ SELECT
     COUNT(DISTINCT p.participant_id) AS total_number_of_participants,
     ROUND(AVG(p.age), 2) AS average_age,
     ROUND(
-        (CAST(SUM(CASE WHEN p.gender = 'F' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
+        (CAST(SUM(CASE WHEN p.gender = 'Female' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
         1
     ) AS percentage_of_females,    
     
     ROUND(
-        (CAST(SUM(CASE WHEN p.gender = 'M' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
+        (CAST(SUM(CASE WHEN p.gender = 'Male' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
         1
     ) AS percentage_of_males,
     GROUP_CONCAT (DISTINCT i.investigator_name) AS investigators

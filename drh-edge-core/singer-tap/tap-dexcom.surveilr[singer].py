@@ -202,7 +202,7 @@ ALL_STREAM_NAMES = [
     "participant", "site", "study", "investigator", "institution",
     "lab", "author", "publication",  "fitness_file_metadata",
      "meal_file_metadata", "drh_validation_reports",
-    "drh_diagnostics", "raw_cgm_tracing", "raw_meal_data", "raw_fitness_data",
+    "drh_diagnostics", "cgm_tracing", "meal", "fitness",
     "otel_resource", "otel_logs", "otel_metrics", "otel_spans"
 ]
 
@@ -1139,7 +1139,7 @@ def process_raw_cgm_tracing(emitter, filepath):
             "raw_file_name": os.path.basename(filepath),
             "raw_data_payload": data_rows
         }
-        emitter.emit_record("raw_cgm_tracing", record)
+        emitter.emit_record("cgm_tracing", record)
         
     except Exception as e:
         LOGGER.error(f"Error processing raw CGM tracing {filepath}: {e}")
@@ -1576,7 +1576,7 @@ def process_raw_meal_data(emitter, data_dir):
                             "raw_file_name": file_name,
                             "raw_data_payload": data_rows
                         }
-                        emitter.emit_record("raw_meal_data", record)
+                        emitter.emit_record("meal", record)
                 except Exception as e:
                      LOGGER.warning(f"Error processing raw meal file {file_name}: {e}")
                      if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:
@@ -1631,7 +1631,7 @@ def process_raw_fitness_data(emitter, data_dir):
                             "raw_file_name": file_name,
                             "raw_data_payload": data_rows
                         }
-                        emitter.emit_record("raw_fitness_data", record)
+                        emitter.emit_record("fitness", record)
                 except Exception as e:
                      LOGGER.warning(f"Error processing raw fitness file {file_name}: {e}")
                      if hasattr(emitter, 'otel_resource_id') and emitter.otel_resource_id:

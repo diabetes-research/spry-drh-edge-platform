@@ -223,7 +223,7 @@ SELECT
     json_extract(content, '$.record.raw_file_name') AS raw_file_name,
     json_extract(content, '$.record.raw_data_payload') AS raw_data_payload
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'raw_cgm_tracing'
+WHERE json_extract(content, '$.stream') = 'cgm_tracing'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 2. Create the View for raw_fitness_data
@@ -233,7 +233,7 @@ SELECT
     json_extract(content, '$.record.raw_file_name') AS raw_file_name,
     json_extract(content, '$.record.raw_data_payload') AS raw_data_payload
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'raw_fitness_data'
+WHERE json_extract(content, '$.stream') = 'fitness'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 3. Create the View for raw_meal_data
@@ -243,7 +243,7 @@ SELECT
     json_extract(content, '$.record.raw_file_name') AS raw_file_name,
     json_extract(content, '$.record.raw_data_payload') AS raw_data_payload
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'raw_meal_data'
+WHERE json_extract(content, '$.stream') = 'meal'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
