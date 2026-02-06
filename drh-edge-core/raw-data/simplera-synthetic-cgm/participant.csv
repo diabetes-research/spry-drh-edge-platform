@@ -1,16 +1,17 @@
-participant_id,study_id,site_id,diagnosis_icd,med_rxnorm,treatment_modality,gender,race_ethnicity,age,bmi,baseline_hba1c,diabetes_type,study_arm
-CSWM-01K94J-1,CSWM,CSWMS01,E11.9,197763,Insulin,F,Black Not Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
-CSWM-01K94J-2,CSWM,CSWMS01,E11.9,197763,Insulin,M,White Not Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
-CSWM-01K94J-3,CSWM,CSWMS01,E11.9,197763,Insulin,F,Black Not Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
-CSWM-01K94J-4,CSWM,CSWMS01,E11.9,197763,Insulin,M,White Not Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
-CSWM-01K94J-5,CSWM,CSWMS01,E11.9,197763,Insulin,F,Black Not Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
-CSWM-01K94J-6,CSWM,CSWMS01,E11.9,197763,Insulin,M,White Not Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
-CSWM-01K94J-7,CSWM,CSWMS01,E11.9,197763,Insulin,F,Black Not Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
-CSWM-01K94J-8,CSWM,CSWMS01,E11.9,197763,Insulin,M,White Not Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
-CSWM-01K94J-9,CSWM,CSWMS01,E11.9,197763,Insulin,F,Black Not Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
-CSWM-01K94J-10,CSWM,CSWMS01,E11.9,197763,Insulin,M,White Not Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
-CSWM-01K94J-11,CSWM,CSWMS01,E11.9,197763,Insulin,F,Black Not Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
-CSWM-01K94J-12,CSWM,CSWMS01,E11.9,197763,Insulin,M,White Not Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
-CSWM-01K94J-13,CSWM,CSWMS01,E11.9,197763,Insulin,F,Black Not Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
-CSWM-01K94J-14,CSWM,CSWMS01,E11.9,197763,Insulin,M,White Not Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
-CSWM-01K94J-15,CSWM,CSWMS01,E11.9,197763,Insulin,F,Black Not Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
+participant_id,study_id,site_id,diagnosis_icd,med_rxnorm,treatment_modality,gender,race,ethnicity,age,bmi,baseline_hba1c,diabetes_type,study_arm
+CSWM-01K94J-1,CSWM,CSWMS01,E11.9,197763,Insulin,Female,Black or African American,Hispanic or Latino,45,28.5,7.2,Type 2,Intervention
+CSWM-01K94J-2,CSWM,CSWMS01,E11.9,197763,Insulin,Male,Asian,Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
+CSWM-01K94J-3,CSWM,CSWMS01,E11.9,197763,Insulin,Female,Black or African American,Hispanic or Latino,43,28.5,7.2,Type 2,Intervention
+CSWM-01K94J-4,CSWM,CSWMS01,E11.9,197763,Insulin,Male,Asian,Hispanic or Latino,55,28.5,7.2,Type 1,Intervention
+CSWM-01K94J-5,CSWM,CSWMS01,E11.9,197763,Insulin,Female,Black or African American,Hispanic or Latino,59,28.5,7.2,Type 2,Intervention
+CSWM-01K94J-6,CSWM,CSWMS01,E11.9,197763,Insulin,Male,Asian,Hispanic or Latino,32,28.5,7.2,Type 1,Intervention
+CSWM-01K94J-7,CSWM,CSWMS01,E11.9,197763,Insulin,Female,Black or African American,Hispanic or Latino,39,28.5,7.2,Type 2,Intervention
+CSWM-01K94J-8,CSWM,CSWMS01,E11.9,197763,Insulin,Male,Asian,Hispanic or Latino,45,28.5,7.2,Type 1,Intervention
+CSWM-01K94J-8,CSWM,CSWMS01,E11.9,197763,Insulin,Male,Asian,Hispanic or Latino,47,28.5,7.2,Type 1,Intervention
+CSWM-01K94J-9,CSWM,CSWMS01,E11.9,197763,Insulin,Female,Black or African American,Hispanic or Latino,49,28.5,7.2,Type 2,Intervention
+CSWM-01K94J-10,CSWM,CSWMS01,E11.9,197763,Insulin,Male,Asian,Hispanic or Latino,55,28.5,7.2,Type 1,Intervention
+CSWM-01K94J-11,CSWM,CSWMS01,E11.9,197763,Insulin,Female,Black or African American,Hispanic or Latino,56,28.5,7.2,Type 2,Intervention
+CSWM-01K94J-12,CSWM,CSWMS01,E11.9,197763,Insulin,Male,Asian,Hispanic or Latino,42,28.5,7.2,Type 1,Intervention
+CSWM-01K94J-13,CSWM,CSWMS01,E11.9,197763,Insulin,Female,Black or African American,Hispanic or Latino,44,28.5,7.2,Type 2,Intervention
+CSWM-01K94J-14,CSWM,CSWMS01,E11.9,197763,Insulin,Male,Asian,Hispanic or Latino,41,28.5,7.2,Type 1,Intervention
+CSWM-01K94J-15,CSWM,CSWMS01,E11.9,197763,Insulin,Female,Black or African American,Hispanic or Latino,40,28.5,7.2,Type 2,Intervention

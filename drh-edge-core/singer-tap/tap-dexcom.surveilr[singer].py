@@ -114,6 +114,7 @@ class OTelNames:
     CHK_TYPE = "4.1.b: Type Check"
     CHK_PATTERNS = "4.1.c: Format & Pattern Check"
     CHK_FK_INTEGRITY = "4.1.d: Foreign Key Check" # Currently commented out in code
+    CHK_ENUM = "4.1.e: Enum Value Check" 
 
     # Attributes
     ATTR_VALIDATION_LEVEL = "validation.level"
@@ -518,7 +519,7 @@ def check_file_extensions(data_dir):
                 
     return extension_errors
 
-    return extension_errors
+    
 
 def check_cgm_metadata_consistency(data_dir):
     """
