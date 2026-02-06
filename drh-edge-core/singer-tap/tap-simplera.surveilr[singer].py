@@ -1213,7 +1213,8 @@ def process_participant(emitter, filepath):
                     "med_rxnorm": row.get("med_rxnorm"),
                     "treatment_modality": row.get("treatment_modality"),
                     "gender": row.get("gender"),
-                    "race_ethnicity": row.get("race_ethnicity"),
+                    "race": row.get("race"),
+                    "ethnicity": row.get("ethnicity"),
                     "age": row.get("age"), # No int() cast, schema is STRING
                     "bmi": row.get("bmi"), # No float() cast, schema is STRING
                     "baseline_hba1c": row.get("baseline_hba1c"), # No float() cast
