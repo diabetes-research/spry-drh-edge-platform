@@ -104,7 +104,7 @@ set -u
 rm -f resource-surveillance.sqlite.db 
 rm -rf dev-src.auto 
 # 2. Execute Dataset specific Singer Tap
-surveilr ingest files -r singer-tap/tap-dexcom.surveilr\[singer]\.py 
+surveilr ingest files -r singer-tap/tap-simplera.surveilr\[singer]\.py 
 # 3. EXTRACT VIEWS FROM TAP OUTPUT
 surveilr shell common-sql/drh-data-extraction.sql  
 RAW_STATUS=$(surveilr shell "select overall_status from drh_vv_session_summary DESC LIMIT 1;")
