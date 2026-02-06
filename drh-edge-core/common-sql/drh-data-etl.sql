@@ -975,7 +975,7 @@ CREATE TABLE study_meta_data AS
 SELECT
     CAST((SELECT db_file_id FROM file_meta_ingest_data LIMIT 1) AS TEXT) AS db_file_id,  
     CAST(lower(hex(randomblob(16))) AS TEXT) AS study_meta_id,
-    CAST((SELECT party_id FROM party LIMIT 1) AS TEXT) AS tenant_id, 
+    CAST((SELECT tenant_id FROM file_meta_ingest_data LIMIT 1) AS TEXT) AS tenant_id, 
     CAST(s.study_id AS TEXT) AS study_display_id,
     CAST(s.study_name AS TEXT) AS study_name,
     CAST(s.start_date AS TEXT) AS start_date,
