@@ -1,218 +1,186 @@
-# SPRY DRH EDGE PLATFORM
 
-**An end-to-end platform for Diabetes Research Hub (DRH) Edge data integration using Spry, Surveilr, and SQLPage.**
+# DRH Edge Platform: Researcher & Data Scientist Guide
 
----
-
-## Overview
-
-The **Diabetes Research Hub (DRH) SQLPage Application** is an ETL (Extract, Transform, Load) pipeline and web interface designed to process, validate, and visualize raw diabetes research data. The platform automates the conversion of raw study files (e.g., CSV) into a structured SQLite database and uses the SQLPage framework to generate a data-driven web user interface.
-
-The primary goal is to provide a centralized, reproducible, and extensible platform for managing and analyzing Continuous Glucose Monitor (CGM) data from diabetes research studies.
+The **DRH Edge Platform** is an automated ecosystem designed to bridge the gap between raw diabetes research data and actionable clinical insights. It transforms disparate source files (e.g., CSV/Excel) into a validated, relational research database with a built-in visualization layer.
 
 ---
 
-## Features
+## 1. Core Architecture
 
-The platform implements a complete workflow for converting raw diabetes research data (CGM, meal, fitness) into a structured SQLite database and presenting it through a rich, interactive web UI.
+The platform is built on three pillars to ensure data is standardized, observable, and automated:
 
-* **Pre-Validation Gate**
-  Validates file structure, metadata completeness, and dependency consistency. Detailed diagnostic reports are available directly in the SQLPage UI.
+* **Standardization (Singer Protocol)**: Researchers write **Singer Taps** to map unique source data to standardized **DRH Target Schemas** (Study, Participant, CGM Tracing). Detailed schema definitions are available in the [Singer DRH Protocol](https://github.com/diabetes-research/singer-drh-protocol) repository.
+* **Observability (OpenTelemetry)**: Every ingestion run is monitored. If data fails validation, OTel logs provide the exact file and row causing the error. The OTEL schemas for spans, traces, and metrics are also integrated into the [DRH Target](https://github.com/diabetes-research/singer-drh-protocol) specification.
+  > **Important**: Current observability is achieved through structured output.
+  > An enhanced OpenTelemetry SDK-based implementation is currently being worked upon to provide deeper native instrumentation.
+  > OpenTelemetry in DRH Edge is **diagnostic-only**.  
+  > It never mutates data or controls execution flow directly.  
+  > All gating decisions (PASS/FAIL) are derived from SQL views built on top of OTel output.
 
-* **Data Conversion**
-  Automates ingestion and conversion of raw study files (e.g., CSV) into a standardized schema using the `surveilr` tool.
-
-* **DuckDB-Based ETL**
-  Uses the embedded DuckDB engine within Surveilr for complex transformations, including CGM tracing consolidation and derived meal and fitness metadata generation.
-
-* **SQLPage UI**
-  Generates a modern, interactive dashboard using SQLPage, powered by the SQLite database produced via Surveilr and orchestrated by Spry.
-
-* **Comprehensive Dashboards**
-  Dedicated views for:
-
-  * Study participant metrics and demographics
-  * Combined CGM, meal, and fitness datasets
-  * Ingestion, verification, and de-identification logs
-  * Associated metadata (researchers, institutions, devices)
+* **Orchestration (Executable Markdown)**: Documentation acts as code. Using **SPRY**, you execute "Runbook" tasks directly from `.md` files to trigger the entire pipeline.
+* **Surveilr (The Engine)**: Acts as the core execution layer that runs the Singer Taps and executes SQL queries against the local SQLite database.
 
 ---
 
-## Technology Stack
-
-| Technology   | Role                                                                                                          |
-| ------------ | ------------------------------------------------------------------------------------------------------------- |
-| **Spry**     | Orchestrates project tasks and generates the SQLPage presentation layer.                                      |
-| **SQLPage**  | Web application framework that renders dynamic pages directly from SQL queries.                               |
-| **Surveilr** | Handles CSV ingestion, orchestration, and transformation into the RSSD (Research Study Data Database) format. |
-| **DuckDB**   | Executes complex ETL and analytical transformations.                                                          |
-| **SQLite**   | Final structured database consumed by SQLPage.                                                                |
-
-> **Note:** SQLPage, DuckDB, and SQLite are integrated and managed internally by Surveilr.
+To set up a custom data integration for the **DRH Edge Platform**, follow this detailed guide. This workflow transitions from local script development to full automation within the DRH ecosystem.
 
 ---
 
-## Prerequisites & Setup
+## 2. Prerequisites & Environment Setup
 
-### Prerequisites
+Before starting, ensure your local machine is configured with the necessary core utilities. These tools manage everything from environment variables to data ingestion and observability.
 
-Ensure the following tools are installed:
-
-1. **Spry binary** – Core CLI for task orchestration (installed via Homebrew).
-2. **Surveilr** – Data ingestion and orchestration utility.
-3. **Deno** – Required for pre-validation TypeScript execution (version `2.5.6`).
-4. **direnv** – Recommended for environment variable management.
+| Tool | Role | Documentation |
+| --- | --- | --- |
+| **Python 3.8+** | Primary language for **Singer Taps** and the `drh-target` package. | [Python.org](https://docs.python.org/3/) |
+| **Spry** | Orchestrates tasks (bash/SQL) defined in Executable Markdown files. | [Spry Docs](https://docs.opsfolio.com/spry/getting-started/installation) |
+| **Surveilr (v3.10+)** | The engine for data ingestion, OTel trace collection, and pipeline orchestration. | [Surveilr Docs](https://docs.opsfolio.com/surveilr/core/installation) |
+| **Deno** | Required for pre-validation TypeScript tasks (version `2.5.6`). | [Deno.com](https://docs.deno.com/runtime/getting_started/installation/) |
+| **direnv** | Loads environment variables from the `.envrc` block in your Markdown. | [direnv.net](https://direnv.net/) |
 
 ---
 
-### Installation Steps
+## 3. Developing Your Custom Integration
 
-Refer to the official documentation for full details:
-[https://docs.opsfolio.com/spry/getting-started/installation](https://docs.opsfolio.com/spry/getting-started/installation)
+As a researcher, you can extend the platform to support any data source by following this "Clone-Map-Automate" workflow:
 
-#### 1. Install Spry (via Homebrew)
+### Step 1: Clone and Configure
+
+1. **Clone the Repository**: Download the latest [spry-drh-edge-platform](https://github.com/diabetes-research/spry-drh-edge-platform).
+2. **Create Your Runbook**: Copy a sample Markdown file to use as a template (e.g., `cp drh-simplera-spry.md my-study.md`).
+3. **Set Variables**: Update the `envrc` block in your new `.md` file (defining variables like `STUDY_DATA_PATH`). Sample [envrc block in md](drh-edge-core/assets/set-envrc.png)
+4. Initialize them by running:
 
 ```bash
-brew tap programmablemd/packages
-brew install spry
-```
-
-Verify installation:
-
-```bash
-spry --version
-```
-
-Update Spry:
-
-```bash
-brew update
-brew upgrade spry
-```
-
-Uninstall:
-
-```bash
-brew uninstall spry
-brew untap programmablemd/packages
-```
-
----
-
-#### 2. Install Deno
-
-```bash
-curl -fsSL https://deno.land/x/install/install.sh | sh
-```
-
-Ensure Deno is added to your `PATH` as instructed by the installer.
-
----
-
-#### 3. Install Surveilr
-
-Surveilr packages are available at:
-[https://github.com/surveilr/packages/releases](https://github.com/surveilr/packages/releases)
-
-Surveilr includes built-in DuckDB and SQLite support. DuckDB-based ETL execution is supported from **Surveilr v3.10.0 and above**.
-
-Installation reference:
-[https://docs.opsfolio.com/surveilr/core/installation](https://docs.opsfolio.com/surveilr/core/installation)
-
-Example installation:
-
-```bash
-wget https://github.com/surveilr/packages/releases/latest/download/surveilr_jammy.deb
-sudo dpkg -i surveilr_jammy.deb
-```
-
----
-
-## Execution Directory
-
-After cloning the repository:
-
-```bash
-cd drh-edge-core
-```
-
----
-
-## Environment Variables
-
-Configuration is managed using environment variables, ideally via **direnv** and a local `.envrc` file.
-
-Update the following values in the dataset-specific Markdown file:
-
-* `STUDY_DATA_PATH`
-* `TENANT_ID`
-* `TENANT_NAME`
-
-Generate a starter `.envrc` file using Spry:
-
-```bash
-spry rb task prepare-env [markdownfilename]
+spry rb task prepare-env my-study.md
 direnv allow
 ```
 
-Example:
+### Step 2: Developing Your Custom Singer Tap
+
+Researchers can write custom **Singer Taps** to map unique data sources into standardized **DRH Target Schemas**. Use the existing sample at `drh-edge-core/singer-tap/tap-dexcom.surveilr[singer].py` as a reference.OTEL schemas are also defined in DRH target.
+
+* **Dependency Management**: Python Taps should automatically check for a virtual environment (`venv`) and install dependencies, including the `drh-target` package.
+* **Validation Logic**: Implement source-specific validation. If validation succeeds, emit both **SCHEMA** and **RECORD** messages. If it fails, only emit **OTEL** records containing the error spans, traces, and logs.OpenTelemetry in DRH Edge is diagnostic-only: it never mutates data or controls flow directly.
+All validation gates and ETL decisions are derived from SQL views that aggregate OTel output.
+
+> **Important**: Detailed validation implemented is explained [here.](https://github.com/diabetes-research/singer-drh-protocol?tab=readme-ov-file#opentelemetry-schema-and-validation-logging)
+
+* **Test Locally**: Verify your mapping logic using standard Python before integrating it:
+
+### A. Installation & Virtual Environment
+
+It is best practice to use a virtual environment to manage dependencies, including the `drh-target` package required for OTel-backed validation.
 
 ```bash
-spry rb task prepare-env drh-simplera-spry.md
-direnv allow
+# Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install the DRH Protocol package
+pip install git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg
 ```
 
-### Environment Variable Reference
+### B. Local Testing (Verification)
 
-| Variable          | Description                                       | Example                                             | Required |
-| ----------------- | ------------------------------------------------- | --------------------------------------------------- | -------- |
-| `SPRY_DB`         | SQLite connection string used by Spry and SQLPage | `sqlite://resource-surveillance.sqlite.db?mode=rwc` | Yes      |
-| `PORT`            | SQLPage server port                               | `9227`                                              | Yes      |
-| `STUDY_DATA_PATH` | Path to raw study files                           | `raw-data/simplera-synthetic-cgm/`                  | Yes      |
-| `TENANT_ID`       | Short tenant or study identifier                  | `FLCG`                                              | Yes      |
-| `TENANT_NAME`     | Human-readable tenant name                        | `Florida Clinical Group`                            | Yes      |
+Before integrating with the full pipeline, test your tap independently to verify the `JSONL` output matches the expected Singer format.
 
-Example `.envrc`:
-
-```envrc
-export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
-export PORT=9227
-export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
-export TENANT_ID="FLCG"
-export TENANT_NAME="Florida Clinical Group"
-direnv allow
+```bash
+# Execute the tap and save output to a text file for manual inspection
+python3 singer-tap/tap-mydata.surveilr[singer].py > result_mydata.txt    
 ```
 
-> **Security Note:** Do not commit `.envrc` or generated database files to version control.
+* **Verify**: Open `result_mydata.txt` to ensure it contains standard Singer messages (**SCHEMA**, **RECORD**, and **STATE**) mapped correctly to DRH target fields.
 
 ---
 
-## Core Pipeline Overview
+### C. Integrating with the Platform
 
-The data preparation workflow is defined in a dataset-specific executable Markdown file and executed through Spry tasks.
+Once your tap is verified, you can move to the automated ingestion phase.Use the `surveilr` tool to execute your tap. This processes the data and stores it in the `uniform_resource` table of your SQLite database while recording OpenTelemetry validation traces.
 
-| Stage          | Tool                        | Description                                     |
-| -------------- | --------------------------- | ----------------------------------------------- |
-| Pre-validation | Surveilr shell(DuckDB)      | Validates structure, metadata, and dependencies |
-| Ingestion      | Surveilr ingest/orchestrate | Converts raw data into RSSD format              |
-| SQL validation | Surveilr shell              | Performs post-ingestion quality checks          |
-| Complex ETL    | Surveilr shell(DuckDB)      | CGM tracing, anonymization, metrics             |
-| Persistence    | Surveilr shell(DuckDB)      | Exports final tables                            |
-| Presentation   | SQLPage                     | Renders dashboards                              |
+```bash
+# Execute tap through surveilr for ingestion
+# 
+# 📝 Naming Convention:
+# To be recognized as a Singer Tap by surveilr, the file must follow this pattern:
+# [tap-name].surveilr[singer].[extension]
+surveilr ingest files -r singer-tap/tap-mydata.surveilr[singer].py
+```
+
+### Step 3: Customizing SQL and ETL
+
+* **Data Extraction & Validation**: Review `common-sql/drh-data-extraction.sql`. If your dataset requires unique logic to pass the "Gatekeeper" validation check, make a copy of this SQL file and modify the views accordingly. This step is critical for ensuring your specific data format meets the hub's quality standards.
+* **Core Tables for Cloud Integration**: To ensure compatibility with DRH cloud extraction, your ETL must populate these four primary tables defined in `drh-data-etl.sql`:
+
+1. `participant_meal_fitness_data`: Combined time-series data.
+2. `participant`: Subject demographics and clinical metadata.
+3. `study_metadata`: Research study parameters.
+4. `file_meta_ingest_data`: Audit trail of ingested source files.
+
+* **Metric Generation**: `drh-data-etl.sql` incorporates the logic for generating the tables above, plus all common DRH views required for UI display and standardized diabetes metrics (e.g., Time-in-Range, GMI).
+* **Transformation Engine**: Most data extraction from Singer JSON messages and metric calculations are written in SQLite-compatible SQL and executed via the command:
+
+```bash
+surveilr shell [path/to/sqlfile]
+```
+
+* **High-Performance Analytics (DuckDB)**: For resource-intensive analytical SQL or processing massive datasets, you can leverage the embedded DuckDB engine through `surveilr`:
+
+```bash
+surveilr shell --engine duckdb [path/to/your/duckdbanalytics-sql]
+```
 
 ---
 
-## Prepare Study Data
+## 3. The Deployment Pipeline
 
-* Organize raw files according to DRH guidelines:
-  [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data)
-* Place data under the path specified by `STUDY_DATA_PATH`.
-* Create dataset-specific executable Markdown workflows for custom transformations.
+The `prepare-db-deploy-server` task in your Markdown file orchestrates the transition from raw data to a live dashboard:
 
-  * Example: `drh-simplera-spry.md`
-  * Dexcom example: `drh-dexcom-cgm-spry.md`
+1. **Cleanup**: Removes stale `resource-surveillance.sqlite.db` and temporary UI artifacts.
+2. **Ingestion**: Runs the Singer Tap via `surveilr ingest files -r [tap_path]`. Data is stored in the `uniform_resource` table while OTel monitors for errors.
+3. **Validation Gate**: The script checks the `overall_status` in the `drh_vv_session_summary` view:
+   1. * **PASS**: The ETL logic processes the raw data into research tables.
+   2. * **FAIL**: ETL is skipped, and the UI is configured to display error diagnostics.
 
----
+4. **UI Launch**: **SQLPage** renders the dashboard. The layout is defined under the `## Layout` section of your Markdown. Using `spry sp spc`, each block is packaged into the `sqlpage_files` table in the SQLite database to serve as navigation.
+5. Execute the task block that defines all the above steps using
+
+```bash
+# Run the full Orchestration ((Execute TAP)Validate-Transform-Ingest -> ETL -> Package UI)
+spry rb task prepare-db-deploy-server [your-markdown-file]
+```
+
+### Sample Orchestration Block
+
+```bash prepare-db-deploy-server --descr "Performs pre-etl-validation, Ingestion, ETL and Server Deployment"
+#!/bin/bash
+set -u
+# 1. Cleanup
+rm -f resource-surveillance.sqlite.db 
+rm -rf dev-src.auto 
+
+# 2. Execute Dataset specific Singer Tap
+surveilr ingest files -r singer-tap/tap-mydata.surveilr[\singer\].py
+
+# 3. EXTRACT VIEWS FROM TAP OUTPUT
+surveilr shell common-sql/drh-data-extraction.sql  
+RAW_STATUS=$(surveilr shell "select overall_status from drh_vv_session_summary DESC LIMIT 1;")
+VALIDATION_STATUS=$(echo "$RAW_STATUS" | jq -r '.[0].overall_status')
+
+# 4. CONDITIONAL ETL EXECUTION
+if [ "$VALIDATION_STATUS" == "PASS" ]; then    
+    (
+        set -e   
+        surveilr shell common-sql/drh-data-etl.sql        
+    )
+    if [ $? -ne 0 ]; then exit 1; fi
+else
+    echo "Validation FAILED ($VALIDATION_STATUS). Skipping ETL steps."    
+fi
+
+# 5. INITIALIZE SQLPAGE (Runs in both PASS and FAIL scenarios)
+spry sp spc --package --conf sqlpage/sqlpage.json -m drh-my-study.md | sqlite3 resource-surveillance.sqlite.db
+```
 
 ## Standard Workflow Instructions
 
@@ -267,62 +235,60 @@ spry rb run drh-simplera-spry.md
 sqlpage
 ```
 
----
+```bash
 
-## Customization and Modification
-
-### Pre-validation Logic
-
-| Component        | File                           |
-| ---------------- | ------------------------------ |
-| Validation rules | `drh-preflight-validation.sql` |
-
-### ETL and Data Quality Logic
-
-| Component  | Location                            | Purpose                            |
-| ---------- | ----------------------------------- | ---------------------------------- |
-| DuckDB ETL | `duckdb-etl-sql/drh-master-etl.sql` | Resource-intensive transformations |
-| Common SQL | `common-sql/`                       | Shared checks and utilities        |
-
-To support a new dataset:
-
-1. Create new SQL files as needed.
-2. Reference them in a custom Spry Markdown file.
+# If SQLPage is already running on localhost:9227
+sudo kill $(sudo lsof -t -i:9227) || sudo kill -9 $(sudo lsof -t -i:9227)
+```
 
 ---
 
-## Handling Multiple Datasets
+## 🎨 Platform Visual Showcase
 
-For datasets requiring specialized ETL logic, create a dedicated Spryfile.
+The DRH Edge Platform provides a specialized interface for both **Data Engineers** (to ensure data integrity) and **Clinical Researchers** (to analyze study outcomes).
 
-### Recommended Approach
+### 🏛️ Research Landing Page
 
-1. Copy the base file:
+The entry point provides a high-level summary of active studies, enrollment progress, and system health.
 
-   ```bash
-   cp drh-simplera-spry.md study-x-etl.spry.md
-   ```
+<p align="center">
+<img src="drh-edge-core/assets/landing.png" width="800" alt="Landing Page">
+</p>
 
-2. Customize tasks and SQL references.
-3. Execute using the custom file.
+### 🔍 Quality Assurance: The Validation Gate
 
-| Action              | Command                                                     |
-| ------------------- | ----------------------------------------------------------- |
-| Prepare environment | `spry rb task prepare-env study-x-etl.spry.md`              |
-| Run ETL and deploy  | `spry rb task prepare-db-deploy-server study-x-etl.spry.md` |
+The platform acts as a "Gatekeeper." If incoming data violates clinical schemas or structural rules, the ETL is automatically blocked to prevent database corruption.
 
----
+| **The Validation Gate** | **OTel Diagnostic Logs** |
+| --- | --- |
+|  |  |
+| **Gated Execution**: The UI prevents ETL progression if the `overall_status` is **FAIL**. | **Root Cause Analysis**: Deep-link diagnostics identify the exact CSV row and schema violation. |
 
-## Security and Hygiene (`.gitignore`)
+<p align="center">
+<img src="drh-edge-core/assets/diagnostics.png" width="800" alt="Landing Page">
+</p>
 
-The following files should **never** be committed:
+### 📊 Clinical Insights: Research Dashboards
 
-| Path                              | Reason                          |
-| --------------------------------- | ------------------------------- |
-| `.envrc`                          | Local configuration and secrets |
-| `resource-surveillance.sqlite.db` | Large generated database        |
-| `*.sql` (generated)               | Temporary ETL artifacts         |
-| `dev-src.auto`                    | SQLPage dev output              |
-| `validation-reports/`             | Pre-validation outputs          |
+Once data passes the gate, it is transformed into optimized relational tables for high-fidelity visualization and metric calculation.
+
+| **Study Metrics & Participant Demographics** | **CGM Time-Series Analysis** |
+| --- | --- |
+|  |  |
+| **Participant Overview**: Track demographics, enrollment status, and metadata. | **Glucose Tracings**: Interactive Time-in-Range (TIR) and GMI metrics. |
+
+<p align="center">
+<img src="drh-edge-core/assets/study-dashboard.png" width="800" alt="Landing Page">
+</p>
+
+### 🛠️ Participant & Device Metrics
+
+Detailed drill-downs allow researchers to inspect individual participant traces, meal logs, and device performance metrics in a centralized view.
+
+<p align="center">
+<img src="drh-edge-core/assets/participant-info.png" width="800" alt="Participant Metrics">
+
+<em>Comprehensive view of individual participant time-series data and clinical markers.</em>
+</p>
 
 ---
