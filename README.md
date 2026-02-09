@@ -109,13 +109,13 @@ surveilr ingest files -r singer-tap/tap-mydata.surveilr[singer].py
 
 ### Step 3: Customizing SQL and ETL
 
-* **Data Extraction & Validation**: Review `common-sql/drh-data-extraction.sql`. If your dataset requires unique logic extarct from the ingested JSONL output, make a copy of this SQL file and modify the views accordingly. This step is critical for ensuring your specific data meets the hub's standards.
+* **Data Extraction & Validation**: Review `common-sql/drh-data-extraction.sql`. If your dataset requires unique logic extract from the ingested JSONL output, make a copy of this SQL file and modify the views accordingly. This step is critical for ensuring your specific data meets the hub's standards.
 * **Core Tables for Cloud Integration**: To ensure compatibility with DRH cloud extraction, your ETL must populate these four primary tables defined in `drh-data-etl.sql`:
 
-1. `participant_meal_fitness_data`: Combined time-series data.
-2. `participant`: Subject demographics and clinical metadata.
-3. `study_metadata`: Research study parameters.
-4. `file_meta_ingest_data`: Audit trail of ingested source files.
+1. `participant_meal_fitness_data`: Combined meal-fitness data and metadata of participants.
+2. `participant`: Subject demographics .
+3. `study_metadata`: Research study and other accompanying data.
+4. `file_meta_ingest_data`: Participant CGM data and cgm metadata based on each cgm tracing file.
 
 * **Metric Generation**: `drh-data-etl.sql` incorporates the logic for generating the tables above, plus all common DRH views required for UI display and standardized diabetes metrics (e.g., Time-in-Range, GMI).
 * **Transformation Engine**: Most data extraction from Singer JSON messages and metric calculations are written in SQLite-compatible SQL and executed via the command:
@@ -238,7 +238,7 @@ sqlpage
 ```bash
 
 # If SQLPage is already running on localhost:9227
-sudo kill $(sudo lsof -t -i:9227) || sudo kill -9 $(sudo lsof -t -i:9227)
+sudo kill $(sudo lsof -t -i:9227) 
 ```
 
 ---
