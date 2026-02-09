@@ -109,7 +109,7 @@ surveilr ingest files -r singer-tap/tap-mydata.surveilr[singer].py
 
 ### Step 3: Customizing SQL and ETL
 
-* **Data Extraction & Validation**: Review `common-sql/drh-data-extraction.sql`. If your dataset requires unique logic to pass the "Gatekeeper" validation check, make a copy of this SQL file and modify the views accordingly. This step is critical for ensuring your specific data format meets the hub's quality standards.
+* **Data Extraction & Validation**: Review `common-sql/drh-data-extraction.sql`. If your dataset requires unique logic extarct from the ingested JSONL output, make a copy of this SQL file and modify the views accordingly. This step is critical for ensuring your specific data meets the hub's standards.
 * **Core Tables for Cloud Integration**: To ensure compatibility with DRH cloud extraction, your ETL must populate these four primary tables defined in `drh-data-etl.sql`:
 
 1. `participant_meal_fitness_data`: Combined time-series data.
