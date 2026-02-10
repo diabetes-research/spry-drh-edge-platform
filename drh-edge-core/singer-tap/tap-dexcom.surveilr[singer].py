@@ -21,6 +21,18 @@ import venv
 import uuid
 import re
 
+# OTel Imports
+try:
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, BatchSpanProcessor
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.trace import Status, StatusCode
+    OTEL_AVAILABLE = True
+except ImportError:
+    OTEL_AVAILABLE = False
+    print("DEBUG: OTel SDK not found, falling back to manual or skipping.", file=sys.stderr)
+
 # Bootstrap Logic to auto-install venv and dependencies
 def bootstrap_venv():
     """
@@ -60,7 +72,7 @@ def bootstrap_venv():
         if subprocess.call(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
             print("DEBUG: Installing drh-protocol...", file=sys.stderr)
             subprocess.check_call(
-                [venv_python, "-m", "pip", "install","--upgrade", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg"],
+                [venv_python, "-m", "pip", "install","--upgrade", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg", "opentelemetry-api", "opentelemetry-sdk"],
                 stdout=subprocess.DEVNULL,
                 stderr=sys.stderr  # Errors go to stderr for debugging
             )
@@ -131,6 +143,59 @@ class OTelNames:
     METRIC_FAIL_COUNT = "vv.validation.fail_count"
     METRIC_FILE_COUNT = "vv.files.processed_count"
     METRIC_VALIDATION_DURATION = "vv.validation.duration"
+
+if OTEL_AVAILABLE:
+    class SingerSpanExporter(SpanExporter):
+        """
+        Implementation of SpanExporter that emits spans as Singer records.
+        """
+        def __init__(self, emitter, resource_id):
+            self.emitter = emitter
+            self.resource_id = resource_id
+
+        def export(self, spans):
+            for span in spans:
+                self.emit_span(span)
+            return getattr(StatusCode, "OK", 0) # Return OK, safe attribute access
+
+        def shutdown(self):
+            pass
+
+        def emit_span(self, span):
+            start_time = span.start_time
+            end_time = span.end_time
+            
+            trace_id = format(span.get_span_context().trace_id, "032x")
+            span_id = format(span.get_span_context().span_id, "016x")
+            
+            parent_span_id = ""
+            if span.parent:
+                parent_span_id = format(span.parent.span_id, "016x")
+            
+            status_code_str = "OK"
+            if span.status.status_code == StatusCode.ERROR:
+                status_code_str = "ERROR"
+            
+            attributes = dict(span.attributes) if span.attributes else {}
+            
+            record = {
+                "name": span.name,
+                "trace_id": trace_id,
+                "span_id": span_id,
+                "parent_span_id": parent_span_id,
+                "start_time_unix_nano": start_time,
+                "end_time_unix_nano": end_time,
+                "attributes": attributes,
+                "status_code": {
+                    "code": status_code_str
+                },
+                "resource_id": self.resource_id
+            }
+            try:
+                self.emitter.emit_record("otel_spans", record)
+            except Exception:
+                pass 
+
 
 class ValidatingDRHLoader(DRHLoader):
     """
@@ -1649,9 +1714,10 @@ def get_time_nano():
     """Returns current UTC time in nanoseconds."""
     return int(datetime.now(timezone.utc).timestamp() * 1e9)
 
-def emit_otel_resource(emitter):
+def emit_otel_resource(emitter, resource_id=None):
     """Emits the OTel Resource definition and returns the resource_id."""
-    resource_id = str(uuid.uuid4())
+    if not resource_id:
+        resource_id = str(uuid.uuid4())
     record = {
         "resource_id": resource_id,
         "service.name": "tap-dexcom",
@@ -1748,6 +1814,29 @@ def main():
     root_trace_id = str(uuid.uuid4()).replace("-", "")
     emitter = ValidatingDRHLoader()
 
+    # OTel Setup
+    tracer = None
+    if OTEL_AVAILABLE:
+        try:
+             # Initialize Resource (can be more detailed)
+             resource = Resource.create({"service.name": "tap-dexcom"})
+             provider = TracerProvider(resource=resource)
+             
+             # We need otel_resource_id to construct our Exporter. 
+             # Wait, emit_otel_resource() below generates it.
+             # We should generate it here or pass a placeholder and update? 
+             # Actually, emit_otel_resource just prints a record.
+             # We can pre-generate the ID.
+             otel_resource_id_pre = str(uuid.uuid4())
+             
+             exporter = SingerSpanExporter(emitter, otel_resource_id_pre)
+             processor = BatchSpanProcessor(exporter)
+             provider.add_span_processor(processor)
+             trace.set_tracer_provider(provider)
+             tracer = trace.get_tracer(__name__)
+        except Exception as e:
+             LOGGER.warning(f"Failed to initialize OTel SDK: {e}")
+
     if args.discover:
         for s in STREAM_KEYS:
              # Load all schemas for discovery
@@ -1758,7 +1847,9 @@ def main():
 
     # Initialize OTel Resource
     try:
-        otel_resource_id = emit_otel_resource(emitter)
+        # Use our pre-generated ID if SDK initialized, else let function generate
+        rid = otel_resource_id_pre if OTEL_AVAILABLE and tracer else None
+        otel_resource_id = emit_otel_resource(emitter, resource_id=rid)
         emitter.otel_resource_id = otel_resource_id # Provide ID to loader for logging
     except Exception as e:
         LOGGER.warning(f"Failed to emit OTel resource: {e}")
@@ -1821,6 +1912,13 @@ def main():
 
     def fail_and_exit(stage_name, errors_count=1):
          """Helper to emit failure report and exit immediately."""
+         if OTEL_AVAILABLE and tracer:
+              # We might want to end the root span if we started one?
+              # But simple shutdown flushes the buffer.
+              try:
+                  provider.shutdown()
+              except:
+                  pass
          LOGGER.error(f"Validation failed at stage: {stage_name}. See drh_diagnostics for details.")
          report_record = {
             "timestamp": timestamp,
@@ -1849,51 +1947,57 @@ def main():
     
     # 1. Folder & Resource Check (Static ID: 1)
     folder_val_start = get_time_nano()
-    folder_span_id = str(uuid.uuid4()).replace("-", "")[:16]
-    current_span_id = folder_span_id # Update context
     folder_msg = ""
     folder_status = "OK"
+    folder_file_count = 0
     
-    # Emit Start of Folder Span (optional, usually we emit at end, but for context we might want it visible? No, span is emitted at end)
-    
+    # Logic to determine status
     if not os.path.exists(data_dir):
-        msg = f"Data directory does not exist: {data_dir}"
-        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
-        emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: Folder & Resource Check", attributes={"check_id": 1, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
-        
-        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir}, status_code="ERROR")
-        fail_and_exit("Folder Check")
+        folder_msg = f"Data directory does not exist: {data_dir}"
+        folder_status = "FAILED"
     elif not os.path.isdir(data_dir):
-        msg = f"Path is not a directory: {data_dir}"
-        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
-        emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: Folder & Resource Check", attributes={"check_id": 1, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
-
-        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir}, status_code="ERROR")
-        fail_and_exit("Folder Check")
+         folder_msg = f"Path is not a directory: {data_dir}"
+         folder_status = "FAILED"
     elif not os.access(data_dir, os.R_OK):
-        msg = f"Directory is not readable: {data_dir}"
-        emit_diagnostic(1, "Folder & Resource Check", "FAILED", msg)
-        emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: Folder & Resource Check", attributes={"check_id": 1, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
-
-        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir}, status_code="ERROR")
-        fail_and_exit("Folder Check")
+         folder_msg = f"Directory is not readable: {data_dir}"
+         folder_status = "FAILED"
     else:
-        # Count files in directory
-        file_count = sum(1 for _ in glob.glob(os.path.join(data_dir, "**", "*"), recursive=True) if os.path.isfile(_))
-        msg = f"Detected {file_count} files from folder: {data_dir}"
-        emit_diagnostic(1, "Folder & Resource Check", "PASSED", msg)
-        emit_otel_log(emitter, otel_resource_id, "INFO", f"Diagnostic PASSED: Folder & Resource Check", attributes={"check_id": 1, "details": msg}, span_id=current_span_id, trace_id=root_trace_id)
-        
-        emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
-                       parent_span_id=root_span_id, span_id=folder_span_id, trace_id=root_trace_id, attributes={OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir, "files.found": file_count}, status_code="OK")
-        
-        # Metrics for Check 1
+         folder_file_count = sum(1 for _ in glob.glob(os.path.join(data_dir, "**", "*"), recursive=True) if os.path.isfile(_))
+         folder_msg = f"Detected {folder_file_count} files from folder: {data_dir}"
+         folder_status = "PASSED"
+    
+    # Emit Diagnostic
+    emit_diagnostic(1, "Folder & Resource Check", "PASSED" if folder_status=="PASSED" else "FAILED", folder_msg)
+    emit_otel_log(emitter, otel_resource_id, "INFO" if folder_status=="PASSED" else "ERROR", 
+                  f"Diagnostic {folder_status}: Folder & Resource Check", attributes={"check_id": 1, "details": folder_msg}, span_id=root_span_id, trace_id=root_trace_id)
+
+    # Emit OTel Span (SDK or Manual)
+    otel_attrs = {OTelNames.ATTR_VALIDATION_LEVEL: "folder", "folder.path": data_dir, "files.found": folder_file_count}
+    otel_status = StatusCode.OK if folder_status == "PASSED" else StatusCode.ERROR
+    otel_status_str = "OK" if folder_status == "PASSED" else "ERROR"
+    
+    if OTEL_AVAILABLE and tracer:
+        with tracer.start_as_current_span(OTelNames.CAT_FOLDER_SCAN, start_time=folder_val_start, attributes=otel_attrs) as span:
+             span.set_status(Status(otel_status))
+             # Metrics using SDK? No, we still have manual helper for metrics. 
+             # We can't mix-and-match perfectly yet, so we stick to manual metrics helper.
+    else:
+         # Manual Fallback
+         emit_otel_span(emitter, otel_resource_id, OTelNames.CAT_FOLDER_SCAN, folder_val_start, get_time_nano(), 
+                        parent_span_id=root_span_id, span_id=str(uuid.uuid4()).replace("-", "")[:16], trace_id=root_trace_id, 
+                        attributes=otel_attrs, status_code=otel_status_str)
+
+    # Metrics (Manual Helper for now)
+    if folder_status == "PASSED":
         emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_PASS_COUNT, 1, attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
-        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FILE_COUNT, file_count, attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
-        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - folder_val_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
+    else:
+        emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FAIL_COUNT, 1, attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
+    
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_FILE_COUNT, folder_file_count, attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
+    emit_otel_metric(emitter, otel_resource_id, OTelNames.METRIC_VALIDATION_DURATION, (get_time_nano() - folder_val_start) / 1e9, unit="s", attributes={"check.category": OTelNames.CAT_FOLDER_SCAN})
+
+    if folder_status == "FAILED":
+         fail_and_exit("Folder Check")
 
     # 2. MANDATORY FILE EXISTENCE (Static ID: 2)
     check2_start = get_time_nano()
@@ -2292,6 +2396,13 @@ def main():
     emitter.emit_state(state)
 
     # Emit Final SUCCESS Span
+    # For compatibility, we keep the manual emit for now or replace with SDK usage if we wrapped the whole block.
+    # Since we didn't wrap the whole block in a `with tracer...`, the SDK span isn't tracking this scope yet.
+    # To fully integrate, we would wrap lines 1950-2390 in `with tracer.start_as_current_span(OTelNames.ROOT_VV) as span:`.
+    # For now, we manually shutdown the provider to flush any spans we *did* create.
+    if OTEL_AVAILABLE and tracer:
+        provider.shutdown()
+    
     emit_otel_span(emitter, otel_resource_id, OTelNames.ROOT_VV, execution_span_start, get_time_nano(), status_code="OK", span_id=root_span_id, trace_id=root_trace_id)
 
 if __name__ == "__main__":
