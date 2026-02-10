@@ -84,20 +84,26 @@ Quick troubleshooting
 
 ### Prepare Study Data and Dependencies
 
-- Prepare your research data files according to the formats described on the **official DRH Website**: [https://drh.diabetestechnology.org/organize-cgm-data](https://drh.diabetestechnology.org/organize-cgm-data).
-- Ensure your study data files are placed in the directory specified by **`$STUDY_DATA_PATH`**.
-- Install the required tools and dependencies:
-  - **deno** (latest)
-  - **surveilr** (latest release): [https://github.com/surveilr/packages/releases](https://github.com/surveilr/packages/releases)
-  - **DuckDB**: Used by `surveilr` for complex in-memory ETL and data transformation.
-  - **SQLite3**: The final destination database engine used for persistence and serving data via SQLPage (the file path is specified by `$SPRY_DB`).
+- **Prepare Data Layout:** Format your research data according to the specifications on the [Official DRH Website](https://drh.diabetestechnology.org/organize-cgm-data).
+- **Set Environment Path:** Ensure all study data files are located in the directory defined by the environment variable `$STUDY_DATA_PATH`.
+- **Install Core Dependencies:**
+- **Deno:** Latest stable version.
+- **surveilr:** Latest release from the [official repository](https://github.com/surveilr/packages/releases).
+- **SPRY:** Task runner used to execute the blocks within this markdown file. Follow the [SPRY Installation Guide](https://docs.opsfolio.com/spry/getting-started/installation).
+- **DuckDB:** Required by `surveilr` for high-performance, in-memory ETL processing.
+- **SQLite3:** The persistence engine for the final database (path specified by `$SPRY_DB`), used for serving data via SQLPage.
+
+- **Develop Singer Tap:** Create a **Singer Tap** (in Python) to map and convert your source datasets into the schemas defined in the [drh-target repository](https://github.com/diabetes-research/singer-drh-protocol).
+- **Test & Integrate:**
+  - Validate your Python Singer tap locally using `python3`.
+  - Once verified, integrate the execution logic into the **Executable Markdown** using `surveilr` to orchestrate the pipeline.
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
   - `spry rb task prepare-db-deploy-server  drh-simplera-spry.md`
 - The `prepare-db-deploy-server` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
-- This step cleans up old files, validates data ,performs a pre-etl-validation , performs ingestion, and runs all complex DuckDB transformations, generating the final resource-surveillance.sqlite.db file.
+- This task block automates a data pipeline that cleans the environment, ingests study data via a Singer tap, and conditionally executes SQL transformations based on validation results before deploying an SQLPage-powered monitoring server.
 
-```bash prepare-db-deploy-server   --descr "Performs pre-etl-validation , Ingestion, ETL and Server Deployment"
+```bash prepare-db-deploy-server   --descr "Environment cleanup, Data ingestion via Singer tap, Validation-Gated ETL, and SQLPage UI deployment."
 #!/bin/bash
 set -u
 # 1. Cleanup
