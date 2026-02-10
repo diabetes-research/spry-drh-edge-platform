@@ -262,6 +262,101 @@ def load_schema(stream_name):
         LOGGER.error(f"Failed to load schema for {stream_name}: {e}")
         return {}
 
+
+class ForeignKeyValidator:
+    """
+    Validates Foreign Key relationships (4.1.4 / 4.1.d).
+    Collects IDs from all streams and verifies FK references against them.
+    """
+    def __init__(self):
+        # Stores collected primary keys per stream: { stream_name: set(tuple(pk_values)) }
+        self.stream_ids = {} 
+        # Stores pending FK checks: list of (source_stream, source_col, target_stream, fk_value, source_file, line_num)
+        self.pending_fks = [] 
+        # Schema-defined references: { stream_name: { col_name: target_stream } }
+        self.schema_refs = {} 
+
+    def register_schema(self, stream_name, schema):
+        """Parse schema to find foreign_key fields."""
+        refs = {}
+        # Handle list-wrapped schemas (e.g. from load_schema)
+        if isinstance(schema, list):
+            schema = schema[0] if schema else {}
+            
+        props = schema.get("properties", {})
+        for col, rules in props.items():
+            # Check for foreign_key definition in schema
+            # We assume a custom property "foreign_key" pointing to target stream name
+            if isinstance(rules, dict):
+                if "foreign_key" in rules:
+                    refs[col] = rules["foreign_key"]
+                elif "$ref" in rules:
+                    # Support standard JSON schema ref: "study.json#/properties/study_id"
+                    # Maps col -> study (stream)
+                    ref_val = rules["$ref"]
+                    if ".json#/properties/" in ref_val:
+                        parts = ref_val.split(".json#/properties/")
+                        if len(parts) == 2:
+                            target_stream = parts[0]
+                            refs[col] = target_stream
+        
+        if refs:
+            self.schema_refs[stream_name] = refs
+            # LOGGER.info(f"Registered FKs for {stream_name}: {refs}")
+
+    def track_row(self, stream_name, row, fname, line_num):
+        # 1. Collect Primary Keys (if stream has defined keys)
+        # Using global STREAM_KEYS defined later in file
+        pks = STREAM_KEYS.get(stream_name, [])
+        if pks:
+            # Create a tuple for the PK value(s)
+            # We assume values are present. If missing, we skip (or could warn).
+            try:
+                val_tuple = tuple(str(row.get(k)).strip() for k in pks if row.get(k) is not None)
+                if val_tuple and len(val_tuple) == len(pks):
+                    if stream_name not in self.stream_ids:
+                        self.stream_ids[stream_name] = set()
+                    self.stream_ids[stream_name].add(val_tuple)
+            except Exception as e:
+                pass # Skip bad rows
+
+        # 2. Collect Foreign Key References
+        refs = self.schema_refs.get(stream_name, {})
+        for col, target_stream in refs.items():
+            val = row.get(col)
+            # Only track non-empty values
+            if val is not None and str(val).strip(): 
+                self.pending_fks.append( (stream_name, col, target_stream, str(val).strip(), fname, line_num) )
+
+    def validate(self):
+        """
+        Validates all pending FK references against collected IDs.
+        Returns list of violation messages.
+        """
+        violations = []
+        LOGGER.info(f"Starting Global FK Validation on {len(self.pending_fks)} references across {len(self.stream_ids)} streams...")
+        
+        for src, col, target, val, fname, line in self.pending_fks:
+            target_ids = self.stream_ids.get(target, set())
+            
+            # Check if (val,) exists in target_ids
+            # Assuming single-column FKs targeting single-column PKs for now.
+            # If target has composite PK, this logic needs strictly defined mapping.
+            # For DRH CSVs, PKs are usually single ID columns.
+            val_tuple = (val,)
+            
+            if val_tuple not in target_ids:
+                msg = f"FK Violation: {src}.{col}='{val}' refers to '{target}' but value not found."
+                violations.append(msg)
+                LOGGER.error(f"{msg} (File: {fname}, Line: {line})")
+
+        if not violations:
+            LOGGER.info("Global FK Validation PASSED: No violations found.")
+        else:
+            LOGGER.error(f"Global FK Validation FAILED: {len(violations)} violations found.")
+            
+        return violations
+
 ALL_STREAM_NAMES = [
      "cgm_file_metadata",
     "participant", "site", "study", "investigator", "institution",
@@ -273,12 +368,25 @@ ALL_STREAM_NAMES = [
 
 def get_stream_keys():
     keys = {}
+    DEFAULT_PKS = {
+        "participant": ["participant_id"],
+        "study": ["study_id"],
+        "site": ["site_id"],
+        "investigator": ["investigator_id"],
+        "institution": ["institution_id"],
+        "lab": ["lab_id"],
+        "author": ["author_id"],
+        "publication": ["publication_id"],
+        "cgm_file_metadata": ["metadata_id"],
+        "meal_file_metadata": ["meal_meta_id"],
+        "fitness_file_metadata": ["fitness_meta_id"],
+    }
     for stream in ALL_STREAM_NAMES:
         schema = load_schema(stream)
         if schema and "key_properties" in schema:
              keys[stream] = schema["key_properties"]
         else:
-             keys[stream] = []
+             keys[stream] = DEFAULT_PKS.get(stream, [])
     return keys
 
 STREAM_KEYS = get_stream_keys()
@@ -328,7 +436,7 @@ EXPECTED_HEADERS = get_expected_headers()
 
 
 
-def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=None, trace_id=None):
+def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=None, trace_id=None, fk_validator=None):
     """
     Check if existing files have required headers AND validate data formats.
     Returns a list of result dicts: {"name": str, "status": str, "details": str}
@@ -412,6 +520,8 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                         pattern_span_id = str(uuid.uuid4()).replace("-", "")[:16] if (emitter and resource_id) else None
                         
                         schema = load_schema(key)
+                        if fk_validator:
+                            fk_validator.register_schema(key, schema)
                         properties = schema.get("properties", {})
                         header_map = {col: i for i, col in enumerate(header)}
                         
@@ -420,6 +530,9 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                         
                         for row in reader:
                             line_num += 1
+                            if fk_validator:
+                                row_dict = {col: row[idx] for col, idx in header_map.items() if idx < len(row)}
+                                fk_validator.track_row(key, row_dict, fname, line_num)
                             for field_name, field_def in properties.items():
                                 if field_name not in header_map: continue
                                 idx = header_map[field_name]
@@ -495,14 +608,14 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                                            attributes={OTelNames.ATTR_VALIDATION_LEVEL: "pattern_check", **err_attr}, 
                                            status_code=sub_status, trace_id=trace_id)
 
-                        # --- 4.1.4 Foreign Key Check (Commented) ---
-                        # if emitter and resource_id:
-                        #    fk_start = get_time_nano()
-                        #    fk_span_id = str(uuid.uuid4()).replace("-", "")[:16]
-                        #    # ... Logic to check FKs ...
-                        #    emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FK_INTEGRITY}: {fname}", fk_start, get_time_nano(), 
-                        #                   parent_span_id=file_span_id, span_id=fk_span_id,
-                        #                   attributes={OTelNames.ATTR_VALIDATION_LEVEL: "fk_check"}, status_code="OK", trace_id=trace_id)
+                        # 4.1.4 Foreign Key Reference Collection
+                        if emitter and resource_id:
+                            fk_start = get_time_nano()
+                            fk_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+                            # Span to represent FK collection phase for this file
+                            emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FK_INTEGRITY}: {fname}", fk_start, get_time_nano(), 
+                                           parent_span_id=file_span_id, span_id=fk_span_id,
+                                           attributes={OTelNames.ATTR_VALIDATION_LEVEL: "fk_collection"}, status_code="OK", trace_id=trace_id)
 
 
                         if row_errors:
@@ -2054,12 +2167,13 @@ def main():
     
     # 4. File Schema and Required Columns + Field Format Check (Static ID: 4)
     schema_val_start = get_time_nano()
+    fk_validator = ForeignKeyValidator()
     # Create the ID for the schema validation span beforehand to pass it down
     schema_span_id = str(uuid.uuid4()).replace("-", "")[:16]
     current_span_id = schema_span_id # Update context
     
     # We call the function passing the parent span ID AND root_trace_id
-    schema_results = check_file_headers(data_dir, emitter=emitter, resource_id=otel_resource_id, parent_span_id=schema_span_id, trace_id=root_trace_id)
+    schema_results = check_file_headers(data_dir, emitter=emitter, resource_id=otel_resource_id, parent_span_id=schema_span_id, trace_id=root_trace_id, fk_validator=fk_validator)
     
     schema_failures = 0
     for res in schema_results:
@@ -2091,6 +2205,29 @@ def main():
     
     if schema_failures > 0:
         fail_and_exit("File Schema Headers", schema_failures)
+
+    # 4.1.d Global Foreign Key Validation
+    if fk_validator:
+        fk_start = get_time_nano()
+        fk_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+        
+        violations = fk_validator.validate()
+        
+        fk_status = "OK"
+        if violations:
+            fk_status = "ERROR"
+            for v in violations:
+                 emit_diagnostic(4, "Foreign Key Check", "FAILED", v)
+                 emit_otel_log(emitter, otel_resource_id, "ERROR", f"Diagnostic FAILED: Foreign Key Check", attributes={"check_id": 4, "details": v}, span_id=fk_span_id, trace_id=root_trace_id)
+        else:
+             msg = "All Foreign Key references are valid"
+             emit_diagnostic(4, "Foreign Key Check", "PASSED", msg)
+             emit_otel_log(emitter, otel_resource_id, "INFO", f"Diagnostic PASSED: Foreign Key Check", attributes={"check_id": 4, "details": msg}, span_id=fk_span_id, trace_id=root_trace_id)
+
+        emit_otel_span(emitter, otel_resource_id, OTelNames.CHK_FK_INTEGRITY, fk_start, get_time_nano(), 
+                       parent_span_id=root_span_id, span_id=fk_span_id, trace_id=root_trace_id, 
+                       attributes={OTelNames.ATTR_VALIDATION_LEVEL: "fk_global", "violations": len(violations)}, 
+                       status_code=fk_status)
 
 
     # 5. CGM Metadata Consistency Check (Static ID: 5)
