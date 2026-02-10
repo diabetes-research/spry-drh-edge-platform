@@ -518,6 +518,7 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                         data_val_start = get_time_nano()
                         type_span_id = str(uuid.uuid4()).replace("-", "")[:16] if (emitter and resource_id) else None
                         pattern_span_id = str(uuid.uuid4()).replace("-", "")[:16] if (emitter and resource_id) else None
+                        enum_span_id = str(uuid.uuid4()).replace("-", "")[:16] if (emitter and resource_id) else None
                         
                         schema = load_schema(key)
                         if fk_validator:
@@ -582,6 +583,17 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                                         except re.error:
                                             pass 
 
+                                # 4. Enum Check (4.1.e)
+                                enum_vals = field_def.get("enum")
+                                if enum_vals:
+                                    # Normalize enum values to strings for CSV comparison
+                                    # We invoke str(v) but handle the fact that CSV vals might be case-sensitive or not depending on context?
+                                    # For strict compliance, we expect exact match, but for booleans we might be lenient (handled in type check).
+                                    # Here strict string match against stringified enum values.
+                                    str_enums = [str(e) for e in enum_vals]
+                                    if val not in str_enums:
+                                        row_errors.append(f"Line {line_num} {field_name}: '{val}' not in enum {str_enums}") 
+
                             if len(row_errors) > 10: 
                                 row_errors.append("... (too many errors)")
                                 break
@@ -606,6 +618,11 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                             emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_PATTERNS}: {fname}", data_val_start, data_val_end, 
                                            parent_span_id=file_span_id, span_id=pattern_span_id,
                                            attributes={OTelNames.ATTR_VALIDATION_LEVEL: "pattern_check", **err_attr}, 
+                                           status_code=sub_status, trace_id=trace_id)
+
+                            emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_ENUM}: {fname}", data_val_start, data_val_end, 
+                                           parent_span_id=file_span_id, span_id=enum_span_id,
+                                           attributes={OTelNames.ATTR_VALIDATION_LEVEL: "enum_check", **err_attr}, 
                                            status_code=sub_status, trace_id=trace_id)
 
                         # 4.1.4 Foreign Key Reference Collection
