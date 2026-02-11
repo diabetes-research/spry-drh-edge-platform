@@ -35,7 +35,6 @@ Before starting, ensure your local machine is configured with the necessary core
 | **Python 3.8+** | Primary language for **Singer Taps** and the `drh-target` package. | [Python.org](https://docs.python.org/3/) |
 | **Spry** | Orchestrates tasks (bash/SQL) defined in Executable Markdown files. | [Spry Docs](https://docs.opsfolio.com/spry/getting-started/installation) |
 | **Surveilr (v3.10+)** | The engine for data ingestion, OTel trace collection, and pipeline orchestration. | [Surveilr Docs](https://docs.opsfolio.com/surveilr/core/installation) |
-| **Deno** | Required for pre-validation TypeScript tasks (version `2.5.6`). | [Deno.com](https://docs.deno.com/runtime/getting_started/installation/) |
 | **direnv** | Loads environment variables from the `.envrc` block in your Markdown. | [direnv.net](https://direnv.net/) |
 
 ---
@@ -223,7 +222,7 @@ spry rb ls [markdownfilename]
 3. **Start SQLPage**
 
    ```bash
-   sqlpage
+   surveilr web-ui
    ```
 
 ---
@@ -232,7 +231,7 @@ spry rb ls [markdownfilename]
 
 ```bash
 spry rb run drh-simplera-spry.md
-sqlpage
+surveilr web-ui
 ```
 
 ```bash
