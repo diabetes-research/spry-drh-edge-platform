@@ -35,6 +35,7 @@ Before starting, ensure your local machine is configured with the necessary core
 | **Python 3.8+** | Primary language for **Singer Taps** and the `drh-target` package. | [Python.org](https://docs.python.org/3/) |
 | **Spry** | Orchestrates tasks (bash/SQL) defined in Executable Markdown files. | [Spry Docs](https://docs.opsfolio.com/spry/getting-started/installation) |
 | **Surveilr (v3.10+)** | The engine for data ingestion, OTel trace collection, and pipeline orchestration. | [Surveilr Docs](https://docs.opsfolio.com/surveilr/core/installation) |
+| **Deno 2.5+**         | Runtime for executing TypeScript-based tasks, utilities, and parts of the DRH Edge orchestration layer. | [Deno Docs](https://docs.deno.com/runtime/manual/)                       |
 | **direnv** | Loads environment variables from the `.envrc` block in your Markdown. | [direnv.net](https://direnv.net/) |
 
 ---
