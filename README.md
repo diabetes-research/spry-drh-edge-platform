@@ -292,3 +292,7 @@ Detailed drill-downs allow researchers to inspect individual participant traces,
 </p>
 
 ---
+
+## License
+
+This project is licensed under the GNU General Public License v3.0. See the [LICENSE](/LICENSE) file for details.
