@@ -410,14 +410,23 @@ def get_files_config():
 
 FILES = get_files_config()
 
-
-
 MANDATORY_STREAM_NAMES = [
-    "participant", "institution", "lab", "study", "site",
-    "investigator", "publication", "author", "cgm_file_metadata"
+    "participant",
+    "institution",
+    "lab",
+    "study",
+    "site",
+    "investigator",
+    "publication",
+    "author",
+    "cgm_file_metadata"
 ]
 
-MANDATORY_CSVS = [FILES[s] for s in MANDATORY_STREAM_NAMES if s in FILES]
+MANDATORY_FILE_CHECK_STREAMS = [
+    "participant",
+    "study",
+    "cgm_file_metadata"
+]
 
 def get_expected_headers():
     headers = {}
@@ -433,7 +442,6 @@ def get_expected_headers():
     return headers
 
 EXPECTED_HEADERS = get_expected_headers()
-
 
 
 def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=None, trace_id=None, fk_validator=None):
@@ -699,7 +707,6 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
             pass
     return results
 
-
 def check_file_extensions(data_dir):
     """Check if configured files have .csv extension."""
     extension_errors = []
@@ -713,8 +720,6 @@ def check_file_extensions(data_dir):
                 extension_errors.append(f"{filename}: Invalid extension (Expected .csv)")
                 
     return extension_errors
-
-    
 
 def check_cgm_metadata_consistency(data_dir):
     """
@@ -1228,8 +1233,9 @@ def check_required_files(data_dir):
     missing_files = []
     
     # Check strict mandatory files
-    for fname in MANDATORY_CSVS:
-        if not os.path.exists(os.path.join(data_dir, fname)):
+    for stream in MANDATORY_FILE_CHECK_STREAMS:
+        fname = FILES.get(stream)
+        if fname and not os.path.exists(os.path.join(data_dir, fname)):
             missing_files.append(fname)
     
     # Check conditional mandatory files
