@@ -1,0 +1,11 @@
+metadata_id,devicename,device_id,source_platform,patient_id,file_name,file_format,file_upload_date,data_start_date,data_end_date,map_field_of_cgm_date,map_field_of_cgm_value,study_id,map_field_of_patient_id
+MD-P-001-1,Dexcom G7,CL-4048,Clarity,P-001,cgm_tracing_P-001_clarity_00001,CSV,2025-10-20,2025-05-04,2025-05-10,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-002-3,Dexcom G7,CL-24744,Clarity,P-002,cgm_tracing_P-002_clarity_00003,CSV,2025-10-20,2025-05-11,2025-05-17,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-003-5,Dexcom Stelo,CL-22230,Clarity,P-003,cgm_tracing_P-003_clarity_00005,CSV,2025-10-20,2024-09-22,2024-09-28,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-004-7,Dexcom G6,CL-69585,Clarity,P-004,cgm_tracing_P-004_clarity_00007,CSV,2025-10-20,2025-07-11,2025-07-17,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-005-9,Dexcom G7,CL-13400,Clarity,P-005,cgm_tracing_P-005_clarity_00009,CSV,2025-10-20,2025-08-12,2025-08-18,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-006-11,Dexcom G7,CL-29686,Clarity,P-006,cgm_tracing_P-006_clarity_00011,CSV,2025-10-20,2025-06-25,2025-07-01,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-007-13,Dexcom G6,CL-12128,Clarity,P-007,cgm_tracing_P-007_clarity_00013,CSV,2025-10-20,2024-01-25,2024-01-31,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-008-15,Dexcom Stelo,CL-1100,Clarity,P-008,cgm_tracing_P-008_clarity_00015,CSV,2025-10-20,2024-05-02,2024-05-08,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-009-17,Dexcom Stelo,CL-63171,Clarity,P-009,cgm_tracing_P-009_clarity_00017,CSV,2025-10-20,2025-09-07,2025-09-13,Display Time,Sensor Glucose (mg/dL),FLCM,
+MD-P-010-19,Dexcom Stelo,CL-39996,Clarity,P-010,cgm_tracing_P-010_clarity_00019,CSV,2025-10-20,2024-12-31,2025-01-06,Display Time,Sensor Glucose (mg/dL),FLCM,
