@@ -50,15 +50,35 @@ cd spry-drh-edge-platform/drh-edge-core
 
 ### Step 2: Configure Your Dataset
 
-Verify if your data matches the samples in the `raw-data/` folder.
+Before running the pipeline, verify that your dataset structure aligns with the platform's requirements.
 
-1. **Match Found?** Copy your data into a new folder within `raw-data/`.
-2. **Choose Runbook**: Pick the `.md` file matching your data (e.g., `drh-dexcom-clarity.md`).
-3. **Set Variables**: Update the `prepare-env` block with your `STUDY_DATA_PATH` and `TENANT_ID`.
-4. **Initialize**:
+**Data Organization Requirements:**
+Your dataset folder must contain the following files:
+
+* **Study Metadata**: General study information.
+* **Participant Data**: Subject demographics.
+* **CGM File Metadata**: Metadata for individual tracing files.
+* **CGM Tracing Files**: The raw glucose data (e.g., `cgm_tracing_*`).
+
+> **Note**: File structures and naming conventions must follow the [DRH Data Organization Standard](https://drh.diabetestechnology.org/organize-cgm-data).
+
+**Configuration Workflow:**
+
+1. **Match Found?**: If your data matches the synthetic samples in the `raw-data/` folder, copy your dataset into a new sub-directory within `raw-data/`.
+2. **Choose Runbook**: Select the executable Markdown (`.md`) file that corresponds to your data type (e.g., `drh-dexcom-clarity.md` or `drh-simplera-cgm-systems.md`).
+3. **Set Variables**: Open the `.md` file and update the `prepare-env` task block with your specific environment values:
+
+* `STUDY_DATA_PATH="raw-data/your-study/"`
+* `TENANT_ID="YOUR_LAB_ID"`
+* `TENANT_NAME="Your Research Lab Name"`
+
+**Initialize**: Run these commands in your terminal to lock in the settings:
 
 ```bash
+# Initialize the environment variables defined in the Markdown file
 spry rb task prepare-env [your-markdown-file].md
+
+# Allow direnv to load the new variables into your current shell
 direnv allow
 
 ```
