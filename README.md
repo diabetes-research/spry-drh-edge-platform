@@ -155,7 +155,61 @@ surveilr ingest files -r singer-tap/tap-mydata.surveilr[singer].py
 
 ---
 
-## 5. Platform Architecture Highlights
+To ensure a clean environment and prevent file permission errors, follow these steps before executing your pipeline.
+
+## Environment Cleanup & Tap Preparation
+
+Before running the orchestration tasks, you must ensure your environment is reset and that the Singer Taps have the correct execution permissions.
+
+**Run the Reset Script:**
+Execute the following command in your terminal:
+
+```bash
+./reset.sh
+
+```
+
+**What this does:**
+
+* **Sets Permissions**: Automatically marks all Python files in the `singer-tap/` directory as executable.
+* **Database Cleanup**: Removes any existing `resource-surveillance.sqlite.db` to prevent data contamination from previous runs.
+* **Artifact Removal**: Deletes temporary UI and source artifacts (like `dev-src.auto`).
+
+---
+
+## Port & Database Management
+
+The platform relies on a local SQLite database and a web server. To avoid "Database is locked" errors or "Port already in use" conflicts, ensure the following:
+
+### Ensure SQLPage is Stopped
+
+If you have a previous session running on port **9227**, you must stop it before re-running the pipeline.
+
+**To check and kill a running SQLPage process:**
+
+```bash
+# Identify and kill the process running on the default port
+sudo kill $(sudo lsof -t -i:9227)
+
+```
+
+### Database Connection Safety
+
+* **Close External Viewers**: Ensure you do not have the `resource-surveillance.sqlite.db` open in an external database browser (like DB Browser for SQLite) while running a `spry` task, as this will prevent the ingestion engine from writing to the file.
+* **Gated Execution**: If a previous run failed, the pipeline might stop at the **Validation Gate**. Running `./reset.sh` ensures you are starting from a clean state where the `overall_status` can be re-evaluated.
+
+---
+
+## Standard Workflow (Final Order)
+
+1. **Clean**: `./reset.sh`
+2. **Configure**: `spry rb task prepare-env [your-markdown-file].md`
+3. **Initialize Environment**: `direnv allow`
+4. **Execute**: `spry rb task prepare-db-deploy-server [your-markdown-file].md`
+
+---
+
+## Platform Architecture Highlights
 
 * **Standardization**: Uses the Singer Protocol to map source data to DRH Target Schemas.
 * **Observability**: Powered by OpenTelemetry (OTel). If validation fails, the ETL is automatically blocked, and the UI displays specific row-level errors.
@@ -163,7 +217,7 @@ surveilr ingest files -r singer-tap/tap-mydata.surveilr[singer].py
   
 ---
 
-## 6. 🎨 Platform Visual Showcase
+## 🎨 Platform Visual Showcase
 
 The DRH Edge Platform provides a specialized interface for both **Data Engineers** (to ensure data integrity) and **Clinical Researchers** (to analyze study outcomes).
 
