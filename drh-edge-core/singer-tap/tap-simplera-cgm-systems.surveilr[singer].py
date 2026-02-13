@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Simplera Singer Tap (Supporting Manufacturer based cgm , Participant, Study, Author, Meal, Fitness)
-
+- required files -cgm_file_metadata,participant,study,cgm_tracing_* files
+- all other files are optional
 - Scans a directory for CSV files.
 - Identifies file content type based on filename patterns or headers.
 - Emits standard DRH Singer messages.
@@ -1664,7 +1665,7 @@ def emit_otel_resource(emitter):
     resource_id = str(uuid.uuid4())
     record = {
         "resource_id": resource_id,
-        "service.name": "tap-simplera",
+        "service.name": "tap-simplera-cgm-systems",
         "service.version": "1.0.0",
         "service.instance.id": resource_id,
         "deployment.environment": os.environ.get("DEPLOY_ENV", "production"),

@@ -28,7 +28,7 @@ sql * --interpolate --injectable
 
 This project reads configuration from environment variables. All variables listed below must be set in your `.envrc` file for the pipeline to run.
 
-### Pipeline & Study Configuration (Required for `prepare-db-deploy-server` task)
+### Pipeline & Study Configuration (Required for `prepare-db-deploy-server ` task)
 
 These variables link your study data to the ETL process:
 
@@ -54,9 +54,9 @@ POSIX-style example (bash/zsh):
 ```envrc prepare-env -C ./.envrc --gitignore -X  --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
-export STUDY_DATA_PATH="raw-data/dexcom-clarity-cgm/"
-export TENANT_ID="DSG"
-export TENANT_NAME="DSG"
+export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
+export TENANT_ID="FLCG"
+export TENANT_NAME="Florida Clinical Group"
 ```
 
 Then run `direnv allow` in this project directory to load the `.envrc` into your shell environment. direnv will evaluate `.envrc` only after you explicitly allow it.
@@ -71,8 +71,8 @@ Then run `direnv allow` in this project directory to load the `.envrc` into your
 
 Why these variables matter here
 
-- The YAML header at the top of this `drh-dexcom-clarity.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
-- The `prepare-db-deploy-server` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
+- The YAML header at the top of this `drh-simplera.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
+- The `prepare-db-deploy-server ` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
 - If `SPRY_DB` is not set, the tooling may fail to find the database or fall back to defaults; explicitly setting it ensures predictable, repeatable dev runs.
 
 Quick troubleshooting
@@ -99,7 +99,7 @@ Quick troubleshooting
   - Once verified, integrate the execution logic into the **Executable Markdown** using `surveilr` to orchestrate the pipeline.
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
-  - `spry rb task prepare-db-deploy-server  drh-dexcom-clarity.md`
+  - `spry rb task prepare-db-deploy-server  drh-simplera.md`
 - The `prepare-db-deploy-server` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This task block automates a data pipeline that cleans the environment, ingests study data via a Singer tap, and conditionally executes SQL transformations based on validation results before deploying an SQLPage-powered monitoring server.
 
@@ -112,7 +112,7 @@ rm -rf dev-src.auto
 rm -f resource-surveillance.sqlite.db-shm
 rm -f resource-surveillance.sqlite.db-wal
 # 2. Execute Dataset specific Singer Tap
-surveilr ingest files -r singer-tap/tap-dexcom-clarity.surveilr\[singer\].py 
+surveilr ingest files -r singer-tap/tap-simplera.surveilr\[singer]\.py 
 # 3. EXTRACT VIEWS FROM TAP OUTPUT
 surveilr shell common-sql/drh-data-extraction.sql  
 RAW_STATUS=$(surveilr shell "select overall_status from drh_vv_session_summary DESC LIMIT 1;")
@@ -132,7 +132,7 @@ else
 fi
 # 5. INITIALIZE SQLPAGE (Runs in both PASS and FAIL scenarios)
 # This allows the UI to show either the 'Launch' or 'Error' buttons based on your SQL queries
-spry sp spc --package --conf sqlpage/sqlpage.json -m drh-dexcom-clarity.md | sqlite3 resource-surveillance.sqlite.db
+spry sp spc --package --conf sqlpage/sqlpage.json -m drh-simplera.md | sqlite3 resource-surveillance.sqlite.db
 ```
 
 ```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"

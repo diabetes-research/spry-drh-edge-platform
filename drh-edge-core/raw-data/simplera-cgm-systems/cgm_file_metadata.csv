@@ -1,0 +1,16 @@
+metadata_id,devicename,device_id,source_platform,patient_id,file_name,file_format,file_upload_date,data_start_date,data_end_date,study_id,map_field_of_cgm_date,map_field_of_cgm_value,map_field_of_patient_id
+META-01,Simplera CGM System,01K94J9P3NRPM1QEPJWJ4FF5JM,Medtronic,CSWM-01K94J-1,cgm_tracing_CSWM-01K94J-1_SimpleraCGMSystem,csv,2025-11-03,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-02,Simplera CGM System,01K94J9P5KYNY5REP574D6NVXG,Medtronic,CSWM-01K94J-2,cgm_tracing_CSWM-01K94J-2_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-03,Simplera CGM System,01K94J9P7CS6TVYAKMJKBFMZ8N,Medtronic,CSWM-01K94J-3,cgm_tracing_CSWM-01K94J-3_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-04,Simplera CGM System,01K94J9P93SBBN642TVZXY85TK,Medtronic,CSWM-01K94J-4,cgm_tracing_CSWM-01K94J-4_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-05,Simplera CGM System,01K94J9PB1YEHDQERGE6R99XES,Medtronic,CSWM-01K94J-5,cgm_tracing_CSWM-01K94J-5_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-06,Simplera CGM System,01K94J9PCXM4T2VTP47PD4PNXG,Medtronic,CSWM-01K94J-6,cgm_tracing_CSWM-01K94J-6_SimpleraCGMSystem,csv,2025-11-03,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-07,Simplera CGM System,01K94J9PESFQK4T0PEZST2ZBJP,Medtronic,CSWM-01K94J-7,cgm_tracing_CSWM-01K94J-7_SimpleraCGMSystem,csv,2025-11-03,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-08,Simplera CGM System,01K94J9PGPS4HTH02QC86AWTBA,Medtronic,CSWM-01K94J-8,cgm_tracing_CSWM-01K94J-8_SimpleraCGMSystem,csv,2025-11-03,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-09,Simplera CGM System,01K94J9PJDKPNJEX7SPEVZKVEM,Medtronic,CSWM-01K94J-9,cgm_tracing_CSWM-01K94J-9_SimpleraCGMSystem,csv,2025-11-03,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-10,Simplera CGM System,01K94J9PMBB8VV7KM8GY3C56FJ,Medtronic,CSWM-01K94J-10,cgm_tracing_CSWM-01K94J-10_SimpleraCGMSystem,csv,2025-11-03,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-11,Simplera CGM System,01K94J9PP4FGAPQTXQRAWZM4R2,Medtronic,CSWM-01K94J-11,cgm_tracing_CSWM-01K94J-11_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-12,Simplera CGM System,01K94J9PQXR8XT8QC7XVPSDJT9,Medtronic,CSWM-01K94J-12,cgm_tracing_CSWM-01K94J-12_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-13,Simplera CGM System,01K94J9PSKVJFTX5N3V33EB1TF,Medtronic,CSWM-01K94J-13,cgm_tracing_CSWM-01K94J-13_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-14,Simplera CGM System,01K94J9PVA92HETZVXDSA5D9F8,Medtronic,CSWM-01K94J-14,cgm_tracing_CSWM-01K94J-14_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID
+META-15,Simplera CGM System,01K94J9PX7580YQ625R4SGTD4D,Medtronic,CSWM-01K94J-15,cgm_tracing_CSWM-01K94J-15_SimpleraCGMSystem,csv,2025-11-03 ,2025-11-03,2025-11-17,CSWM,Date_Time,CGM_Value,SID

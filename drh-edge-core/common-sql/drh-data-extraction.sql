@@ -20,20 +20,275 @@ SELECT
 FROM SchemaData, json_each(properties_json) AS p
 GROUP BY schema_name;
 
--- =====================================================================
--- SQLITE GENERATOR: STANDARD DRH VIEWS
--- =====================================================================
 
--- Update uniform_resource to anonymize emails for authors and investigators
+
+-- ***************************************************************
+-- DE-IDENTIFICATION PROCESS
+-- This section performs email anonymization and logs the process.
+-- ***************************************************************
+
+-- ==========================================================-- 
+-- Identify target records and store in a temp table
+-- ==========================================================
+DROP TABLE IF EXISTS records_to_anonymize;
+CREATE TEMP TABLE records_to_anonymize AS
+SELECT 
+    uniform_resource_id,
+    json_extract(content, '$.stream') as stream_type
+FROM uniform_resource
+WHERE json_extract(content, '$.type') = 'RECORD'
+  AND json_extract(content, '$.stream') IN ('author', 'investigator')
+  AND json_extract(content, '$.record.email') IS NOT NULL;
+
+-- ==========================================================
+--  DATA UPDATE
+-- Only runs if the temp table has records
+-- ==========================================================
 UPDATE uniform_resource
 SET content = json_set(
     content, 
     '$.record.email', 
     surveilr_anonymize_email(json_extract(content, '$.record.email'))
 )
-WHERE json_extract(content, '$.type') = 'RECORD'
-  AND json_extract(content, '$.stream') IN ('author', 'investigator')
-  AND json_extract(content, '$.record.email') IS NOT NULL;
+WHERE uniform_resource_id IN (SELECT uniform_resource_id FROM records_to_anonymize);
+
+
+-- Drops and recreates the view for device information.
+DROP VIEW IF EXISTS drh_device;
+CREATE VIEW IF NOT EXISTS drh_device AS
+SELECT
+    device_id,
+    name,
+    created_at
+FROM
+    device d;
+
+
+-- Insert into orchestration_nature only if it doesn't exist
+INSERT
+OR IGNORE INTO orchestration_nature (
+    orchestration_nature_id,
+    nature,
+    elaboration,
+    created_at,
+    created_by,
+    updated_at,
+    updated_by,
+    deleted_at,
+    deleted_by,
+    activity_log
+)
+SELECT
+    'deidentification', -- Unique ID for the orchestration nature
+    'De-identification', -- Human-readable name for the orchestration nature
+    NULL, -- No elaboration provided at insert time
+    CURRENT_TIMESTAMP, -- Timestamp of creation
+    d.device_id, -- Creator's name
+    NULL, -- No updated timestamp yet
+    NULL, -- No updater yet
+    NULL, -- Not deleted
+    NULL, -- No deleter yet
+    NULL -- No activity log yet
+FROM
+    drh_device d
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize)
+LIMIT
+    1;
+
+-- Limiting to 1 device
+-- Insert into orchestration_session only if it doesn't exist
+INSERT
+OR IGNORE INTO orchestration_session (
+    orchestration_session_id,
+    device_id,
+    orchestration_nature_id,
+    version,
+    orch_started_at,
+    orch_finished_at,
+    elaboration,
+    args_json,
+    diagnostics_json,
+    diagnostics_md
+)
+SELECT
+    'ORCHSESSID-' || hex (randomblob (16)), -- Generate a random hex blob for orchestration_session_id
+    d.device_id, -- Pull device_id from the drh_device view
+    'deidentification', -- Reference to the orchestration_nature_id we just inserted
+    '', -- Version (placeholder)
+    CURRENT_TIMESTAMP, -- Start time
+    NULL, -- Finished time (to be updated later)
+    NULL, -- Elaboration (if any)
+    NULL, -- Args JSON (if any)
+    NULL, -- Diagnostics JSON (if any)
+    NULL -- Diagnostics MD (if any)
+FROM
+    drh_device d
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize)
+LIMIT
+    1;
+
+-- Limiting to 1 device
+-- Create a temporary view to retrieve orchestration session information
+CREATE TEMP VIEW IF NOT EXISTS session_info AS
+SELECT
+    orchestration_session_id
+FROM
+    orchestration_session
+WHERE
+    orchestration_nature_id = 'deidentification'
+LIMIT
+    1;
+
+-- Insert into orchestration_session_entry only if it doesn't exist
+-- ==========================================================
+--  INSERT SESSION ENTRY
+-- Only if de-identification work was actually performed
+-- ==========================================================
+INSERT OR IGNORE INTO orchestration_session_entry (
+    orchestration_session_entry_id,
+    session_id,
+    ingest_src,
+    ingest_table_name,
+    elaboration
+)
+SELECT 
+    'ORCHSESSENID-' || hex(randomblob(16)),
+    (SELECT orchestration_session_id FROM session_info LIMIT 1),
+    'drh-data-extraction.sql',
+    'uniform_resource', -- Specified the table name here
+    NULL
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize);
+
+-- ==========================================================
+-- CREATE TEMP VIEW FOR EXECUTION TRACKING
+-- ==========================================================
+DROP VIEW IF EXISTS temp_session_info;
+CREATE TEMP VIEW temp_session_info AS
+SELECT
+    os.orchestration_session_id,
+    ose.orchestration_session_entry_id
+FROM
+    orchestration_session os
+LEFT JOIN 
+    orchestration_session_entry ose ON ose.session_id = os.orchestration_session_id
+WHERE
+    os.orchestration_nature_id = 'deidentification'
+    AND os.orch_finished_at IS NULL
+ORDER BY os.orch_started_at DESC
+LIMIT 1;
+
+-- ==========================================================
+--  LOG INVESTIGATOR EXECUTION
+-- ==========================================================
+INSERT OR IGNORE INTO orchestration_session_exec (
+    orchestration_session_exec_id,
+    exec_nature,
+    session_id,
+    session_entry_id,
+    exec_code,
+    exec_status,
+    input_text,
+    output_text,
+    narrative_md
+)
+SELECT
+    'ORCHSESSEXID-INV-' || hex(randomblob(4)),
+    'De-identification',
+    s.orchestration_session_id,
+    s.orchestration_session_entry_id,
+    'UPDATE uniform_resource SET email = anonymized WHERE stream=''investigator''',
+    'SUCCESS',
+    'email column for investigators',
+    'De-identification completed',
+    'username in email is masked'
+FROM temp_session_info s
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize WHERE stream_type = 'investigator');
+
+-- ==========================================================
+-- LOG AUTHOR EXECUTION
+-- ==========================================================
+INSERT OR IGNORE INTO orchestration_session_exec (
+    orchestration_session_exec_id,
+    exec_nature,
+    session_id,
+    session_entry_id,
+    exec_code,
+    exec_status,
+    input_text,
+    output_text,
+    narrative_md
+)
+SELECT
+    'ORCHSESSEXID-AUTH-' || hex(randomblob(4)),
+    'De-identification',
+    s.orchestration_session_id,
+    s.orchestration_session_entry_id,
+    'UPDATE uniform_resource SET email = anonymized WHERE stream=''author''',
+    'SUCCESS',
+    'email column for authors',
+    'De-identification completed',
+    'username in email is masked'
+FROM temp_session_info s
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize WHERE stream_type = 'author');
+
+-- ==========================================================
+-- FINALIZE SESSION
+-- ==========================================================
+UPDATE orchestration_session
+SET
+    orch_finished_at = CURRENT_TIMESTAMP,
+    diagnostics_json = json_object(
+        'status', 'completed',
+        'records_processed', (SELECT COUNT(*) FROM records_to_anonymize)
+    ),
+    diagnostics_md = 'De-identification process completed'
+WHERE
+    orchestration_session_id = (SELECT orchestration_session_id FROM temp_session_info)
+    AND EXISTS (SELECT 1 FROM records_to_anonymize);
+
+
+
+-- Drop and recreate the vw_orchestration_deidentify view
+-- Creates a consolidated view of de-identification execution sessions, joining
+-- execution details with overall session information.
+DROP VIEW IF EXISTS drh_vw_orchestration_deidentify;
+CREATE VIEW
+    drh_vw_orchestration_deidentify AS
+SELECT
+    osex.orchestration_session_exec_id,
+    osex.exec_nature,
+    osex.session_id,
+    osex.session_entry_id,
+    osex.parent_exec_id,
+    osex.namespace,
+    osex.exec_identity,
+    osex.exec_code,
+    osex.exec_status,
+    osex.input_text,
+    osex.exec_error_text,
+    osex.output_text,
+    osex.output_nature,
+    osex.narrative_md,
+    os.device_id,
+    os.orchestration_nature_id,
+    os.version,
+    os.orch_started_at,
+    os.orch_finished_at,
+    os.args_json,
+    os.diagnostics_json,
+    os.diagnostics_md
+FROM
+    orchestration_session_exec osex
+    JOIN orchestration_session os ON osex.session_id = os.orchestration_session_id
+WHERE
+    os.orchestration_nature_id = 'deidentification';
+
+
+
+
+-- =====================================================================
+-- SQLITE GENERATOR: STANDARD DRH VIEWS
+-- =====================================================================
 
 -- 1. View for author
 CREATE VIEW IF NOT EXISTS drh_author AS
@@ -418,279 +673,4 @@ FROM drh_otel_spans s
 LEFT JOIN log_attr_agg la ON s.span_id = la.span_id
 LEFT JOIN span_attr_agg sa ON s.span_id = sa.span_id
 WHERE s.trace_id = (SELECT trace_id FROM drh_active_session);
-
--- ***************************************************************
--- DE-IDENTIFICATION PROCESS
--- This section performs email anonymization and logs the process.
--- ***************************************************************
-
--- Drops and recreates the view for device information.
-DROP VIEW IF EXISTS drh_device;
-CREATE VIEW IF NOT EXISTS drh_device AS
-SELECT
-    device_id,
-    name,
-    created_at
-FROM
-    device d;
-
-
--- Insert into orchestration_nature only if it doesn't exist
-INSERT
-OR IGNORE INTO orchestration_nature (
-    orchestration_nature_id,
-    nature,
-    elaboration,
-    created_at,
-    created_by,
-    updated_at,
-    updated_by,
-    deleted_at,
-    deleted_by,
-    activity_log
-)
-SELECT
-    'deidentification', -- Unique ID for the orchestration nature
-    'De-identification', -- Human-readable name for the orchestration nature
-    NULL, -- No elaboration provided at insert time
-    CURRENT_TIMESTAMP, -- Timestamp of creation
-    d.device_id, -- Creator's name
-    NULL, -- No updated timestamp yet
-    NULL, -- No updater yet
-    NULL, -- Not deleted
-    NULL, -- No deleter yet
-    NULL -- No activity log yet
-FROM
-    drh_device d
-LIMIT
-    1;
-
--- Limiting to 1 device
--- Insert into orchestration_session only if it doesn't exist
-INSERT
-OR IGNORE INTO orchestration_session (
-    orchestration_session_id,
-    device_id,
-    orchestration_nature_id,
-    version,
-    orch_started_at,
-    orch_finished_at,
-    elaboration,
-    args_json,
-    diagnostics_json,
-    diagnostics_md
-)
-SELECT
-    'ORCHSESSID-' || hex (randomblob (16)), -- Generate a random hex blob for orchestration_session_id
-    d.device_id, -- Pull device_id from the drh_device view
-    'deidentification', -- Reference to the orchestration_nature_id we just inserted
-    '', -- Version (placeholder)
-    CURRENT_TIMESTAMP, -- Start time
-    NULL, -- Finished time (to be updated later)
-    NULL, -- Elaboration (if any)
-    NULL, -- Args JSON (if any)
-    NULL, -- Diagnostics JSON (if any)
-    NULL -- Diagnostics MD (if any)
-FROM
-    drh_device d
-LIMIT
-    1;
-
--- Limiting to 1 device
--- Create a temporary view to retrieve orchestration session information
-CREATE TEMP VIEW IF NOT EXISTS session_info AS
-SELECT
-    orchestration_session_id
-FROM
-    orchestration_session
-WHERE
-    orchestration_nature_id = 'deidentification'
-LIMIT
-    1;
-
--- Insert into orchestration_session_entry only if it doesn't exist
-INSERT
-OR IGNORE INTO orchestration_session_entry (
-    orchestration_session_entry_id,
-    session_id,
-    ingest_src,
-    ingest_table_name,
-    elaboration
-)
-VALUES
-    (
-        'ORCHSESSENID-' || hex (randomblob (16)), -- Generate a random hex blob for orchestration_session_entry_id
-        (
-            SELECT
-                orchestration_session_id
-            FROM
-                session_info
-            limit
-                1
-        ), -- Session ID from previous insert
-        'drh-data-extraction.sql', -- Replace with actual ingest source
-        '', -- Placeholder for actual table name
-        NULL -- Elaboration (if any)
-    );
-
--- Create or replace a temporary view for session execution tracking
-DROP VIEW IF EXISTS temp_session_info;
--- Remove any existing view
-CREATE TEMP VIEW temp_session_info AS
-SELECT
-    orchestration_session_id,
-    (
-        SELECT
-            orchestration_session_entry_id
-        FROM
-            orchestration_session_entry
-        WHERE
-            session_id = orchestration_session_id
-        LIMIT
-            1
-    ) AS orchestration_session_entry_id
-FROM
-    orchestration_session
-WHERE
-    orchestration_nature_id = 'deidentification'
-LIMIT
-    1;
-
--- Insert into orchestration_session_exec for drh_investigator
-INSERT
-OR IGNORE INTO orchestration_session_exec (
-    orchestration_session_exec_id,
-    exec_nature,
-    session_id,
-    session_entry_id,
-    exec_code,
-    exec_status,
-    input_text,
-    output_text,
-    exec_error_text,
-    narrative_md
-)
-SELECT
-    'ORCHSESSEXID-' || (
-        (
-            SELECT
-                COUNT(*)
-            FROM
-                orchestration_session_exec
-        ) + 1
-    ), -- Unique ID based on count
-    'De-identification', -- Nature of execution
-    s.orchestration_session_id, -- Session ID from the temp view
-    s.orchestration_session_entry_id, -- Session Entry ID from the temp view
-    'UPDATE drh_investigator SET email = surveilr_anonymize_email(email) executed', -- Description of the executed code
-    'SUCCESS', -- Execution status
-    'email column in drh_investigator', -- Input text reference
-    'De-identification completed', -- Output text summary
-    CASE
-        WHEN (
-            SELECT
-                changes () = 0
-        ) THEN 'No rows updated' -- Capture update status
-        ELSE NULL
-    END,
-    'username in email is masked' -- Narrative for clarification
-FROM
-    temp_session_info s;
-
--- From the temporary session info view
--- Insert into orchestration_session_exec for uniform_resource_author
-INSERT
-OR IGNORE INTO orchestration_session_exec (
-    orchestration_session_exec_id,
-    exec_nature,
-    session_id,
-    session_entry_id,
-    exec_code,
-    exec_status,
-    input_text,
-    output_text,
-    exec_error_text,
-    narrative_md
-)
-SELECT
-    'ORCHSESSEXID-' || (
-        (
-            SELECT
-                COUNT(*)
-            FROM
-                orchestration_session_exec
-        ) + 1
-    ), -- Unique ID based on count
-    'De-identification', -- Nature of execution
-    s.orchestration_session_id, -- Session ID from the temp view
-    s.orchestration_session_entry_id, -- Session Entry ID from the temp view
-    'UPDATE uniform_resource_author SET email = surveilr_anonymize_email(email) executed', -- Description of the executed code
-    'SUCCESS', -- Execution status
-    'email column in uniform_resource_author', -- Input text reference
-    'De-identification completed', -- Output text summary
-    CASE
-        WHEN (
-            SELECT
-                changes () = 0
-        ) THEN 'No rows updated' -- Capture update status
-        ELSE NULL
-    END,
-    'username in email is masked' -- Narrative for clarification
-FROM
-    temp_session_info s;
-
--- From the temporary session info view
--- Update orchestration_session to set finished timestamp and diagnostics
-UPDATE orchestration_session
-SET
-    orch_finished_at = CURRENT_TIMESTAMP, -- Set the finish time
-    diagnostics_json = '{"status": "completed"}', -- Diagnostics status in JSON format
-    diagnostics_md = 'De-identification process completed' -- Markdown summary
-WHERE
-    orchestration_session_id = (
-        SELECT
-            orchestration_session_id
-        FROM
-            temp_session_info
-        LIMIT
-            1
-    );
-
-
-
--- Drop and recreate the vw_orchestration_deidentify view
--- Creates a consolidated view of de-identification execution sessions, joining
--- execution details with overall session information.
-DROP VIEW IF EXISTS drh_vw_orchestration_deidentify;
-CREATE VIEW
-    drh_vw_orchestration_deidentify AS
-SELECT
-    osex.orchestration_session_exec_id,
-    osex.exec_nature,
-    osex.session_id,
-    osex.session_entry_id,
-    osex.parent_exec_id,
-    osex.namespace,
-    osex.exec_identity,
-    osex.exec_code,
-    osex.exec_status,
-    osex.input_text,
-    osex.exec_error_text,
-    osex.output_text,
-    osex.output_nature,
-    osex.narrative_md,
-    os.device_id,
-    os.orchestration_nature_id,
-    os.version,
-    os.orch_started_at,
-    os.orch_finished_at,
-    os.args_json,
-    os.diagnostics_json,
-    os.diagnostics_md
-FROM
-    orchestration_session_exec osex
-    JOIN orchestration_session os ON osex.session_id = os.orchestration_session_id
-WHERE
-    os.orchestration_nature_id = 'deidentification';
-
 
