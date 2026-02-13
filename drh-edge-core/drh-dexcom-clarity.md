@@ -28,7 +28,7 @@ sql * --interpolate --injectable
 
 This project reads configuration from environment variables. All variables listed below must be set in your `.envrc` file for the pipeline to run.
 
-### Pipeline & Study Configuration (Required for `prepare-db-deploy-server ` task)
+### Pipeline & Study Configuration (Required for `prepare-db-deploy-server` task)
 
 These variables link your study data to the ETL process:
 
@@ -54,9 +54,9 @@ POSIX-style example (bash/zsh):
 ```envrc prepare-env -C ./.envrc --gitignore -X  --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
 export PORT=9227
-export STUDY_DATA_PATH="raw-data/simplera-synthetic-cgm/"
-export TENANT_ID="FLCG"
-export TENANT_NAME="Florida Clinical Group"
+export STUDY_DATA_PATH="raw-data/dexcom-clarity-cgm/"
+export TENANT_ID="DSG"
+export TENANT_NAME="DSG"
 ```
 
 Then run `direnv allow` in this project directory to load the `.envrc` into your shell environment. direnv will evaluate `.envrc` only after you explicitly allow it.
@@ -71,8 +71,8 @@ Then run `direnv allow` in this project directory to load the `.envrc` into your
 
 Why these variables matter here
 
-- The YAML header at the top of this `drh-simplera-spry.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
-- The `prepare-db-deploy-server ` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
+- The YAML header at the top of this `drh-dexcom-clarity.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
+- The `prepare-db-deploy-server` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
 - If `SPRY_DB` is not set, the tooling may fail to find the database or fall back to defaults; explicitly setting it ensures predictable, repeatable dev runs.
 
 Quick troubleshooting
@@ -99,7 +99,7 @@ Quick troubleshooting
   - Once verified, integrate the execution logic into the **Executable Markdown** using `surveilr` to orchestrate the pipeline.
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
-  - `spry rb task prepare-db-deploy-server  drh-simplera-spry.md`
+  - `spry rb task prepare-db-deploy-server  drh-dexcom-clarity.md`
 - The `prepare-db-deploy-server` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This task block automates a data pipeline that cleans the environment, ingests study data via a Singer tap, and conditionally executes SQL transformations based on validation results before deploying an SQLPage-powered monitoring server.
 
@@ -109,8 +109,10 @@ set -u
 # 1. Cleanup
 rm -f resource-surveillance.sqlite.db 
 rm -rf dev-src.auto 
+rm -f resource-surveillance.sqlite.db-shm
+rm -f resource-surveillance.sqlite.db-wal
 # 2. Execute Dataset specific Singer Tap
-surveilr ingest files -r singer-tap/tap-simplera.surveilr\[singer]\.py 
+surveilr ingest files -r singer-tap/tap-dexcom-clarity.surveilr\[singer\].py 
 # 3. EXTRACT VIEWS FROM TAP OUTPUT
 surveilr shell common-sql/drh-data-extraction.sql  
 RAW_STATUS=$(surveilr shell "select overall_status from drh_vv_session_summary DESC LIMIT 1;")
@@ -130,7 +132,7 @@ else
 fi
 # 5. INITIALIZE SQLPAGE (Runs in both PASS and FAIL scenarios)
 # This allows the UI to show either the 'Launch' or 'Error' buttons based on your SQL queries
-spry sp spc --package --conf sqlpage/sqlpage.json -m drh-simplera-spry.md | sqlite3 resource-surveillance.sqlite.db
+spry sp spc --package --conf sqlpage/sqlpage.json -m drh-dexcom-clarity.md | sqlite3 resource-surveillance.sqlite.db
 ```
 
 ```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"
@@ -626,16 +628,41 @@ SELECT
   'Researcher / Investigator ' as title;
 SELECT
   'These are scientific professionals and medical experts who design and conduct studies related to diabetes management and treatment. Their expertise ranges from clinical research to data analysis, and they are crucial in interpreting results and guiding future research directions.Principal investigators lead the research projects, overseeing the study design, implementation, and data collection. They ensure the research adheres to ethical standards and provides valuable insights into diabetes management.' as contents;
-SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows;
-SELECT * from drh_investigator;
+
+SELECT 
+    'alert' AS component,
+    'orange' AS color,
+    'No Investigator Data Found' AS title,
+    'The Investigator data is not provided for the study.' AS description
+WHERE (SELECT COUNT(*) FROM drh_investigator) = 0;
+
+-- Show Table only if data exists
+SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows
+WHERE (SELECT COUNT(*) FROM drh_investigator) > 0;
+
+SELECT * FROM drh_investigator 
+WHERE (SELECT COUNT(*) FROM drh_investigator) > 0;
 
 SELECT
   'text' as component,
   'Institution' as title;
 SELECT
   'The researchers and investigators are associated with various institutions, including universities, research institutes, and hospitals. These institutions provide the necessary resources, facilities, and support for conducting high-quality research. Each institution brings its unique strengths and expertise to the collaborative research efforts.' as contents;
-SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows;
-SELECT * from drh_institution;
+
+SELECT 
+    'alert' AS component,
+    'orange' AS color,
+    'No Institution Data Found' AS title,
+    'The Institution data is not provided for the study.' AS description
+WHERE (SELECT COUNT(*) FROM drh_institution) = 0;
+
+-- Show Table only if data exists
+SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows
+WHERE (SELECT COUNT(*) FROM drh_institution) > 0;
+
+SELECT * FROM drh_institution 
+WHERE (SELECT COUNT(*) FROM drh_institution) > 0;
+
 
 
 SELECT
@@ -643,9 +670,20 @@ SELECT
   'Lab' as title;
 SELECT
   'Within these institutions, specialized labs are equipped with state-of-the-art technology to conduct diabetes research. These labs focus on different aspects of diabetes studies, such as glucose monitoring, metabolic analysis, and data processing. They play a critical role in executing experiments, analyzing samples, and generating data that drive research conclusions.' as contents;
-SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows;
-SELECT * from drh_lab;
 
+SELECT 
+    'alert' AS component,
+    'orange' AS color,
+    'No Lab Data Found' AS title,
+    'The Lab data is not provided for the study.' AS description
+WHERE (SELECT COUNT(*) FROM drh_lab) = 0;
+
+-- Show Table only if data exists
+SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows
+WHERE (SELECT COUNT(*) FROM drh_lab) > 0;
+
+SELECT * FROM drh_lab 
+WHERE (SELECT COUNT(*) FROM drh_lab) > 0;
 
 ```
 
@@ -706,8 +744,19 @@ Research sites are locations where the studies are conducted. They include clini
 
       ' as contents_md;
 
-      SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows;
-      SELECT * from drh_site;
+    SELECT 
+    'alert' AS component,
+    'orange' AS color,
+    'No Site Data Found' AS title,
+    'The Site data is not provided for the study.' AS description
+WHERE (SELECT COUNT(*) FROM drh_site) = 0;
+
+-- Show Table only if data exists
+SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows
+WHERE (SELECT COUNT(*) FROM drh_site) > 0;
+
+SELECT * FROM drh_site 
+WHERE (SELECT COUNT(*) FROM drh_site) > 0;
 
 ```
 
@@ -803,8 +852,21 @@ This section contains information about the authors involved in study publicatio
 
       ' as contents_md;
 
-  SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows;
-  SELECT * from drh_author;
+  -- Alert if Authors table is empty
+SELECT 
+    'alert' AS component,
+    'orange' AS color,
+    'No Authors Found' AS title,
+    'The author data is not available for the study.' AS description
+WHERE (SELECT COUNT(*) FROM drh_author) = 0;
+
+-- Show Table only if data exists
+SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows
+WHERE (SELECT COUNT(*) FROM drh_author) > 0;
+
+SELECT * FROM drh_author 
+WHERE (SELECT COUNT(*) FROM drh_author) > 0;
+
   SELECT
   'text' as component,
   '
@@ -823,8 +885,20 @@ This section provides information about the publications resulting from a study.
 
   ' as contents_md;
 
-  SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows;
-  SELECT * from drh_publication;
+  -- Alert if Publications table is empty
+SELECT 
+    'alert' AS component,
+    'orange' AS color,
+    'No Publications Found' AS title,
+    'There are no publications recorded for this specific study .' AS description
+WHERE (SELECT COUNT(*) FROM drh_publication) = 0;
+
+-- Show Table only if data exists
+SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows
+WHERE (SELECT COUNT(*) FROM drh_publication) > 0;
+
+SELECT * FROM drh_publication
+WHERE (SELECT COUNT(*) FROM drh_publication) > 0;
 
 ```
 
@@ -1115,8 +1189,33 @@ SELECT
   'The DeIdentification Results section provides a view of the outcomes from the de-identification process ' as contents;
 
 
-SELECT 'table' as component, 1 as search, 1 as sort, 1 as hover, 1 as striped_rows;
-SELECT input_text as "deidentified column", orch_started_at,orch_finished_at ,diagnostics_md from drh_vw_orchestration_deidentify;
+--- De-identification Status ---
+
+-- 1. Alert: Shown only if no data is available
+SELECT 
+    'alert' AS component,
+    'warning' AS color,
+    'De-identification Not Performed' AS title,
+    'Author and Investigator data are not available for this study; therefore, no de-identification has been performed.' AS description
+WHERE (SELECT COUNT(*) FROM drh_vw_orchestration_deidentify) = 0;
+
+-- 2. Table Configuration: Shown only if data exists
+SELECT 
+    'table' AS component, 
+    1 AS search, 
+    1 AS sort, 
+    1 AS hover, 
+    1 AS striped_rows
+WHERE (SELECT COUNT(*) FROM drh_vw_orchestration_deidentify) > 0;
+
+-- 3. Data Results: Shown only if data exists
+SELECT 
+    input_text AS "deidentified column", 
+    orch_started_at, 
+    orch_finished_at, 
+    diagnostics_md 
+FROM drh_vw_orchestration_deidentify
+WHERE (SELECT COUNT(*) FROM drh_vw_orchestration_deidentify) > 0;
 
 
 ```
