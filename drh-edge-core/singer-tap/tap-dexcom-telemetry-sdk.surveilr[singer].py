@@ -594,13 +594,24 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                                 # 4. Enum Check (4.1.e)
                                 enum_vals = field_def.get("enum")
                                 if enum_vals:
-                                    # Normalize enum values to strings for CSV comparison
-                                    # We invoke str(v) but handle the fact that CSV vals might be case-sensitive or not depending on context?
-                                    # For strict compliance, we expect exact match, but for booleans we might be lenient (handled in type check).
-                                    # Here strict string match against stringified enum values.
-                                    str_enums = [str(e) for e in enum_vals]
-                                    if val not in str_enums:
-                                        row_errors.append(f"Line {line_num} {field_name}: '{val}' not in enum {str_enums}") 
+                                    # Request:
+                                    # 1. "Active" matches "Active User" (Substring)
+                                    # 2. "male" does NOT match "female" (Word Boundary)
+                                    # Solution: Regex search for word boundary \bWORD\b
+                                    
+                                    val_normalized = val.strip().lower()
+                                    match_found = False
+                                    
+                                    for e in enum_vals:
+                                        enum_str = str(e).strip().lower()
+                                        # Escape enum_str to handle regex special chars if any
+                                        pattern = r'\b' + re.escape(enum_str) + r'\b'
+                                        if re.search(pattern, val_normalized):
+                                            match_found = True
+                                            break
+                                    
+                                    if not match_found:
+                                        row_errors.append(f"Line {line_num} {field_name}: '{val}' does not contain any of {enum_vals} (whole word match)") 
 
                             if len(row_errors) > 10: 
                                 row_errors.append("... (too many errors)")
