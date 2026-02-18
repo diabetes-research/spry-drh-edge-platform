@@ -582,7 +582,7 @@ SELECT 'table' AS component,
     'Clinical Outcomes' AS title;
 
 SELECT 
-    ${md.link("participant_id", [`'participant-info.sql?participant_id='`, "participant_id"])} AS participant_id,
+    ${md.link("participant_id", [`'/drh/participant-info.sql?participant_id='`, "participant_id"])} AS participant_id,
     gender, 
     age, 
     study_arm AS arm,
