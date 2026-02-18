@@ -34,8 +34,6 @@ Before starting, ensure your local machine is configured with the necessary core
 | **Python 3.8+** | Primary language for **Singer Taps** and the `drh-target` package. | [Python.org](https://docs.python.org/3/) |
 | **Spry** | Orchestrates tasks (bash/SQL) defined in Executable Markdown files. | [Spry Docs](https://docs.opsfolio.com/spry/getting-started/installation) |
 | **Surveilr (v3.10+)** | The engine for data ingestion, OTel trace collection, and pipeline orchestration. | [Surveilr Docs](https://docs.opsfolio.com/surveilr/core/installation) |
-| **Deno 2.5+** | Runtime for executing TypeScript-based tasks, utilities, and parts of the DRH Edge orchestration layer. | [Deno Docs](https://docs.deno.com/runtime/manual/) |
-| **direnv** | Loads environment variables from the `.envrc` block in your Markdown. | [direnv.net](https://direnv.net/) |
 
 ---
 
@@ -91,85 +89,9 @@ surveilr --version
 
 ---
 
-#### Deno 2.5+
-
-**Ubuntu / Ubuntu under WSL:**
-
-```bash
-curl -fsSL https://deno.land/install.sh | sh
-```
-
-After installation, add Deno to your PATH by appending the following to your `~/.bashrc` (or `~/.zshrc` on macOS):
-
-```bash
-export DENO_INSTALL="$HOME/.deno"
-export PATH="$DENO_INSTALL/bin:$PATH"
-```
-
-Then reload your shell:
-
-```bash
-source ~/.bashrc    # Ubuntu / WSL
-```
-
-**Verify:**
-
-```bash
-deno --version
-# Expected output: deno 2.5.x or higher
-```
-
----
-
-#### direnv
-
-**Ubuntu / Ubuntu under WSL:**
-
-```bash
-sudo apt install -y direnv
-```
-
-Then add the following to your `~/.bashrc`:
-
-```bash
-eval "$(direnv hook bash)"
-```
-
-Reload:
-
-```bash
-source ~/.bashrc
-```
-
-**macOS:**
-
-```bash
-brew install direnv
-```
-
-Then add the following to your `~/.zshrc`:
-
-```bash
-eval "$(direnv hook zsh)"
-```
-
-Reload:
-
-```bash
-source ~/.zshrc
-```
-
-**Verify:**
-
-```bash
-direnv version
-```
-
----
-
 ### macOS Environment Setup
 
-On macOS, the default shell is `zsh`. Environment variables must be configured in `~/.zshrc` rather than `~/.bashrc`. For any step in this guide that asks you to export a variable or add a line to your shell profile, use `~/.zshrc`.
+On macOS, the default shell is `zsh`. Environment variables must be configured in `~/.zshrc` . For any step in this guide that asks you to export a variable or add a line to your shell profile, use `~/.zshrc`.
 
 After making any changes to `~/.zshrc`, reload the file for changes to take effect in your current session:
 
@@ -275,7 +197,7 @@ spry rb task prepare-db-deploy-server drh-dexcom-clarity.md
 surveilr web-ui
 ```
 
-Open **http://localhost:9227** to view demographics, CGM trends, and validation reports.
+Open **<http://localhost:9227>** to view demographics, CGM trends, and validation reports.
 
 ```bash
 # If SQLPage is already running on localhost:9227
@@ -295,6 +217,7 @@ To ensure a clean environment and prevent file permission errors, run the reset 
 ```
 
 **What this does:**
+
 - **Sets Permissions**: Automatically marks all Python files in the `singer-tap/` directory as executable.
 - **Database Cleanup**: Removes any existing `resource-surveillance.sqlite.db` to prevent data contamination from previous runs.
 - **Artifact Removal**: Deletes temporary UI and source artifacts (like `dev-src.auto`).
