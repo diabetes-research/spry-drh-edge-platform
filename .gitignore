@@ -5,3 +5,4 @@ drh-edge-core/*.sql
 dev-src.auto
 validation-reports
 .venv
+*:Zone.Identifier
