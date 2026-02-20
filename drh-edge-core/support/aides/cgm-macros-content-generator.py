@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cgm_dataset_processor_v1.py
+cgm-macros-content-generator.py
 ============================
 CLI utility for generating standardised DRH output files for (CGMacros Dataset):
     - study.csv
@@ -8,8 +8,6 @@ CLI utility for generating standardised DRH output files for (CGMacros Dataset):
     - cgm_file_metadata.csv
 
 Supports five CGM distribution architectures selectable via --cgm-distribution.
-
-New in v1 (over the base version):
     - Strict regex ID validation for study_id, participant_id, metadata_id
     - derive_icd_from_hba1c() with full ICD-10 mapping
     - Source-platform auto-detection from device name
@@ -34,10 +32,10 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
 ► Git Bash (MINGW64) / macOS Terminal / Ubuntu / WSL
   Line continuation: single backslash  \
 
-    python cgm_dataset_processor_v1.py \
+    python3 support/aides/cgm-macros-content-generator.py \
         --cgm-distribution multiple_device_cgm_multiple_participants_single_file \
-        --cgm-file         "CGMacros_dateshifted365/CGMacros" \
-        --input-folder     "CGMacros_dateshifted365/CGMacros" \
+        --cgm-file         "examples/raw/CGMacros_dateshifted365/CGMacros" \
+        --input-folder     "examples/raw/CGMacros_dateshifted365/CGMacros" \
         --timestamp-column "Timestamp" \
         --participant-id-column "FOLDER_ID" \
         --device1-name       "Abbott FreeStyle Libre" \
@@ -46,7 +44,7 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
         --device2-name       "Dexcom G6 Pro" \
         --device2-id         "DEXCOM-001" \
         --device2-cgm-column "Dexcom GL" \
-        --output-folder      "D:/cgm-macros-output" \
+        --output-folder      "examples/cgm-macros-output" \
         --study-id           "CGMA" \
         --study-name         "CGMacros: a scientific dataset for personalized nutrition and diet monitoring" \
         --study-start-date   "2021-01-01" \
@@ -60,10 +58,10 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
 ► PowerShell (Windows)
   Line continuation: backtick  `
 
-    python cgm_dataset_processor_v1.py `
+    python3 support/aides/cgm-macros-content-generator.py `
         --cgm-distribution multiple_device_cgm_multiple_participants_single_file `
-        --cgm-file         "CGMacros_dateshifted365/CGMacros" `
-        --input-folder     "CGMacros_dateshifted365/CGMacros" `
+        --cgm-file         "examples/raw/CGMacros_dateshifted365/CGMacros" `
+        --input-folder     "examples/raw/CGMacros_dateshifted365/CGMacros" `
         --timestamp-column "Timestamp" `
         --participant-id-column "FOLDER_ID" `
         --device1-name       "Abbott FreeStyle Libre" `
@@ -72,7 +70,7 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
         --device2-name       "Dexcom G6 Pro" `
         --device2-id         "DEXCOM-001" `
         --device2-cgm-column "Dexcom GL" `
-        --output-folder      "D:/cgm-macros-output" `
+        --output-folder      "examples/cgm-macros-output" `
         --study-id           "CGMA" `
         --study-name         "CGMacros: a scientific dataset for personalized nutrition and diet monitoring" `
         --study-start-date   "2021-01-01" `
@@ -86,10 +84,10 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
 ► Windows CMD
   Line continuation: caret  ^
 
-    python cgm_dataset_processor_v1.py ^
+    python3 support/aides/cgm-macros-content-generator.py ^
         --cgm-distribution multiple_device_cgm_multiple_participants_single_file ^
-        --cgm-file         "CGMacros_dateshifted365/CGMacros" ^
-        --input-folder     "CGMacros_dateshifted365/CGMacros" ^
+        --cgm-file         "examples/raw/CGMacros_dateshifted365/CGMacros" ^
+        --input-folder     "examples/raw/CGMacros_dateshifted365/CGMacros" ^
         --timestamp-column "Timestamp" ^
         --participant-id-column "FOLDER_ID" ^
         --device1-name       "Abbott FreeStyle Libre" ^
@@ -98,7 +96,7 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
         --device2-name       "Dexcom G6 Pro" ^
         --device2-id         "DEXCOM-001" ^
         --device2-cgm-column "Dexcom GL" ^
-        --output-folder      "D:/cgm-macros-output" ^
+        --output-folder      "examples/cgm-macros-output" ^
         --study-id           "CGMA" ^
         --study-name         "CGMacros: a scientific dataset for personalized nutrition and diet monitoring" ^
         --study-start-date   "2021-01-01" ^
@@ -114,8 +112,8 @@ Note:
     "Abbott FreeStyle Libre" → Abbott
     "Dexcom G6 Pro"         → Dexcom
 
-Author : DRH / Antigravity
-Python : 3.8+
+
+python3 : 3.8+
 Deps   : pandas (all others are stdlib)
 """
 
@@ -406,7 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     ]
 
     p = argparse.ArgumentParser(
-        prog="cgm_dataset_processor_v1.py",
+        prog="cgm-macros-content-generator.py",
         description=(
             "Generate study.csv, participant.csv and cgm_file_metadata.csv "
             "from a CGM research dataset folder."
@@ -858,30 +856,19 @@ def _build_metadata_record(
     study_id: str,
     data_start: str,
     data_end: str,
-    file_index: Optional[int] = None,
+    meta_index: int,  # Added meta_index
 ) -> Dict:
     """
     Construct a single cgm_file_metadata row dict.
-
-    metadata_id is generated using format_and_validate_id with prefix 'M'.
-    patient_id is also formatted to match participant.csv.
+    metadata_id is generated as 'META-<integer>'.
     """
-    # 1. Standardize the participant/patient ID first
+    # 1. Standardize the participant/patient ID
     final_patient_id = format_and_validate_id(study_id, patient_id, label="participant_id")
 
-    # 2. Derive metadata_id from that (CDMA-1 -> CDMA-M1)
-    # Extract suffix after the study_id and hyphen
-    prefix_str = f"{study_id}-"
-    suffix = final_patient_id[len(prefix_str):] if final_patient_id.startswith(prefix_str) else final_patient_id
+    # 2. Use the unique incrementing integer
+    metadata_id = f"META-{meta_index}"
 
-    meta_raw = str(suffix)
-    if file_index is not None:
-        meta_raw = f"{suffix}-{file_index}"
-
-    metadata_id = format_and_validate_id(study_id, meta_raw, id_prefix="M", label="metadata_id")
-
-    # 3. Clean up map_field_of_patient_id if it's a dummy value
-    # We check the raw value before any falling back logic
+    # 3. Clean up map_field_of_patient_id
     raw_col = str(participant_id_col or "").strip().upper()
     if raw_col in _PLACEHOLDERS or "PLACEHOLDER" in raw_col:
         final_patient_id_col = ""
@@ -889,6 +876,7 @@ def _build_metadata_record(
         final_patient_id_col = participant_id_col
 
     auto_platform = detect_source_platform(device_name, fallback=source_platform)
+    
     return {
         "metadata_id":             metadata_id,
         "devicename":              device_name,
@@ -905,7 +893,6 @@ def _build_metadata_record(
         "study_id":                study_id,
         "map_field_of_patient_id": final_patient_id_col,
     }
-
 
 def generate_metadata(records: List[Dict], output_dir: Path) -> None:
     """Write cgm_file_metadata.csv from a list of record dicts."""
@@ -1404,6 +1391,7 @@ def _process_case_4_folder(
 
     participants: List[str] = []
     meta_records: List[Dict] = []
+    meta_counter = 1  # Initialize counter
 
     for sub_dir in sub_dirs:
         pid = _extract_numeric_id(sub_dir.name)
@@ -1446,6 +1434,7 @@ def _process_case_4_folder(
             start, end = _date_range_from_series(dev_sub[args.timestamp_column], args)
             meta_records.append(
                 _build_metadata_record(
+                    meta_index=meta_counter, # Pass the counter
                     device_name=dev_name,
                     device_id=dev_id,
                     source_platform=detect_source_platform(dev_name, args.source_platform),
@@ -1459,6 +1448,7 @@ def _process_case_4_folder(
                     data_end=end,
                 )
             )
+            meta_counter += 1
 
     process_participants(participants, args.study_id, Path(args.input_folder), output_dir)
     generate_metadata(meta_records, output_dir)

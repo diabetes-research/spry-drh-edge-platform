@@ -1,2 +1,3 @@
 jsonschema
 git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg
+pandas
