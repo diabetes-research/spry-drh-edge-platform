@@ -1,0 +1,35 @@
+--- STUDY DATA ---
+# Must be exactly 4 letters or digits
+StudyID: CGMA
+StudyName: CGMacros: a scientific dataset for personalized nutrition and diet monitoring
+StartDate: 2021-01-01
+EndDate: 2024-12-31
+TreatmentModalities: Continuous Glucose Monitoring (CGM), Diet Monitoring, Microbiome Analysis, Physical Activity Tracking
+FundingSource: National Science Foundation award No. 2014475
+NCTNumber: NCT04991142
+StudyDescription: Multimodal dataset from 45 participants (Healthy, Pre-diabetes, T2D) including CGM, food macronutrients, food photographs, and gut microbiome profiles.
+
+---- INSTITUTIONS (Use ; for multiple) ---
+InstitutionNames: Sansum Diabetes Research Institute (SDRI)
+Cities: Santa Barbara
+States: CA
+Countries: USA
+
+--- PERSONNEL (Use ; for multiple) ---
+# Primary investigators (will be linked to authors automatically if names match)
+Investigators: Ricardo Gutierrez-Osuna; David Kerr; Bobak Mortazavi; Anurag Das
+InvestigatorEmails: 
+
+# List all authors as they appear in the citation
+Authors: Ricardo Gutierrez-Osuna; David Kerr; Bobak Mortazavi; Anurag Das; Namino Glanz; Wendy Bevier; Rony Santiago
+
+--- LABS & SITES ---
+LabNames: Digital Health Lab
+LabPIs: Ricardo Gutierrez-Osuna
+SiteNames: Sansum Diabetes Research Institute Recruitment Center
+SiteTypes: Clinical Research site
+
+--- PUBLICATIONS ---
+PubTitles: CGMacros: a scientific dataset for personalized nutrition and diet monitoring
+DOIs: 10.13026/3z8q-x658
+PubSites: PhysioNet
