@@ -1,16 +1,12 @@
-import pandas as pd
+import pandas as pd 
 import re
 import os
 import argparse
 
 # CONFIGURATION
-INPUT_FILE = 'study-info.txt'
-OUTPUT_DIR = './supporting-study-data'
 STUDY_ID_PATTERN = r"^[A-Z0-9]{4}$" 
 GENERAL_ID_PATTERN = r"^[A-Z0-9][A-Z0-9-]{1,12}[A-Z0-9]$"
 
-if not os.path.exists(OUTPUT_DIR): 
-    os.makedirs(OUTPUT_DIR)
 
 def validate(id_str, pattern):
     if not re.match(pattern, id_str):

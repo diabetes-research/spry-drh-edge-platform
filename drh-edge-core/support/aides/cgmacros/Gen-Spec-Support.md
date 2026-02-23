@@ -17,18 +17,24 @@ The primary goal of this tool is to streamline the creation of metadata files fo
 
 Researchers can execute the generator via the command line by providing the input file and a target directory for the results.
 
-**Command Syntax:**
+**Env setup:**
 
 ```bash
 cd drh-edge-core
-python3 support/aides/generate-study-supporting-files.py <input_file_path> <output_directory_path>
+./setup.sh
+source venv/bin/activate.fish # if fish shell
+```
 
+**Command Syntax:**
+
+```bash
+venv/bin/python3 support/aides/cgmacros/generate-study-supporting-files.py <input_file_path> <output_directory_path>
 ```
 
 **Example Run (CGMacros):**
 
 ```bash
-python3 support/aides/generate-study-supporting-files.py support/aides/cgmacros-study-info.txt examples/cgm-macros-supporting-data
+venv/bin/python3 support/aides/cgmacros/generate-study-supporting-files.py support/aides/cgmacros/cgmacros-study-info.txt examples/cgm-macros-supporting-data
 ```
 
 ### Input File Requirements

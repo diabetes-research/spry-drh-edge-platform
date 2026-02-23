@@ -1,10 +1,6 @@
 # CGMacros DRH Content Generator — CGM Data Standardization CLI
 
-
-
 ## Part 1 — User Guide
-
-
 
 ### Overview
 
@@ -73,12 +69,21 @@ The script scans device name strings to assign the `source_platform` field autom
 
 ### Execution Guide
 
+**Env setup:**
+
+```bash
+cd drh-edge-core
+./setup.sh
+source venv/bin/activate.fish # if fish shell
+```
+
+
 #### Example Command (CGMacros — Case 4)
 
 Use this for datasets where IDs are folder names (e.g., `CGMacros-001`) and files contain multiple device streams:
 
 ```bash
-python3 support/aides/cgm-macros-content-generator.py \
+venv/bin/python3 support/aides/cgmacros/cgm-macros-content-generator.py \
         --cgm-distribution multiple_device_cgm_multiple_participants_single_file \
         --cgm-file         "examples/raw/CGMacros_dateshifted365/CGMacros" \
         --input-folder     "examples/raw/CGMacros_dateshifted365/CGMacros" \

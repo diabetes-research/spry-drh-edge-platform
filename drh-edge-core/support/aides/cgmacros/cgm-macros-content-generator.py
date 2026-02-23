@@ -32,7 +32,7 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
 ► Git Bash (MINGW64) / macOS Terminal / Ubuntu / WSL
   Line continuation: single backslash  \
 
-    python3 support/aides/cgm-macros-content-generator.py \
+    venv/bin/python3 support/aides/cgmacros/cgm-macros-content-generator.py \
         --cgm-distribution multiple_device_cgm_multiple_participants_single_file \
         --cgm-file         "examples/raw/CGMacros_dateshifted365/CGMacros" \
         --input-folder     "examples/raw/CGMacros_dateshifted365/CGMacros" \
@@ -44,7 +44,7 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
         --device2-name       "Dexcom G6 Pro" \
         --device2-id         "DEXCOM-001" \
         --device2-cgm-column "Dexcom GL" \
-        --output-folder      "examples/cgm-macros-output" \
+        --output-folder      "examples/cgm-macros-output1" \
         --study-id           "CGMA" \
         --study-name         "CGMacros: a scientific dataset for personalized nutrition and diet monitoring" \
         --study-start-date   "2021-01-01" \
@@ -53,58 +53,6 @@ Shell-specific usage examples (CGMacros – Case 4, multi-device single folder)
         --funding-source     "National Science Foundation award No. 2014475" \
         --nct-number         "NCT04991142" \
         --study-description  "A dataset containing multimodal information from two CGMs, food macronutrients, food photographs, and physical activity, from 45 participants (15 healthy, 16 pre-diabetes, 14 Type 2 diabetes) over ten consecutive days." \
-        --derive-date-range  true
-
-► PowerShell (Windows)
-  Line continuation: backtick  `
-
-    python3 support/aides/cgm-macros-content-generator.py `
-        --cgm-distribution multiple_device_cgm_multiple_participants_single_file `
-        --cgm-file         "examples/raw/CGMacros_dateshifted365/CGMacros" `
-        --input-folder     "examples/raw/CGMacros_dateshifted365/CGMacros" `
-        --timestamp-column "Timestamp" `
-        --participant-id-column "FOLDER_ID" `
-        --device1-name       "Abbott FreeStyle Libre" `
-        --device1-id         "LIBRE-001" `
-        --device1-cgm-column "Libre GL" `
-        --device2-name       "Dexcom G6 Pro" `
-        --device2-id         "DEXCOM-001" `
-        --device2-cgm-column "Dexcom GL" `
-        --output-folder      "examples/cgm-macros-output" `
-        --study-id           "CGMA" `
-        --study-name         "CGMacros: a scientific dataset for personalized nutrition and diet monitoring" `
-        --study-start-date   "2021-01-01" `
-        --study-end-date     "2024-12-31" `
-        --treatment-modalities "Continuous Glucose Monitoring,Food Macronutrient Logging,Physical Activity Tracking,Gut Microbiome Profiling" `
-        --funding-source     "National Science Foundation award No. 2014475" `
-        --nct-number         "NCT04991142" `
-        --study-description  "A dataset containing multimodal information from two CGMs, food macronutrients, food photographs, and physical activity, from 45 participants (15 healthy, 16 pre-diabetes, 14 Type 2 diabetes) over ten consecutive days." `
-        --derive-date-range  true
-
-► Windows CMD
-  Line continuation: caret  ^
-
-    python3 support/aides/cgm-macros-content-generator.py ^
-        --cgm-distribution multiple_device_cgm_multiple_participants_single_file ^
-        --cgm-file         "examples/raw/CGMacros_dateshifted365/CGMacros" ^
-        --input-folder     "examples/raw/CGMacros_dateshifted365/CGMacros" ^
-        --timestamp-column "Timestamp" ^
-        --participant-id-column "FOLDER_ID" ^
-        --device1-name       "Abbott FreeStyle Libre" ^
-        --device1-id         "LIBRE-001" ^
-        --device1-cgm-column "Libre GL" ^
-        --device2-name       "Dexcom G6 Pro" ^
-        --device2-id         "DEXCOM-001" ^
-        --device2-cgm-column "Dexcom GL" ^
-        --output-folder      "examples/cgm-macros-output" ^
-        --study-id           "CGMA" ^
-        --study-name         "CGMacros: a scientific dataset for personalized nutrition and diet monitoring" ^
-        --study-start-date   "2021-01-01" ^
-        --study-end-date     "2024-12-31" ^
-        --treatment-modalities "Continuous Glucose Monitoring,Food Macronutrient Logging,Physical Activity Tracking,Gut Microbiome Profiling" ^
-        --funding-source     "National Science Foundation award No. 2014475" ^
-        --nct-number         "NCT04991142" ^
-        --study-description  "A dataset containing multimodal information from two CGMs, food macronutrients, food photographs, and physical activity, from 45 participants (15 healthy, 16 pre-diabetes, 14 Type 2 diabetes) over ten consecutive days." ^
         --derive-date-range  true
 
 Note:
@@ -883,7 +831,7 @@ def _build_metadata_record(
         "device_id":               device_id,
         "source_platform":         auto_platform,
         "patient_id":              final_patient_id,
-        "file_name":               Path(file_name).name,
+        "file_name":               Path(file_name).stem,
         "file_format":             _detect_format(file_name),
         "file_upload_date":        _now_utc_date(),
         "data_start_date":         data_start,
