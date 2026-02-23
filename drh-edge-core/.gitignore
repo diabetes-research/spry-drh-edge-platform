@@ -3,3 +3,4 @@ temp
 study-db-archive
 node_modules
 .envrc
+.env

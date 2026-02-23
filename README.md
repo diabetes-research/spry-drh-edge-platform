@@ -41,7 +41,7 @@ Before starting, ensure your local machine is configured with the necessary core
 
 Install each tool using the instructions below, then run the corresponding verification command to confirm the correct version is active.
 
-#### Python 3.8+
+#### 1. Python 3.8+
 
 **Ubuntu / Ubuntu under WSL:**
 
@@ -64,7 +64,7 @@ python3 --version
 
 ---
 
-#### Spry
+#### 2. Spry
 
 Follow the installation steps at [Spry Docs](https://docs.opsfolio.com/spry/getting-started/installation).
 
@@ -76,7 +76,7 @@ spry --version
 
 ---
 
-#### Surveilr (v3.10+)
+#### 3. Surveilr (v3.10+)
 
 Follow the installation steps at [Surveilr Docs](https://docs.opsfolio.com/surveilr/core/installation).
 
@@ -89,25 +89,53 @@ surveilr --version
 
 ---
 
-### macOS Environment Setup
+## Environment & State Management
 
-On macOS, the default shell is `zsh`. Environment variables must be configured in `~/.zshrc` . For any step in this guide that asks you to export a variable or add a line to your shell profile, use `~/.zshrc`.
+To ensure reliability, the platform uses a local `.env` file (generated per study) and a hidden virtual environment (`.venv`).
 
-After making any changes to `~/.zshrc`, reload the file for changes to take effect in your current session:
+### The Reset & Setup Tools
+
+| Script | Purpose | When to run |
+| --- | --- | --- |
+| `reset.sh` | Wipes the database, cache, and deletes the `.venv`. | Whenever switching datasets, runbooks, or after an error. |
+| `setup.sh` | Manually creates the `.venv` and installs dependencies. | Before running **Independent Support Scripts** manually. |
+
+### ⚠️ Mandatory Migration & Manual Cleanup
+
+If you change study values in your Runbook or switch between different `.md` files, you **must** ensure the virtual environment (`.venv`) is completely wiped to prevent configuration "poisoning."
+
+#### 1. Clear Legacy Shell Variables
+
+Shell exports (like those previously used in `direnv`) have the highest priority and will override your `.env` file.
+
+- **Action**: Open `~/.bashrc` or `~/.zshrc` and delete any lines exporting `STUDY_DATA_PATH`, `TENANT_ID`, or `PORT`.
+- **Action**: Run `direnv deny` and delete any old `.envrc` files.
+- **Apply**: Run `source ~/.bashrc` (or `~/.zshrc`).
+
+#### 2. Standard Reset
+
+Run the reset script located in `drh-edge-core/`:
 
 ```bash
-source ~/.zshrc
+./reset.sh
+
 ```
 
-Before running the pipeline, always verify your environment variables are set correctly:
+#### 3. Manual Fail-safe (If `.venv` persists)
 
-```bash
-echo $STUDY_DATA_PATH
-echo $TENANT_ID
-echo $TENANT_NAME
-```
+If the `.venv` folder still exists after running `./reset.sh`, it is likely locked by a background process (like `surveilr web-ui` or an IDE extension). **You must delete it manually** before proceeding:
 
-If any variable returns empty, re-run the `prepare-env` task and reload your shell configuration.
+- **Kill Locks**: `pkill -9 python3 || true`
+- **Force Delete**: `rm -rf .venv || sudo rm -rf .venv`
+- **Verify**: `ls -d .venv` (Should return a "No such file" error).
+
+---
+
+### 4. Finalized Execution Order
+
+1. **Initialize Environment**: `spry rb task prepare-env [your-file].md`
+2. **Clean State**: Run `./reset.sh` (and verify `.venv` is gone).
+3. **Execute Pipeline**: `spry rb task prepare-db-deploy-server [your-file].md`
 
 ---
 
@@ -163,19 +191,13 @@ Before running the pipeline, verify that your dataset structure aligns with the 
 ```bash
 # Initialize the environment variables defined in the Markdown file
 spry rb task prepare-env [your-markdown-file].md
-
-# Allow direnv to load the new variables into your current shell
-direnv allow
 ```
 
 **Example:**
 
 ```bash
 spry rb task prepare-env drh-dexcom-clarity.md
-direnv allow
 ```
-
-> **macOS users**: If `direnv allow` does not load variables into your shell, ensure you have added `eval "$(direnv hook zsh)"` to your `~/.zshrc` and run `source ~/.zshrc`. Then verify variables are set using `echo $STUDY_DATA_PATH` before proceeding.
 
 ### Step 3: Execute the Pipeline
 
@@ -208,19 +230,30 @@ sudo kill $(sudo lsof -t -i:9227)
 
 ## 5. Environment Cleanup & Tap Preparation
 
-To ensure a clean environment and prevent file permission errors, run the reset script before executing your pipeline.
-
-**Run the Reset Script:**
+Before executing your pipeline, always run the reset script from the `drh-edge-core/` directory:
 
 ```bash
 ./reset.sh
+
 ```
 
 **What this does:**
 
-- **Sets Permissions**: Automatically marks all Python files in the `singer-tap/` directory as executable.
-- **Database Cleanup**: Removes any existing `resource-surveillance.sqlite.db` to prevent data contamination from previous runs.
-- **Artifact Removal**: Deletes temporary UI and source artifacts (like `dev-src.auto`).
+* **Terminates Processes**: Stops any active Python processes to release file locks.
+* **Database Cleanup**: Removes the `resource-surveillance.sqlite.db` and associated cache files (`.db-shm`, `.db-wal`) to prevent data contamination.
+* **Artifact Removal**: Deletes temporary UI source artifacts like `dev-src.auto`.
+* **Sets Permissions**: Automatically marks all Python files in the `singer-tap/` directory as executable.
+* **Wipes Virtual Environment**: Deletes the `.venv` folder to force a fresh, clean Python bootstrap on the next run.
+
+### 💡 Manual Fail-safe
+
+If the `.venv` folder still exists after running `./reset.sh`, it may be locked by a background process (like an IDE or `surveilr web-ui`). You must delete it manually:
+
+```bash
+pkill -9 python3 || true
+rm -rf .venv || sudo rm -rf .venv
+
+```
 
 ---
 
@@ -245,8 +278,7 @@ sudo kill $(sudo lsof -t -i:9227)
 
 1. **Clean**: `./reset.sh`
 2. **Configure**: `spry rb task prepare-env [your-markdown-file].md`
-3. **Initialize Environment**: `direnv allow`
-4. **Execute**: `spry rb task prepare-db-deploy-server [your-markdown-file].md`
+3. **Execute**: `spry rb task prepare-db-deploy-server [your-markdown-file].md`
 
 ---
 

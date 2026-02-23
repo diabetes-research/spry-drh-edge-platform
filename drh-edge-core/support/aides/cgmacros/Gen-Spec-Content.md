@@ -74,16 +74,20 @@ The script scans device name strings to assign the `source_platform` field autom
 ```bash
 cd drh-edge-core
 ./setup.sh
-source venv/bin/activate.fish # if fish shell
+# Note: Use .venv (hidden) to match the platform reset logic
+source .venv/bin/activate.fish # if fish shell
+# OR
+source .venv/bin/activate      # if bash/zsh
 ```
 
+---
 
 #### Example Command (CGMacros — Case 4)
 
 Use this for datasets where IDs are folder names (e.g., `CGMacros-001`) and files contain multiple device streams:
 
 ```bash
-venv/bin/python3 support/aides/cgmacros/cgm-macros-content-generator.py \
+.venv/bin/python3 support/aides/cgmacros/cgm-macros-content-generator.py \
         --cgm-distribution multiple_device_cgm_multiple_participants_single_file \
         --cgm-file         "examples/raw/CGMacros_dateshifted365/CGMacros" \
         --input-folder     "examples/raw/CGMacros_dateshifted365/CGMacros" \

@@ -28,13 +28,13 @@ source venv/bin/activate.fish # if fish shell
 **Command Syntax:**
 
 ```bash
-venv/bin/python3 support/aides/cgmacros/generate-study-supporting-files.py <input_file_path> <output_directory_path>
+.venv/bin/python3 support/aides/cgmacros/generate-study-supporting-files.py <input_file_path> <output_directory_path>
 ```
 
 **Example Run (CGMacros):**
 
 ```bash
-venv/bin/python3 support/aides/cgmacros/generate-study-supporting-files.py support/aides/cgmacros/cgmacros-study-info.txt examples/cgm-macros-supporting-data
+.venv/bin/python3 support/aides/cgmacros/generate-study-supporting-files.py support/aides/cgmacros/cgmacros-study-info.txt examples/cgm-macros-supporting-data1
 ```
 
 ### Input File Requirements

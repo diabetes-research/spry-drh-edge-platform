@@ -1,9 +1,9 @@
 ---
 sqlpage-conf:
-  database_url: ${env.SPRY_DB}
+  database_url: "sqlite://resource-surveillance.sqlite.db?mode=rwc"
   web_root: "./dev-src.auto"
   allow_exec: true
-  port: ${env.PORT}
+  port: 9227
 ---
 
 # Diabetes Research Hub (DRH) SQLPage Application
@@ -24,9 +24,9 @@ sql * --interpolate --injectable
 
 ## Setup
 
-## Environment variables and .envrc
+## Environment variables and .env
 
-This project reads configuration from environment variables. All variables listed below must be set in your `.envrc` file for the pipeline to run.
+This project reads configuration from environment variables. All variables listed below must be set in your `.env` file for the pipeline to run.
 
 ### Pipeline & Study Configuration (Required for `prepare-db-deploy-server` task)
 
@@ -51,34 +51,35 @@ Recommended practice is to keep these values in a local, directory-scoped enviro
 
 POSIX-style example (bash/zsh):
 
-```envrc prepare-env -C ./.envrc --gitignore -X  --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
-export SPRY_DB="sqlite://resource-surveillance.sqlite.db?mode=rwc"
-export PORT=9227
-export STUDY_DATA_PATH="raw-data/dexcom-clarity-cgm/"
-export TENANT_ID="DSG"
-export TENANT_NAME="DSG"
+```envrc prepare-env -C ./.env --gitignore -X  --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
+OTEL_SERVICE_NAME="tap-dexcom-clarity" 
+OTEL_SERVICE_VERSION="1.0.0"
+STUDY_DATA_PATH="raw-data/dexcom-clarity-cgm/"
+TENANT_ID="DSG"
+TENANT_NAME="DSG"
 ```
 
-Then run `direnv allow` in this project directory to load the `.envrc` into your shell environment. direnv will evaluate `.envrc` only after you explicitly allow it.
-
------
+---
 
 ## Security and repository hygiene
 
-- Never commit secrets or production credentials into `.envrc`. Treat `.envrc` like a local-only file.
-- Add `.envrc` to your local `.gitignore` if you keep secrets there. Alternatively commit a `.envrc.example` or `.envrc.sample` with safe, non-secret defaults to document expected variables.
-- The SQLite file (e.g. `resource-surveillance.sqlite.db`) is a binary database file — you will usually not check this into version control. Add that filename or the `data/` directory to `.gitignore` as well.
+- **Never commit secrets** or production credentials into `.env`. Treat `.env` like a local-only file for sensitive data.
+- **Keep `.env` out of Git:** Add `.env` to your `.gitignore`. Instead, commit a `.env.example` with safe, non-secret defaults to document the variables required (e.g., `TENANT_ID`, `STUDY_DATA_PATH`).
+- **Database Files:** The SQLite file (e.g., `resource-surveillance.sqlite.db`) is a binary database—do not check this into version control. Add it to your `.gitignore` to keep your repository clean.
 
-Why these variables matter here
+### Why these variables matter here
 
-- The YAML header at the top of this `drh-dexcom-clarity.md` reads `database_url: ${env.SPRY_DB}` and `port: ${env.PORT}` — Spry and the SQLPage tooling will substitute those environment values when building or serving the site.
-- The `prepare-db-deploy-server` task explicitly checks for `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME` and will halt if any are missing.
-- If `SPRY_DB` is not set, the tooling may fail to find the database or fall back to defaults; explicitly setting it ensures predictable, repeatable dev runs.
+- **Configuration:** The YAML header at the top of this `drh-dexcom-clarity.md` is hardcoded to use `database_url: "sqlite://resource-surveillance.sqlite.db?mode=rwc"` and `port: 9227`. This ensures the SQLPage UI always connects to the correct database and starts on a consistent port without requiring manual environment exports.
+- **Task Validation:** While the UI is hardcoded, the `prepare-db-deploy-server` task still sources the `.env` file to validate `STUDY_DATA_PATH`, `TENANT_ID`, and `TENANT_NAME`. These are critical for the Python tap to correctly categorize and ingest your data.
+- **Predictability:** By hardcoding the database path and port in the Markdown header, we ensure that `spry` and `surveilr` always point to the exact same file, preventing "missing table" errors during ETL runs.
 
-Quick troubleshooting
+### Quick troubleshooting
 
-- If the server does not start on the expected port, verify `echo $PORT` (or `echo $SPRY_DB`) in your shell to confirm values are loaded.
-- If direnv appears not to load `.envrc`, re-run `direnv allow` and ensure your shell config contains the direnv hook.
+- **Variable Check:** If the ingestion fails or data is missing, run `echo $STUDY_DATA_PATH` in your terminal. If it's empty, ensure you have run the preparation task which sources the `.env` file.
+- **Port Conflicts:** If the server fails to start, verify that port `9227` isn't being used by another process. You can change this integer in the YAML header if a different port is required.
+- **Clean Slates:** If you run into schema issues, run the `prepare-db-deploy-server` task again; it will perform a cleanup by removing the existing `.db` file and re-ingesting the data from scratch.
+
+---
 
 ### Instructions
 
@@ -106,6 +107,18 @@ Quick troubleshooting
 ```bash prepare-db-deploy-server   --descr "Environment cleanup, Data ingestion via Singer tap, Validation-Gated ETL, and SQLPage UI deployment."
 #!/bin/bash
 set -u
+
+# --- SOURCING THE ENVIRONMENT ---
+# Since this task runs from the platform root where the .md and .env live:
+if [ -f ".env" ]; then
+    set -a            # Export all variables in .env to the environment
+    source ".env"
+    set +a
+    echo "DEBUG: Environment sourced from $(pwd)/.env"
+else
+    echo "WARN: .env file not found in $(pwd). Ensure it exists at the platform root."
+fi
+# -------------------------------
 # 1. Cleanup
 rm -f resource-surveillance.sqlite.db 
 rm -rf dev-src.auto 

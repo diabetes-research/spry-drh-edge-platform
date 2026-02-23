@@ -1,24 +1,15 @@
+-- Optimized Schema Log Extraction
 CREATE VIEW IF NOT EXISTS drh_schema_logs AS
-WITH Guardrail AS (
-    SELECT COUNT(*) as total FROM uniform_resource LIMIT 1
-),
-SchemaData AS (
-    SELECT 
-        json_extract(content, '$.stream') AS schema_name,
-        json_extract(content, '$.schema.properties') AS properties_json,
-        json_extract(content, '$.emitted_at') AS detected_at
-    FROM uniform_resource, Guardrail
-    WHERE Guardrail.total > 1 
-      AND json_valid(content)
-      AND json_extract(content, '$.type') = 'SCHEMA'
-)
 SELECT 
-    schema_name,
+    json_extract(content, '$.stream') AS schema_name,
     COUNT(p.key) AS column_count,
     GROUP_CONCAT(p.key, ', ') AS column_names,
-    MAX(detected_at) AS last_updated
-FROM SchemaData, json_each(properties_json) AS p
-GROUP BY schema_name;
+    MAX(json_extract(content, '$.emitted_at')) AS last_updated
+FROM uniform_resource
+CROSS JOIN json_each(json_extract(content, '$.schema.properties')) AS p
+WHERE json_extract(content, '$.type') = 'SCHEMA'
+  AND json_valid(content)
+GROUP BY 1;
 
 
 
@@ -38,7 +29,9 @@ SELECT
 FROM uniform_resource
 WHERE json_extract(content, '$.type') = 'RECORD'
   AND json_extract(content, '$.stream') IN ('author', 'investigator')
-  AND json_extract(content, '$.record.email') IS NOT NULL;
+  -- Ensure email exists AND is not an empty string before attempting anonymization
+  AND json_extract(content, '$.record.email') IS NOT NULL
+  AND json_extract(content, '$.record.email') != '';
 
 -- ==========================================================
 --  DATA UPDATE
@@ -334,7 +327,7 @@ WHERE json_extract(content, '$.stream') = 'institution'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 4. View for investigator
-CREATE VIEW IF NOT EXISTS drh_investigator AS
+CREATE TABLE IF NOT EXISTS drh_investigator AS
 SELECT     
     json_extract(content, '$.record.investigator_id') AS investigator_id,
     json_extract(content, '$.record.investigator_name') AS investigator_name,
@@ -349,7 +342,7 @@ WHERE json_extract(content, '$.stream') = 'investigator'
 
 
 -- 5. View for participant
-CREATE VIEW IF NOT EXISTS drh_participant AS
+CREATE TABLE IF NOT EXISTS drh_participant AS
 SELECT     
     json_extract(content, '$.record.participant_id') AS participant_id,
     json_extract(content, '$.record.study_id') AS study_id,
@@ -419,7 +412,7 @@ WHERE json_extract(content, '$.stream') = 'study'
 -- METADATA VIEWS
 -- =====================================================================
   -- 1. View for cgm_file_metadata
-CREATE VIEW IF NOT EXISTS drh_cgm_file_metadata AS
+CREATE TABLE IF NOT EXISTS drh_cgm_file_metadata AS
 SELECT 
     json_extract(content, '$.record.metadata_id') AS metadata_id,
     json_extract(content, '$.record.devicename') AS devicename,

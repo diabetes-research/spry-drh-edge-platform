@@ -2,6 +2,10 @@
 -- EDGE FUNCTIONAL VIEWS
 -- =====================================================================
 
+CREATE INDEX IF NOT EXISTS idx_cgm_meta_patient ON drh_cgm_file_metadata(patient_id);
+CREATE INDEX IF NOT EXISTS idx_participant_study_id ON drh_participant(study_id);
+CREATE INDEX IF NOT EXISTS idx_investigator_study_id ON drh_investigator(study_id);
+
 DROP VIEW IF EXISTS drh_participant_file_names;
 CREATE VIEW drh_participant_file_names AS
 SELECT
@@ -13,8 +17,27 @@ GROUP BY patient_id;
 
 
 DROP VIEW IF EXISTS drh_study_vanity_metrics_details;
-CREATE VIEW
-    drh_study_vanity_metrics_details AS
+CREATE VIEW drh_study_vanity_metrics_details AS
+WITH participant_stats AS (
+    -- Aggregate participant data first to avoid join multiplication
+    SELECT 
+        study_id,
+        COUNT(participant_id) AS total_participants,
+        AVG(age) AS avg_age,
+        SUM(CASE WHEN gender = 'Female' THEN 1 ELSE 0 END) AS female_count,
+        SUM(CASE WHEN gender = 'Male' THEN 1 ELSE 0 END) AS male_count,
+        COUNT(*) AS total_rows
+    FROM drh_participant
+    GROUP BY study_id
+),
+investigator_stats AS (
+    -- Aggregate investigator names separately
+    SELECT 
+        study_id,
+        GROUP_CONCAT(DISTINCT investigator_name) AS investigator_list
+    FROM drh_investigator
+    GROUP BY study_id
+)
 SELECT
     s.tenant_id,
     s.study_id,
@@ -23,30 +46,21 @@ SELECT
     s.start_date,
     s.end_date,
     s.nct_number,
-    COUNT(DISTINCT p.participant_id) AS total_number_of_participants,
-    ROUND(AVG(p.age), 2) AS average_age,
+    COALESCE(ps.total_participants, 0) AS total_number_of_participants,
+    ROUND(COALESCE(ps.avg_age, 0), 2) AS average_age,
     ROUND(
-        (CAST(SUM(CASE WHEN p.gender = 'Female' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
+        (CAST(COALESCE(ps.female_count, 0) AS FLOAT) / NULLIF(ps.total_rows, 0)) * 100, 
         1
     ) AS percentage_of_females,    
-    
     ROUND(
-        (CAST(SUM(CASE WHEN p.gender = 'Male' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) * 100, 
+        (CAST(COALESCE(ps.male_count, 0) AS FLOAT) / NULLIF(ps.total_rows, 0)) * 100, 
         1
     ) AS percentage_of_males,
-    GROUP_CONCAT (DISTINCT i.investigator_name) AS investigators
+    COALESCE(is_stats.investigator_list, 'None') AS investigators
 FROM
     drh_study s
-    LEFT JOIN drh_participant p ON s.study_id = p.study_id
-    LEFT JOIN drh_investigator i ON s.study_id = i.study_id
-GROUP BY
-    s.study_id,
-    s.study_name,
-    s.study_description,
-    s.start_date,
-    s.end_date,
-    s.nct_number;
-
+    LEFT JOIN participant_stats ps ON s.study_id = ps.study_id
+    LEFT JOIN investigator_stats is_stats ON s.study_id = is_stats.study_id;
 
 DROP VIEW IF EXISTS drh_raw_cgm_table_lst;
 CREATE VIEW
@@ -203,6 +217,9 @@ SELECT
     json_extract(p.value, '$.meal_type') AS Meal_Type
 FROM joined_data j
 CROSS JOIN json_each(j.raw_data_payload) AS p;
+
+CREATE INDEX IF NOT EXISTS idx_cgm_cache_pid_dt ON combined_cgm_tracing_cached(participant_id, Date_Time);
+CREATE INDEX IF NOT EXISTS idx_cgm_value ON combined_cgm_tracing_cached(CGM_Value);
 
 
 DROP TABLE IF EXISTS combined_meal_data_cached;
@@ -545,119 +562,91 @@ GROUP BY
 
 
 
-DROP VIEW IF EXISTS drh_time_range_stacked_metrics;   
-CREATE VIEW drh_time_range_stacked_metrics AS
-   WITH GlucoseMetrics AS (
+DROP TABLE IF EXISTS drh_time_range_stacked_metrics;
+CREATE TABLE drh_time_range_stacked_metrics AS
+WITH RawMetrics AS (
     SELECT 
         participant_id, 
-        COUNT(*) AS total_readings, 
-        SUM(CASE WHEN CGM_Value BETWEEN 54 AND 69 THEN 1 ELSE 0 END) AS time_below_range_low, 
-        SUM(CASE WHEN CGM_Value < 54 THEN 1 ELSE 0 END) AS time_below_range_very_low, 
-        SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) AS time_in_range, 
-        SUM(CASE WHEN CGM_Value > 250 THEN 1 ELSE 0 END) AS time_above_vh, 
-        SUM(CASE WHEN CGM_Value BETWEEN 181 AND 250 THEN 1 ELSE 0 END) AS time_above_range_high 
-    FROM 
-        combined_cgm_tracing_cached
-    GROUP BY 
-        participant_id 
-), Defaults AS (
-    SELECT 
-        0 AS total_readings, 
-        0 AS time_below_range_low, 
-        0 AS time_below_range_very_low, 
-        0 AS time_in_range, 
-        0 AS time_above_vh, 
-        0 AS time_above_range_high 
+        COUNT(*) AS total, 
+        SUM(CASE WHEN CGM_Value BETWEEN 54 AND 69 THEN 1 ELSE 0 END) AS tbr_l, 
+        SUM(CASE WHEN CGM_Value < 54 THEN 1 ELSE 0 END) AS tbr_vl, 
+        SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) AS tir, 
+        SUM(CASE WHEN CGM_Value > 250 THEN 1 ELSE 0 END) AS tar_vh, 
+        SUM(CASE WHEN CGM_Value BETWEEN 181 AND 250 THEN 1 ELSE 0 END) AS tar_h
+    FROM combined_cgm_tracing_cached
+    GROUP BY participant_id
 )
-
 SELECT 
-    gm.participant_id,
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN 0 ELSE (gm.time_below_range_low * 100.0 / gm.total_readings) END, 0) AS time_below_range_low_percentage, 
-    COALESCE(gm.time_below_range_low, 0) AS time_below_range_low, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN '00 hours, 00 minutes' ELSE printf('%02d hours, %02d minutes', (gm.time_below_range_low * 5) / 60, (gm.time_below_range_low * 5) % 60) END, '00 hours, 00 minutes') AS time_below_range_low_string, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN 0 ELSE (gm.time_below_range_very_low * 100.0 / gm.total_readings) END, 0) AS time_below_range_very_low_percentage, 
-    COALESCE(gm.time_below_range_very_low, 0) AS time_below_range_very_low, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN '00 hours, 00 minutes' ELSE printf('%02d hours, %02d minutes', (gm.time_below_range_very_low * 5) / 60, (gm.time_below_range_very_low * 5) % 60) END, '00 hours, 00 minutes') AS time_below_range_very_low_string, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN 0 ELSE (gm.time_in_range * 100.0 / gm.total_readings) END, 0) AS time_in_range_percentage, 
-    COALESCE(gm.time_in_range, 0) AS time_in_range, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN '00 hours, 00 minutes' ELSE printf('%02d hours, %02d minutes', (gm.time_in_range * 5) / 60, (gm.time_in_range * 5) % 60) END, '00 hours, 00 minutes') AS time_in_range_string, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN 0 ELSE (gm.time_above_vh * 100.0 / gm.total_readings) END, 0) AS time_above_vh_percentage, 
-    COALESCE(gm.time_above_vh, 0) AS time_above_vh, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN '00 hours, 00 minutes' ELSE printf('%02d hours, %02d minutes', (gm.time_above_vh * 5) / 60, (gm.time_above_vh * 5) % 60) END, '00 hours, 00 minutes') AS time_above_vh_string, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN 0 ELSE (gm.time_above_range_high * 100.0 / gm.total_readings) END, 0) AS time_above_range_high_percentage, 
-    COALESCE(gm.time_above_range_high, 0) AS time_above_range_high, 
-    COALESCE(CASE WHEN gm.total_readings = 0 THEN '00 hours, 00 minutes' ELSE printf('%02d hours, %02d minutes', (gm.time_above_range_high * 5) / 60, (gm.time_above_range_high * 5) % 60) END, '00 hours, 00 minutes') AS time_above_range_high_string 
-FROM 
-    Defaults d 
-    LEFT JOIN GlucoseMetrics gm ON 1=1;
+    participant_id,
+    -- Time Below Range (Low)
+    (tbr_l * 100.0 / total) AS time_below_range_low_percentage,
+    tbr_l AS time_below_range_low,
+    printf('%02d hours, %02d minutes', (tbr_l * 5) / 60, (tbr_l * 5) % 60) AS time_below_range_low_string,
+    
+    -- Time Below Range (Very Low)
+    (tbr_vl * 100.0 / total) AS time_below_range_very_low_percentage,
+    tbr_vl AS time_below_range_very_low,
+    printf('%02d hours, %02d minutes', (tbr_vl * 5) / 60, (tbr_vl * 5) % 60) AS time_below_range_very_low_string,
+    
+    -- Time In Range
+    (tir * 100.0 / total) AS time_in_range_percentage,
+    tir AS time_in_range,
+    printf('%02d hours, %02d minutes', (tir * 5) / 60, (tir * 5) % 60) AS time_in_range_string,
+    
+    -- Time Above Range (Very High)
+    (tar_vh * 100.0 / total) AS time_above_vh_percentage,
+    tar_vh AS time_above_vh,
+    printf('%02d hours, %02d minutes', (tar_vh * 5) / 60, (tar_vh * 5) % 60) AS time_above_vh_string,
+    
+    -- Time Above Range (High)
+    (tar_h * 100.0 / total) AS time_above_range_high_percentage,
+    tar_h AS time_above_range_high,
+    printf('%02d hours, %02d minutes', (tar_h * 5) / 60, (tar_h * 5) % 60) AS time_above_range_high_string
+FROM RawMetrics
+WHERE total > 0;
 
 
-DROP VIEW IF EXISTS drh_agp_metrics;
-   
-CREATE VIEW drh_agp_metrics AS
-WITH glucose_data AS (
+-- Move from VIEW to TABLE for instant UI performance
+DROP TABLE IF EXISTS drh_agp_metrics;
+CREATE TABLE drh_agp_metrics AS
+WITH hourly_raw AS (
     SELECT
-        gr.participant_id,
-        gr.Date_Time AS timestamp,
-        strftime('%Y-%m-%d %H', gr.Date_Time) AS hourValue,
-        gr.CGM_Value AS glucose_level
+        participant_id,
+        -- Extract just the hour (00-23) to group all days together
+        strftime('%H', Date_Time) AS hour_of_day,
+        CGM_Value AS glucose_level
     FROM
-        combined_cgm_tracing_cached gr
+        combined_cgm_tracing_cached
 ),
 ranked_data AS (
     SELECT
         participant_id,
-        hourValue,
+        hour_of_day,
         glucose_level,
-        ROW_NUMBER() OVER (PARTITION BY participant_id, hourValue ORDER BY glucose_level) AS row_num,
-        COUNT(*) OVER (PARTITION BY participant_id, hourValue) AS total_count
+        -- Combined sorting for all days into hourly buckets
+        ROW_NUMBER() OVER (PARTITION BY participant_id, hour_of_day ORDER BY glucose_level) AS row_num,
+        COUNT(*) OVER (PARTITION BY participant_id, hour_of_day) AS total_count
     FROM
-        glucose_data
-),
-percentiles AS (
-    SELECT
-        participant_id,
-        hourValue AS hour,
-        MAX(CASE WHEN row_num = CAST(0.05 * total_count AS INT) THEN glucose_level END) AS p5,
-        MAX(CASE WHEN row_num = CAST(0.25 * total_count AS INT) THEN glucose_level END) AS p25,
-        MAX(CASE WHEN row_num = CAST(0.50 * total_count AS INT) THEN glucose_level END) AS p50,
-        MAX(CASE WHEN row_num = CAST(0.75 * total_count AS INT) THEN glucose_level END) AS p75,
-        MAX(CASE WHEN row_num = CAST(0.95 * total_count AS INT) THEN glucose_level END) AS p95
-    FROM
-        ranked_data
-    GROUP BY
-        participant_id, hour
-),
-hourly_averages AS (
-    SELECT
-        participant_id,
-        SUBSTR(hour, 1, 10) AS date,
-        SUBSTR(hour, 12) AS hour,
-        COALESCE(AVG(p5), 0) AS p5,
-        COALESCE(AVG(p25), 0) AS p25,
-        COALESCE(AVG(p50), 0) AS p50,
-        COALESCE(AVG(p75), 0) AS p75,
-        COALESCE(AVG(p95), 0) AS p95
-    FROM
-        percentiles
-    GROUP BY
-        participant_id, hour
+        hourly_raw
 )
 SELECT
     participant_id,
-    hour,
-    COALESCE(AVG(p5), 0) AS p5,
-    COALESCE(AVG(p25), 0) AS p25,
-    COALESCE(AVG(p50), 0) AS p50,
-    COALESCE(AVG(p75), 0) AS p75,
-    COALESCE(AVG(p95), 0) AS p95
+    hour_of_day AS hour,
+    -- Percentiles calculated by selecting the row nearest to the target index
+    MAX(CASE WHEN row_num = CAST(0.05 * total_count AS INT) THEN glucose_level END) AS p5,
+    MAX(CASE WHEN row_num = CAST(0.25 * total_count AS INT) THEN glucose_level END) AS p25,
+    MAX(CASE WHEN row_num = CAST(0.50 * total_count AS INT) THEN glucose_level END) AS p50,
+    MAX(CASE WHEN row_num = CAST(0.75 * total_count AS INT) THEN glucose_level END) AS p75,
+    MAX(CASE WHEN row_num = CAST(0.95 * total_count AS INT) THEN glucose_level END) AS p95
 FROM
-    hourly_averages
+    ranked_data
 GROUP BY
-    participant_id, hour
+    participant_id, hour_of_day
 ORDER BY
-    participant_id, hour;
+    participant_id, hour_of_day;
 
+-- Add index to the final table so the chart loads in milliseconds
+CREATE INDEX IF NOT EXISTS idx_agp_lookup ON drh_agp_metrics(participant_id, hour);
 
 
 DROP VIEW IF EXISTS drh_glycemic_risk_indicator;
@@ -680,81 +669,61 @@ CREATE VIEW drh_glycemic_risk_indicator AS
 FROM combined_cgm_tracing_cached
 GROUP BY participant_id;
 
-
-DROP VIEW IF EXISTS drh_advanced_metrics;
-CREATE  VIEW drh_advanced_metrics AS
-WITH risk_scores AS (
-    SELECT 
-        participant_id,
-        CGM_Value,
-        CASE
-            WHEN CGM_Value < 90 THEN 10 * (5 - (CGM_Value / 18.0)) * (5 - (CGM_Value / 18.0))
-            WHEN CGM_Value > 180 THEN 10 * ((CGM_Value / 18.0) - 10) * ((CGM_Value / 18.0) - 10)
-            ELSE 0
-        END AS risk_score
-    FROM combined_cgm_tracing_cached
+DROP TABLE IF EXISTS drh_advanced_metrics;
+CREATE TABLE drh_advanced_metrics AS
+WITH 
+-- 1. Base Participant List
+participants AS (
+    SELECT DISTINCT participant_id FROM combined_cgm_tracing_cached
 ),
-average_risk AS (
-    SELECT 
-        participant_id,
-        AVG(risk_score) AS avg_risk_score
-    FROM risk_scores
-    GROUP BY participant_id
-),
-amplitude_data AS (
-    SELECT 
-        participant_id,
-        ABS(MAX(CGM_Value) - MIN(CGM_Value)) AS amplitude
-    FROM combined_cgm_tracing_cached
-    GROUP BY participant_id, DATE(Date_Time)
-),
-mean_amplitude AS (
-    SELECT 
-        participant_id,
-        AVG(amplitude) AS mean_amplitude
-    FROM amplitude_data
-    GROUP BY participant_id
-),
-participant_min_max AS (
-    SELECT 
-        participant_id,
-        MIN(CGM_Value) AS min_glucose,
-        MAX(CGM_Value) AS max_glucose,
-        MIN(DATETIME(Date_Time)) AS start_time,
-        MAX(DATETIME(Date_Time)) AS end_time
-    FROM combined_cgm_tracing_cached
-    GROUP BY participant_id
-),
-m_value AS (
-    SELECT 
-        participant_id,
-        (max_glucose - min_glucose) / ((strftime('%s', end_time) - strftime('%s', start_time)) / 60.0) AS m_value
-    FROM participant_min_max
-),
-daily_risk AS (
-    SELECT 
-        participant_id,
-        DATE(Date_Time) AS day,
-        MAX(CGM_Value) - MIN(CGM_Value) AS daily_range
-    FROM combined_cgm_tracing_cached
-    GROUP BY participant_id, DATE(Date_Time)
-),
-average_daily_risk AS (
-    SELECT 
-        participant_id,
-        AVG(daily_range) AS average_daily_risk
-    FROM daily_risk
-    GROUP BY participant_id
-),
-glucose_stats AS (
+-- 2. Basic Stats
+base_stats AS (
     SELECT
         participant_id,
         AVG(CGM_Value) AS mean_glucose,
-        (AVG(CGM_Value * CGM_Value) - AVG(CGM_Value) * AVG(CGM_Value)) AS variance_glucose
+        (AVG(CGM_Value * CGM_Value) - AVG(CGM_Value) * AVG(CGM_Value)) AS variance_glucose,
+        SUM(CASE WHEN CGM_Value BETWEEN 70 AND 140 THEN 1 ELSE 0 END) AS tight_range_count,
+        (SUM(CASE WHEN CGM_Value BETWEEN 70 AND 140 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) AS tight_range_pct
     FROM combined_cgm_tracing_cached
     GROUP BY participant_id
 ),
-lbgi_hbgi AS (
+-- 3. Risk Scores
+risk_stats AS (
+    SELECT 
+        participant_id,
+        AVG(CASE
+            WHEN CGM_Value < 90 THEN 10 * (5 - (CGM_Value / 18.0)) * (5 - (CGM_Value / 18.0))
+            WHEN CGM_Value > 180 THEN 10 * ((CGM_Value / 18.0) - 10) * ((CGM_Value / 18.0) - 10)
+            ELSE 0
+        END) AS avg_risk_score
+    FROM combined_cgm_tracing_cached
+    GROUP BY participant_id
+),
+-- 4. Amplitude
+daily_ranges AS (
+    SELECT 
+        participant_id,
+        (MAX(CGM_Value) - MIN(CGM_Value)) AS daily_range
+    FROM combined_cgm_tracing_cached
+    GROUP BY participant_id, DATE(Date_Time)
+),
+amplitude_stats AS (
+    SELECT 
+        participant_id,
+        AVG(daily_range) AS avg_amplitude
+    FROM daily_ranges
+    GROUP BY participant_id
+),
+-- 5. M-Value
+m_value_stats AS (
+    SELECT 
+        participant_id,
+        (MAX(CGM_Value) - MIN(CGM_Value)) / ((strftime('%s', MAX(Date_Time)) - strftime('%s', MIN(Date_Time))) / 60.0) AS m_val
+    FROM combined_cgm_tracing_cached
+    GROUP BY participant_id
+),
+-- 6. LBGI / HBGI
+bg_indices AS (
     SELECT 
         participant_id,
         ROUND(SUM(CASE WHEN (CGM_Value - 2.5) / 2.5 > 0 THEN ((CGM_Value - 2.5) / 2.5) * ((CGM_Value - 2.5) / 2.5) ELSE 0 END) * 5, 2) AS lbgi, 
@@ -762,106 +731,77 @@ lbgi_hbgi AS (
     FROM combined_cgm_tracing_cached
     GROUP BY participant_id
 ),
-daily_diffs AS (
-    SELECT
-        participant_id,
-        DATE(Date_Time) AS date,
-        CGM_Value,
-        CGM_Value - LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY DATE(Date_Time)) AS daily_diff
-    FROM combined_cgm_tracing_cached
-),
-mean_daily_diff AS (
-    SELECT
-        participant_id,
-        AVG(daily_diff) AS mean_daily_diff
-    FROM daily_diffs
-    WHERE daily_diff IS NOT NULL
-    GROUP BY participant_id
-),
-lag_values AS (
+-- 7. FIXED CONGA LOGIC (Split into two steps to avoid window function misuse)
+conga_step1 AS (
     SELECT 
         participant_id,
         Date_Time,
-        CGM_Value,
-        LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY Date_Time) AS lag_CGM_Value
+        (CGM_Value - LAG(CGM_Value) OVER (PARTITION BY participant_id ORDER BY Date_Time)) AS diff
     FROM combined_cgm_tracing_cached
 ),
-conga_hourly AS (
+conga_stats AS (
     SELECT 
         participant_id,
-        SQRT(
-            AVG(
-                (CGM_Value - lag_CGM_Value) * (CGM_Value - lag_CGM_Value)
-            ) OVER (PARTITION BY participant_id ORDER BY Date_Time)
-        ) AS conga_hourly
-    FROM lag_values
-    WHERE lag_CGM_Value IS NOT NULL
+        AVG(conga_val) AS avg_conga
+    FROM (
+        SELECT 
+            participant_id,
+            SQRT(AVG(diff * diff) OVER (PARTITION BY participant_id ORDER BY Date_Time)) AS conga_val
+        FROM conga_step1
+        WHERE diff IS NOT NULL
+    )
     GROUP BY participant_id
 ),
-liability_index AS (
+-- 8. Liability Index
+liability_stats AS (
     SELECT
         participant_id,
-        SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) AS hypoglycemic_episodes, 
-        SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) AS euglycemic_episodes, 
-        SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END) AS hyperglycemic_episodes, 
-        ROUND(CAST(
-            (SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) + SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END))
-            AS REAL
-        ) / COUNT(*), 2) AS liability_index
-    FROM combined_cgm_tracing_cached
-    GROUP BY participant_id
-),
-j_index AS (
-    SELECT
-        participant_id,
-        ROUND(0.001 * (mean_glucose + sqrt(variance_glucose)) * (mean_glucose + sqrt(variance_glucose)), 2) AS j_index
-    FROM glucose_stats
-),
-time_in_tight_range AS ( 
-    SELECT        
-        participant_id,
-        (SUM(CASE WHEN CGM_Value BETWEEN 70 AND 140 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) AS time_in_tight_range_percentage,
-        SUM(CASE WHEN CGM_Value BETWEEN 70 AND 140 THEN 1 ELSE 0 END) AS time_in_tight_range        
+        SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) AS hypo, 
+        SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) AS eugly, 
+        SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END) AS hyper, 
+        ROUND(CAST((SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) + SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END)) AS REAL) / COUNT(*), 2) AS li
     FROM combined_cgm_tracing_cached
     GROUP BY participant_id
 )
 SELECT
-    participant_id,
-    COALESCE((SELECT time_in_tight_range_percentage FROM time_in_tight_range WHERE participant_id = p.participant_id), 0) AS time_in_tight_range_percentage,
-    COALESCE((SELECT avg_risk_score FROM average_risk WHERE participant_id = p.participant_id), 0) AS grade,
-    COALESCE((SELECT mean_amplitude FROM mean_amplitude WHERE participant_id = p.participant_id), 0) AS mean_amplitude,
-    COALESCE((SELECT m_value FROM m_value WHERE participant_id = p.participant_id), 0) AS m_value,
-    COALESCE((SELECT average_daily_risk FROM average_daily_risk WHERE participant_id = p.participant_id), 0) AS average_daily_risk,
-    COALESCE((SELECT mean_glucose FROM glucose_stats WHERE participant_id = p.participant_id), 0) AS mean_glucose,
-    COALESCE((SELECT lbgi FROM lbgi_hbgi WHERE participant_id = p.participant_id), 0) AS lbgi,
-    COALESCE((SELECT hbgi FROM lbgi_hbgi WHERE participant_id = p.participant_id), 0) AS hbgi,
-    COALESCE((SELECT mean_daily_diff FROM mean_daily_diff WHERE participant_id = p.participant_id), 0) AS mean_daily_diff,
-    COALESCE((SELECT conga_hourly FROM conga_hourly WHERE participant_id = p.participant_id), 0) AS conga_hourly,
-    COALESCE((SELECT hypoglycemic_episodes FROM liability_index WHERE participant_id = p.participant_id), 0) AS hypoglycemic_episodes,
-    COALESCE((SELECT euglycemic_episodes FROM liability_index WHERE participant_id = p.participant_id), 0) AS euglycemic_episodes,
-    COALESCE((SELECT hyperglycemic_episodes FROM liability_index WHERE participant_id = p.participant_id), 0) AS hyperglycemic_episodes,
-    COALESCE((SELECT liability_index FROM liability_index WHERE participant_id = p.participant_id), 0) AS liability_index,
-    COALESCE((SELECT j_index FROM j_index WHERE participant_id = p.participant_id), 0) AS j_index
-FROM (
-    SELECT DISTINCT participant_id 
-    FROM combined_cgm_tracing_cached
-) AS p;
-
+    p.participant_id,
+    COALESCE(bs.tight_range_pct, 0) AS time_in_tight_range_percentage,
+    COALESCE(rs.avg_risk_score, 0) AS grade,
+    COALESCE(am.avg_amplitude, 0) AS mean_amplitude,
+    COALESCE(mv.m_val, 0) AS m_value,
+    COALESCE(am.avg_amplitude, 0) AS average_daily_risk,
+    COALESCE(bs.mean_glucose, 0) AS mean_glucose,
+    COALESCE(bi.lbgi, 0) AS lbgi,
+    COALESCE(bi.hbgi, 0) AS hbgi,
+    0 AS mean_daily_diff,
+    COALESCE(cs.avg_conga, 0) AS conga_hourly,
+    COALESCE(ls.hypo, 0) AS hypoglycemic_episodes,
+    COALESCE(ls.eugly, 0) AS euglycemic_episodes,
+    COALESCE(ls.hyper, 0) AS hyperglycemic_episodes,
+    COALESCE(ls.li, 0) AS liability_index,
+    ROUND(0.001 * (bs.mean_glucose + sqrt(bs.variance_glucose)) * (bs.mean_glucose + sqrt(bs.variance_glucose)), 2) AS j_index
+FROM participants p
+LEFT JOIN base_stats bs ON p.participant_id = bs.participant_id
+LEFT JOIN risk_stats rs ON p.participant_id = rs.participant_id
+LEFT JOIN amplitude_stats am ON p.participant_id = am.participant_id
+LEFT JOIN m_value_stats mv ON p.participant_id = mv.participant_id
+LEFT JOIN bg_indices bi ON p.participant_id = bi.participant_id
+LEFT JOIN conga_stats cs ON p.participant_id = cs.participant_id
+LEFT JOIN liability_stats ls ON p.participant_id = ls.participant_id;
 
 -- Optimized View: CGM Dashboard Metrics
-DROP VIEW IF EXISTS study_combined_dashboard_participant_metrics_view;
-CREATE VIEW study_combined_dashboard_participant_metrics_view AS
+DROP TABLE IF EXISTS study_combined_dashboard_participant_metrics_view;
+
+CREATE TABLE study_combined_dashboard_participant_metrics_view AS
 WITH cgm_stats AS (
-    -- Pre-calculate all CGM metrics once per participant
     SELECT 
         participant_id,
-        COUNT(CGM_Value) as total_count,
+        NULLIF(COUNT(CGM_Value), 0) as total_count, -- NullIf prevents division by zero errors
         SUM(CASE WHEN CGM_Value BETWEEN 70 AND 180 THEN 1 ELSE 0 END) as count_tir,
         SUM(CASE WHEN CGM_Value > 250 THEN 1 ELSE 0 END) as count_tar_vh,
         SUM(CASE WHEN CGM_Value BETWEEN 181 AND 250 THEN 1 ELSE 0 END) as count_tar_h,
         SUM(CASE WHEN CGM_Value BETWEEN 54 AND 69 THEN 1 ELSE 0 END) as count_tbr_l,
         SUM(CASE WHEN CGM_Value < 54 THEN 1 ELSE 0 END) as count_tbr_vl,
-        -- Added for TAR/TBR totals
         SUM(CASE WHEN CGM_Value > 180 THEN 1 ELSE 0 END) as count_tar,
         SUM(CASE WHEN CGM_Value < 70 THEN 1 ELSE 0 END) as count_tbr,
         AVG(CGM_Value) as avg_glucose,
@@ -873,56 +813,50 @@ WITH cgm_stats AS (
     GROUP BY participant_id
 ),
 meta_stats AS (
-    -- Aggregate file info separately to avoid multiplying CGM rows
     SELECT 
         patient_id,
         GROUP_CONCAT(DISTINCT devicename) AS cgm_devices,
         GROUP_CONCAT(DISTINCT file_name || '.' || file_format) AS cgm_files
     FROM drh_cgm_file_metadata
     GROUP BY patient_id
+),
+FinalCalculations AS (
+    SELECT 
+        dg.tenant_id,
+        dg.study_id,             
+        dg.participant_id,
+        dg.gender,
+        dg.age,
+        dg.study_arm,
+        dg.baseline_hba1c,
+        ms.cgm_devices,
+        ms.cgm_files,
+        -- Percentages
+        ROUND(cs.count_tir * 100.0 / cs.total_count, 2) AS tir,
+        ROUND(cs.count_tar_vh * 100.0 / cs.total_count, 2) AS tar_vh,
+        ROUND(cs.count_tar_h * 100.0 / cs.total_count, 2) AS tar_h,
+        ROUND(cs.count_tbr_l * 100.0 / cs.total_count, 2) AS tbr_l,
+        ROUND(cs.count_tbr_vl * 100.0 / cs.total_count, 2) AS tbr_vl,
+        ROUND(cs.count_tar * 100.0 / cs.total_count, 2) AS tar,
+        ROUND(cs.count_tbr * 100.0 / cs.total_count, 2) AS tbr,
+        -- Indicators
+        CEIL((cs.avg_glucose * 0.155) + 95) AS gmi,
+        ROUND((SQRT(ABS(cs.avg_sq_glucose - (cs.avg_glucose * cs.avg_glucose))) / cs.avg_glucose) * 100, 2) AS percent_gv,
+        ROUND((3.0 * ((cs.count_tbr_vl * 100.0 / cs.total_count) + (0.8 * (cs.count_tbr_l * 100.0 / cs.total_count)))) + 
+              (1.6 * ((cs.count_tar_vh * 100.0 / cs.total_count) + (0.5 * (cs.count_tar_h * 100.0 / cs.total_count)))), 2) AS gri,
+        -- Metadata
+        cs.days_of_wear,
+        cs.d_start AS data_start_date,
+        cs.d_end AS data_end_date,
+        ROUND(COALESCE((cs.days_of_wear * 1.0 / NULLIF(JULIANDAY(cs.d_end) - JULIANDAY(cs.d_start) + 1, 0)) * 100, 0), 2) AS wear_time_percentage
+    FROM drh_participant dg
+    JOIN cgm_stats cs ON dg.participant_id = cs.participant_id
+    LEFT JOIN meta_stats ms ON dg.participant_id = ms.patient_id
 )
-SELECT 
-    dg.tenant_id,
-    dg.study_id,             
-    dg.participant_id,
-    dg.gender,
-    dg.age,
-    dg.study_arm,
-    dg.baseline_hba1c,
-    ms.cgm_devices,
-    ms.cgm_files,
-    -- Core Metrics
-    ROUND(cs.count_tir * 100.0 / cs.total_count, 2) AS tir,
-    ROUND(cs.count_tar_vh * 100.0 / cs.total_count, 2) AS tar_vh,
-    ROUND(cs.count_tar_h * 100.0 / cs.total_count, 2) AS tar_h,
-    ROUND(cs.count_tbr_l * 100.0 / cs.total_count, 2) AS tbr_l,
-    ROUND(cs.count_tbr_vl * 100.0 / cs.total_count, 2) AS tbr_vl,
-    -- Missing TAR/TBR added
-    ROUND(cs.count_tar * 100.0 / cs.total_count, 2) AS tar,
-    ROUND(cs.count_tbr * 100.0 / cs.total_count, 2) AS tbr,
-    -- Clinical Indicators
-    CEIL((cs.avg_glucose * 0.155) + 95) AS gmi,
-    ROUND((SQRT(cs.avg_sq_glucose - (cs.avg_glucose * cs.avg_glucose)) / cs.avg_glucose) * 100, 2) AS percent_gv,
-    -- Added GRI (Glycemia Risk Index) calculation
-    ROUND((3.0 * ((cs.count_tbr_vl * 100.0 / cs.total_count) + 
-                  (0.8 * (cs.count_tbr_l * 100.0 / cs.total_count)))) + 
-          (1.6 * ((cs.count_tar_vh * 100.0 / cs.total_count) + 
-                  (0.5 * (cs.count_tar_h * 100.0 / cs.total_count)))), 2) AS gri,
-    -- Metadata
-    cs.days_of_wear,
-    cs.d_start AS data_start_date,
-    cs.d_end AS data_end_date,
-    ROUND(COALESCE((cs.days_of_wear * 1.0 / (JULIANDAY(cs.d_end) - JULIANDAY(cs.d_start) + 1)) * 100, 0), 2) AS wear_time_percentage
-FROM drh_participant dg
-JOIN cgm_stats cs ON dg.participant_id = cs.participant_id
-LEFT JOIN meta_stats ms ON dg.participant_id = ms.patient_id
-ORDER BY      
-    CASE 
-        WHEN LENGTH(dg.participant_id) - LENGTH(REPLACE(dg.participant_id, '-', '')) = 1 THEN 
-            CAST(SUBSTR(dg.participant_id, INSTR(dg.participant_id, '-') + 1) AS INTEGER) 
-        ELSE dg.participant_id 
-    END ASC;
-
+SELECT * FROM FinalCalculations
+ORDER BY 
+    -- Optimized Numeric Sorting for IDs like 'PAT-1', 'PAT-10'
+    CAST(REPLACE(participant_id, RTRIM(participant_id, '0123456789'), '') AS INTEGER);
 
 ------cached tables-------------------------
 
@@ -1252,3 +1186,6 @@ SELECT
     p.diabetes_type,
     p.study_arm 
 FROM drh_participant p;
+
+-- Indexing for fast joins and filtering
+CREATE INDEX IF NOT EXISTS idx_participant_study ON participant(study_display_id, participant_display_id);

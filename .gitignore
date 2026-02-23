@@ -1,8 +1,11 @@
-drh-edge-core/resource-surveillance.sqlite.db
-sqlpage/sqlpage.json
+drh-edge-core/resource-surveillance.sqlite.db 
+drh-edge-core/*.db-shm
+drh-edge-core/*.db-wal
+drh-edge-core/sqlpage/sqlpage.json
 drh-edge-core/*.sql
 .envrc
 dev-src.auto
 validation-reports
 .venv
 *:Zone.Identifier
+.env

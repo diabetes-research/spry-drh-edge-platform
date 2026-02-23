@@ -21,66 +21,58 @@ import venv
 import uuid
 import re
 
-# Bootstrap Logic to auto-install venv and dependencies
 def bootstrap_venv():
-    """
-    Handles environment setup.
-    Crucial: Prints NOTHING to stdout to avoid breaking the capture tool's JSON parser.
-    """
-    # 1. Check if we are already inside the venv
     if sys.prefix != sys.base_prefix:
         return
  
     script_path = os.path.abspath(__file__)
-    # script_dir is 'singer-tap'
-    script_dir = os.path.dirname(script_path)
-    # project_root is 'drh-edge-core'
-    project_root = os.path.dirname(script_dir)
-   
-    # Path to venv in drh-edge-core
+    script_dir = os.path.dirname(script_path)           # singer-tap
+    project_root = os.path.dirname(script_dir)          # drh-edge-core
+    platform_root = os.path.dirname(project_root)       # spry-drh-edge-platform
+    
     venv_dir = os.path.join(project_root, ".venv")
+    req_file = os.path.join(platform_root, "requirements.txt")
    
     if sys.platform == "win32":
         venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
     else:
         venv_python = os.path.join(venv_dir, "bin", "python")
  
-    # 2. Create VENV if missing (Log to stderr only)
     if not os.path.exists(venv_python):
-        # We print to stderr so the capture tool ignores this text
         print(f"DEBUG: Creating venv at {venv_dir}", file=sys.stderr)
-        builder = venv.EnvBuilder(with_pip=True)
-        builder.create(venv_dir)
+        venv.EnvBuilder(with_pip=True).create(venv_dir)
  
-    # 3. Install dependencies (Silent)
-    # Redirect BOTH stdout and stderr to DEVNULL or stderr to keep the pipe clean
-    try:
-        # Check if already installed to avoid slow git-clones
-        check_cmd = [venv_python, "-c", "import drh_target"]
-        if subprocess.call(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
-            print("DEBUG: Installing drh-protocol...", file=sys.stderr)
-            subprocess.check_call(
-                [venv_python, "-m", "pip", "install","--upgrade", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg"],
-                stdout=subprocess.DEVNULL,
-                stderr=sys.stderr  # Errors go to stderr for debugging
-            )
-    except Exception as e:
-        print(f"FATAL: Bootstrap failed: {e}", file=sys.stderr)
-        sys.exit(1)
+    # Ensure python-dotenv is installed along with requirements
+    check_cmd = [venv_python, "-c", "import drh_target, dotenv"]
+    if subprocess.call(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
+        print(f"DEBUG: Installing from {req_file}...", file=sys.stderr)
+        # We explicitly add python-dotenv to ensure it's available for the next step
+        subprocess.check_call(
+            [venv_python, "-m", "pip", "install", "--upgrade", "-r", req_file, "python-dotenv"],
+            stdout=subprocess.DEVNULL, stderr=sys.stderr
+        )
  
-    # 4. Re-execute the script inside the VENV
     os.environ["PYTHONUNBUFFERED"] = "1"
-   
-    # Ensure the script path is absolute and clean
-    normalized_script_path = os.path.abspath(script_path)
-   
-    # Use the venv python to run the script
-    # We pass normalized_script_path as the first argument to python
     print(f"DEBUG: Re-executing with {venv_python}", file=sys.stderr)
-    os.execv(venv_python, [venv_python, normalized_script_path] + sys.argv[1:])
+    os.execv(venv_python, [venv_python, script_path] + sys.argv[1:])
 
-# Run bootstrap before anything else
+# --- 1. RUN BOOTSTRAP FIRST ---
 bootstrap_venv()
+
+# --- 2. LOAD ENV AFTER BOOTSTRAP (Now inside VENV) ---
+try:
+    from dotenv import load_dotenv # type: ignore
+    # Re-calculate platform root to find the .env file  
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _project_root = os.path.dirname(_script_dir)      
+    _env_path = os.path.join(_project_root, ".env")
+    
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path)
+    else:
+        print(f"DEBUG: .env file not found at {_env_path}", file=sys.stderr)
+except ImportError:
+    print("DEBUG: python-dotenv not found inside venv", file=sys.stderr)
 
 # Ensure we can import the SDK
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -1665,8 +1657,8 @@ def emit_otel_resource(emitter):
     resource_id = str(uuid.uuid4())
     record = {
         "resource_id": resource_id,
-        "service.name": "tap-dexcom-clarity",
-        "service.version": "1.0.0",
+        "service.name": os.environ.get("OTEL_SERVICE_NAME", "tap-dexcom-clarity"),        
+        "service.version": os.environ.get("OTEL_SERVICE_VERSION", "1.0.0"),
         "service.instance.id": resource_id,
         "deployment.environment": os.environ.get("DEPLOY_ENV", "production"),
         "singer.role": "tap",
