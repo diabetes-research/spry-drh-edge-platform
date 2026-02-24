@@ -6,7 +6,6 @@ The **DRH Edge Platform** is an automated ecosystem designed to bridge the gap b
 
 ## Table of Contents
 
-
 - [DRH Edge Platform: Researcher \& Data Scientist Guide](#drh-edge-platform-researcher--data-scientist-guide)
   - [Table of Contents](#table-of-contents)
   - [Supported Operating Systems](#supported-operating-systems)
