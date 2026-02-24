@@ -34,7 +34,7 @@ source venv/bin/activate.fish # if fish shell
 **Example Run (CGMacros):**
 
 ```bash
-.venv/bin/python3 support/aides/cgmacros/generate-study-supporting-files.py support/aides/cgmacros/cgmacros-study-info.txt examples/cgm-macros-supporting-data1
+.venv/bin/python3 support/aides/cgmacros/generate-study-supporting-files.py support/aides/cgmacros/cgmacros-study-info.txt examples/cgm-macros-supporting-data
 ```
 
 ### Input File Requirements
