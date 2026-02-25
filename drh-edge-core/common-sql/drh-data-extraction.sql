@@ -1,5 +1,6 @@
 -- Optimized Schema Log Extraction
-CREATE VIEW IF NOT EXISTS drh_schema_logs AS
+DROP VIEW IF EXISTS drh_schema_logs;
+CREATE VIEW drh_schema_logs AS
 SELECT 
     json_extract(content, '$.stream') AS schema_name,
     COUNT(p.key) AS column_count,
@@ -7,10 +8,11 @@ SELECT
     MAX(json_extract(content, '$.emitted_at')) AS last_updated
 FROM uniform_resource
 CROSS JOIN json_each(json_extract(content, '$.schema.properties')) AS p
-WHERE json_extract(content, '$.type') = 'SCHEMA'
-  AND json_valid(content)
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Only execute if table is not empty
+  AND json_valid(content)                         -- Ensure JSON is valid
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_extract(content, '$.type') = 'SCHEMA'  -- Filter for schema records
 GROUP BY 1;
-
 
 
 -- ***************************************************************
@@ -21,17 +23,26 @@ GROUP BY 1;
 -- ==========================================================-- 
 -- Identify target records and store in a temp table
 -- ==========================================================
+-- 1. Ensure idempotency by dropping the temp table if it exists
 DROP TABLE IF EXISTS records_to_anonymize;
-CREATE TEMP TABLE records_to_anonymize AS
+
+-- 2. Create the temp table with a safety check for table existence and content validity
+CREATE TABLE records_to_anonymize AS
 SELECT 
     uniform_resource_id,
     json_extract(content, '$.stream') as stream_type
 FROM uniform_resource
-WHERE json_extract(content, '$.type') = 'RECORD'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0             -- Circuit breaker: Only run if table has data
+  AND content IS NOT NULL                                     -- Handle NULL content bug
+  AND json_valid(content)                                     -- Ensure JSON is parsable
+  AND json_extract(content, '$.type') = 'RECORD'
   AND json_extract(content, '$.stream') IN ('author', 'investigator')
-  -- Ensure email exists AND is not an empty string before attempting anonymization
+  -- Ensure email exists and is not an empty string
   AND json_extract(content, '$.record.email') IS NOT NULL
   AND json_extract(content, '$.record.email') != '';
+
+-- 3. Optimization: Add an index on the temp table for faster UPDATE performance later
+CREATE INDEX IF NOT EXISTS idx_temp_anonymize_id ON records_to_anonymize(uniform_resource_id);
 
 -- ==========================================================
 --  DATA UPDATE
@@ -43,7 +54,8 @@ SET content = json_set(
     '$.record.email', 
     surveilr_anonymize_email(json_extract(content, '$.record.email'))
 )
-WHERE uniform_resource_id IN (SELECT uniform_resource_id FROM records_to_anonymize);
+WHERE uniform_resource_id IN (SELECT uniform_resource_id FROM records_to_anonymize) 
+AND (SELECT COUNT(*) FROM uniform_resource) > 0 ;
 
 
 -- Drops and recreates the view for device information.
@@ -54,7 +66,9 @@ SELECT
     name,
     created_at
 FROM
-    device d;
+    device d
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize)
+AND (SELECT COUNT(*) FROM uniform_resource) > 0 ;
 
 
 -- Insert into orchestration_nature only if it doesn't exist
@@ -85,6 +99,7 @@ SELECT
 FROM
     drh_device d
 WHERE EXISTS (SELECT 1 FROM records_to_anonymize)
+AND (SELECT COUNT(*) FROM uniform_resource) > 0
 LIMIT
     1;
 
@@ -117,6 +132,7 @@ SELECT
 FROM
     drh_device d
 WHERE EXISTS (SELECT 1 FROM records_to_anonymize)
+AND (SELECT COUNT(*) FROM uniform_resource) > 0
 LIMIT
     1;
 
@@ -129,6 +145,8 @@ FROM
     orchestration_session
 WHERE
     orchestration_nature_id = 'deidentification'
+    AND EXISTS (SELECT 1 FROM records_to_anonymize)
+    AND (SELECT COUNT(*) FROM uniform_resource) > 0
 LIMIT
     1;
 
@@ -150,7 +168,8 @@ SELECT
     'drh-data-extraction.sql',
     'uniform_resource', -- Specified the table name here
     NULL
-WHERE EXISTS (SELECT 1 FROM records_to_anonymize);
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize)
+AND (SELECT COUNT(*) FROM uniform_resource) > 0;
 
 -- ==========================================================
 -- CREATE TEMP VIEW FOR EXECUTION TRACKING
@@ -167,6 +186,8 @@ LEFT JOIN
 WHERE
     os.orchestration_nature_id = 'deidentification'
     AND os.orch_finished_at IS NULL
+    AND EXISTS (SELECT 1 FROM records_to_anonymize)
+    AND (SELECT COUNT(*) FROM uniform_resource) > 0
 ORDER BY os.orch_started_at DESC
 LIMIT 1;
 
@@ -195,7 +216,8 @@ SELECT
     'De-identification completed',
     'username in email is masked'
 FROM temp_session_info s
-WHERE EXISTS (SELECT 1 FROM records_to_anonymize WHERE stream_type = 'investigator');
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize WHERE stream_type = 'investigator')
+AND (SELECT COUNT(*) FROM uniform_resource) > 0;
 
 -- ==========================================================
 -- LOG AUTHOR EXECUTION
@@ -222,7 +244,8 @@ SELECT
     'De-identification completed',
     'username in email is masked'
 FROM temp_session_info s
-WHERE EXISTS (SELECT 1 FROM records_to_anonymize WHERE stream_type = 'author');
+WHERE EXISTS (SELECT 1 FROM records_to_anonymize WHERE stream_type = 'author')
+AND (SELECT COUNT(*) FROM uniform_resource) > 0;
 
 -- ==========================================================
 -- FINALIZE SESSION
@@ -237,7 +260,8 @@ SET
     diagnostics_md = 'De-identification process completed'
 WHERE
     orchestration_session_id = (SELECT orchestration_session_id FROM temp_session_info)
-    AND EXISTS (SELECT 1 FROM records_to_anonymize);
+    AND EXISTS (SELECT 1 FROM records_to_anonymize)
+    AND (SELECT COUNT(*) FROM uniform_resource) > 0;
 
 
 
@@ -274,7 +298,9 @@ FROM
     orchestration_session_exec osex
     JOIN orchestration_session os ON osex.session_id = os.orchestration_session_id
 WHERE
-    os.orchestration_nature_id = 'deidentification';
+    os.orchestration_nature_id = 'deidentification'    
+    AND EXISTS (SELECT 1 FROM records_to_anonymize)
+    AND (SELECT COUNT(*) FROM uniform_resource) > 0;
 
 
 
@@ -294,7 +320,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,   
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'author'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)                         -- Ensure JSON is parsable
+  AND json_extract(content, '$.stream') = 'author'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 2. View for lab
@@ -308,7 +337,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,   
     json_extract(content, '$.record.tenant_name') AS tenant_name 
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'lab'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)
+  AND json_extract(content, '$.stream') = 'lab'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
@@ -323,7 +355,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'institution'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'institution'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 4. View for investigator
@@ -337,7 +372,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'investigator'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'investigator'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
@@ -361,7 +399,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'participant'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'participant'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 6. View for publication
@@ -375,7 +416,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'publication'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'publication'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 7. View for site
@@ -388,7 +432,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'site'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'site'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 8. View for study
@@ -405,7 +452,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'study'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'study'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- =====================================================================
@@ -431,7 +481,10 @@ SELECT
     json_extract(content, '$.record.tenant_id') AS tenant_id,
     json_extract(content, '$.record.tenant_name') AS tenant_name
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'cgm_file_metadata'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'cgm_file_metadata'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
@@ -444,7 +497,10 @@ SELECT
     json_extract(content, '$.record.source') AS source,
     json_extract(content, '$.record.file_format') AS file_format
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'meal_file_metadata'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'meal_file_metadata'
   AND json_extract(content, '$.type') = 'RECORD';
 
 --  View for fitness_file_metadata
@@ -456,7 +512,10 @@ SELECT
     json_extract(content, '$.record.source') AS source,
     json_extract(content, '$.record.file_format') AS file_format
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'fitness_file_metadata'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'fitness_file_metadata'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
@@ -471,7 +530,10 @@ SELECT
     json_extract(content, '$.record.raw_file_name') AS raw_file_name,
     json_extract(content, '$.record.raw_data_payload') AS raw_data_payload
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'cgm_tracing'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'cgm_tracing'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 2. Create the View for raw_fitness_data
@@ -481,7 +543,10 @@ SELECT
     json_extract(content, '$.record.raw_file_name') AS raw_file_name,
     json_extract(content, '$.record.raw_data_payload') AS raw_data_payload
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'fitness'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'fitness'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 3. Create the View for raw_meal_data
@@ -491,7 +556,10 @@ SELECT
     json_extract(content, '$.record.raw_file_name') AS raw_file_name,
     json_extract(content, '$.record.raw_data_payload') AS raw_data_payload
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'meal'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'meal'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
@@ -508,7 +576,10 @@ SELECT
     json_extract(content, '$.record.status') AS status,
     json_extract(content, '$.record.details') AS details
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'drh_diagnostics'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'drh_diagnostics'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- View for drh_validation_reports
@@ -521,7 +592,10 @@ SELECT
     json_extract(content, '$.record.overall_status') AS overall_status,
     json_extract(content, '$.record.report_json') AS report_json
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'drh_validation_reports'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'drh_validation_reports'
   AND json_extract(content, '$.type') = 'RECORD';
 
 
@@ -530,8 +604,8 @@ WHERE json_extract(content, '$.stream') = 'drh_validation_reports'
 -- =====================================================================
 
 -- 1. View for otel_logs
-DROP VIEW IF EXISTS drh_otel_logs;
-CREATE VIEW IF NOT EXISTS drh_otel_logs AS
+DROP TABLE IF EXISTS drh_otel_logs;
+CREATE TABLE IF NOT EXISTS drh_otel_logs AS
 SELECT 
     json_extract(content, '$.record.time_unix_nano') AS time_unix_nano,
     json_extract(content, '$.record.trace_id') AS trace_id,
@@ -542,12 +616,15 @@ SELECT
     json_extract(content, '$.record.attributes') AS attributes,
     json_extract(content, '$.record.resource_id') AS resource_id
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'otel_logs'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'otel_logs'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 2. View for otel_metrics
-DROP VIEW IF EXISTS drh_otel_metrics;
-CREATE VIEW IF NOT EXISTS drh_otel_metrics AS
+DROP TABLE IF EXISTS drh_otel_metrics;
+CREATE TABLE IF NOT EXISTS drh_otel_metrics AS
 SELECT 
     json_extract(content, '$.record.name') AS metric_name,
     json_extract(content, '$.record.description') AS description,
@@ -557,12 +634,15 @@ SELECT
     json_extract(content, '$.record.attributes') AS attributes,
     json_extract(content, '$.record.resource_id') AS resource_id
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'otel_metrics'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'otel_metrics'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 3. View for otel_resource
-DROP VIEW IF EXISTS drh_otel_resource;
-CREATE VIEW IF NOT EXISTS drh_otel_resource AS
+DROP TABLE IF EXISTS drh_otel_resource;
+CREATE TABLE IF NOT EXISTS drh_otel_resource AS
 SELECT 
     json_extract(content, '$.record.resource_id') AS resource_id,
     json_extract(content, '$.record."service.name"') AS service_name,
@@ -572,12 +652,15 @@ SELECT
     json_extract(content, '$.record."singer.role"') AS singer_role,
     json_extract(content, '$.record."singer.stream"') AS singer_stream
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'otel_resource'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'otel_resource'
   AND json_extract(content, '$.type') = 'RECORD';
 
 -- 4. View for otel_spans
-DROP VIEW IF EXISTS drh_otel_spans;
-CREATE VIEW IF NOT EXISTS drh_otel_spans AS
+DROP TABLE IF EXISTS drh_otel_spans;
+CREATE TABLE IF NOT EXISTS drh_otel_spans AS
 SELECT 
     json_extract(content, '$.record.trace_id') AS trace_id,
     json_extract(content, '$.record.span_id') AS span_id,
@@ -591,8 +674,16 @@ SELECT
     json_extract(content, '$.record.attributes') AS attributes,
     json_extract(content, '$.record.resource_id') AS resource_id
 FROM uniform_resource
-WHERE json_extract(content, '$.stream') = 'otel_spans'
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0  -- Circuit breaker: Only run if data exists
+  AND content IS NOT NULL                         -- Handle NULL content bug
+  AND json_valid(content)    
+  AND json_extract(content, '$.stream') = 'otel_spans'
   AND json_extract(content, '$.type') = 'RECORD';
+
+  -- 2. Create standard indexes on the new table
+CREATE INDEX idx_otel_spans_trace ON drh_otel_spans(trace_id);
+CREATE INDEX idx_otel_spans_span ON drh_otel_spans(span_id);
+CREATE INDEX idx_otel_spans_parent ON drh_otel_spans(parent_span_id);
 
 
 -- View 1: Identify the Latest V&V Root Session (The Level 1 Anchor)
@@ -610,26 +701,61 @@ SELECT
 FROM drh_otel_spans s
 JOIN drh_otel_resource r ON s.resource_id = r.resource_id
 WHERE (s.parent_span_id IS NULL OR s.parent_span_id = '')
-  AND s.span_name = 'V&V Orchestration Session' -- Your Hardcoded Root Constant
+  AND s.span_name = 'V&V Orchestration Session'
+  AND (SELECT COUNT(*) FROM uniform_resource) > 0 -- Your Hardcoded Root Constant
 ORDER BY s.start_time_unix_nano DESC 
 LIMIT 1;
 
--- View 2: Session Summary (Aggregated Metrics & Health)
+
+-- View 2: Session Summary (Force-Injecting Failure State for UI)
 DROP VIEW IF EXISTS drh_vv_session_summary;
 CREATE VIEW drh_vv_session_summary AS
+-- PATH A: Data exists, process normally
 SELECT 
     ls.trace_id,
     ls.service_name,
     ls.resource_id,
-    CASE WHEN ls.status = 'OK' THEN 'PASS' ELSE 'FAIL' END AS overall_status,
-    -- 1. Get Pass/Fail counts from metrics (if they exist, else 0)
+    'DATA_CONTENT_CHECK' as health_category, -- Category 1: when data is presnt in uniform_resource
+    CASE 
+        WHEN (SELECT COUNT(*) FROM uniform_resource WHERE content IS NOT NULL AND json_valid(content)) = 0 THEN 'FAIL'
+        WHEN ls.status = 'OK' THEN 'PASS' 
+        ELSE 'FAIL' 
+    END AS overall_status,
+    CASE 
+        WHEN (SELECT COUNT(*) FROM uniform_resource WHERE content IS NOT NULL AND json_valid(content)) = 0 THEN 'surveilr failed data ingestion (NULL/Empty Content)'
+        ELSE 'validation complete'
+    END AS validation_status_msg,
     COALESCE((SELECT SUM(metric_value) FROM drh_otel_metrics WHERE resource_id = ls.resource_id AND metric_name = 'vv.validation.pass_count'), 0) AS pass_count,
     COALESCE((SELECT SUM(metric_value) FROM drh_otel_metrics WHERE resource_id = ls.resource_id AND metric_name = 'vv.validation.fail_count'), 0) AS fail_count,
-    -- 2. WALL CLOCK DURATION (Reliable even with minimal tracing)
     printf('%.2f s', (ls.end_time_unix_nano - ls.start_time_unix_nano) / 1000000000.0) AS duration
-FROM drh_active_session ls;
+FROM drh_active_session ls
+WHERE (SELECT COUNT(*) FROM uniform_resource) > 0
 
--- View 3: Dynamic Hierarchy (Levels 1, 2, and 3)
+UNION ALL
+
+-- PATH B: Total Failure State (Returns exactly one row for the UI when table is empty)
+SELECT 
+    '0000000000000000' AS trace_id,
+    'System' AS service_name,
+    'NONE' AS resource_id,
+    'SYSTEM_CHECK' as health_category, -- Category 1: when data is presnt in uniform_resource
+    'FAIL' AS overall_status,
+    'CRITICAL: The data import process was interrupted. No records were saved to the database..' AS validation_status_msg,
+    0 AS pass_count,
+    0 AS fail_count,
+    '0.00 s' AS duration
+WHERE (SELECT COUNT(*) FROM uniform_resource) = 0;
+
+--------------------------------------------------------------------------------
+-- Step 1: Change to a PERMANENT VIEW so drh_vv_hierarchy can always find it
+DROP VIEW IF EXISTS current_session_cache; 
+CREATE VIEW current_session_cache AS 
+SELECT trace_id, root_span_id FROM drh_active_session 
+UNION ALL
+SELECT '0000000000000000', '0000' WHERE (SELECT COUNT(*) FROM uniform_resource) = 0
+LIMIT 1;
+
+-- Step 2: Ensure drh_vv_hierarchy is a permanent VIEW
 DROP VIEW IF EXISTS drh_vv_hierarchy;
 CREATE VIEW drh_vv_hierarchy AS
 WITH span_attr_agg AS (
@@ -637,6 +763,7 @@ WITH span_attr_agg AS (
         s.span_id,
         GROUP_CONCAT(key || ': ' || value, ' • ') as attrs
     FROM drh_otel_spans s, json_each(s.attributes)
+    WHERE json_valid(s.attributes)
     GROUP BY s.span_id
 ),
 log_attr_agg AS (
@@ -645,6 +772,7 @@ log_attr_agg AS (
         l.body,
         GROUP_CONCAT(key || ': ' || value, ' • ') as attrs
     FROM drh_otel_logs l, json_each(l.attributes)
+    WHERE json_valid(l.attributes)
     GROUP BY l.span_id, l.body
 )
 SELECT 
@@ -654,10 +782,9 @@ SELECT
     json_extract(s.status_code, '$.code') AS status,
     CASE 
         WHEN s.parent_span_id IS NULL OR s.parent_span_id = '' THEN 1
-        WHEN s.parent_span_id = (SELECT root_span_id FROM drh_active_session) THEN 2
+        WHEN s.parent_span_id = (SELECT root_span_id FROM current_session_cache) THEN 2
         ELSE 3
     END as lvl,
-    -- Simple Text separation using a dash and bullet
     COALESCE(la.body, 'No log message') || 
     CASE WHEN la.attrs IS NOT NULL THEN ' — ' || la.attrs ELSE '' END ||
     CASE WHEN sa.attrs IS NOT NULL THEN ' • ' || sa.attrs ELSE '' END AS evidence,
@@ -665,5 +792,17 @@ SELECT
 FROM drh_otel_spans s
 LEFT JOIN log_attr_agg la ON s.span_id = la.span_id
 LEFT JOIN span_attr_agg sa ON s.span_id = sa.span_id
-WHERE s.trace_id = (SELECT trace_id FROM drh_active_session);
+WHERE s.trace_id = (SELECT trace_id FROM current_session_cache)
 
+UNION ALL
+
+-- Synthetic Row for Ingestion Failure
+SELECT 
+    'ERR-01' AS span_id, 
+    NULL AS parent_span_id, 
+    'INGESTION_ERROR' AS span_name, 
+    'ERROR' AS status,
+    1 AS lvl, 
+    'CRITICAL: The data import process was interrupted. No records were saved to the system database..' AS evidence, 
+    0 AS start_time_unix_nano
+WHERE (SELECT COUNT(*) FROM uniform_resource) = 0;

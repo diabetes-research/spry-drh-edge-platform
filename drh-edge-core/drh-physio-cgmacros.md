@@ -51,7 +51,7 @@ Recommended practice is to keep these values in a local, directory-scoped enviro
 
 POSIX-style example (bash/zsh):
 
-```envrc prepare-env -C ./.env --gitignore -X  --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
+```envrc prepare-env -C ./.env -X  --descr "Generate .envrc file and add it to local .gitignore if it's not already there"
 OTEL_SERVICE_NAME="tap-cgmacros" 
 OTEL_SERVICE_VERSION="1.0.0"
 STUDY_DATA_PATH="raw-data/physionet-cgmacros/"
@@ -242,6 +242,18 @@ Index page which automatically generates links to all `/drh` pages.
 
 SELECT 'html' AS component;
 SELECT 
+    '<div style="max-width: 800px; margin: 2rem auto; background-color: white; border: 1px solid #e9ecef; border-left: 6px solid #d63939; padding: 2rem; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">' ||
+        '<div>' ||
+            '<span style="display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; margin-bottom: 10px; background: #fff5f5; color: #c92a2a; text-transform: uppercase;">System Error</span>' ||
+            '<div style="font-size: 1.25rem; font-weight: 600; color: #1d273b;">Data Ingestion Failed</div>' ||
+            '<div style="color: #64748b; margin-top: 4px;">' || validation_status_msg || '</div>' ||
+        '</div>' ||
+        '<div style="font-size: 2.5rem;">🛑</div>' ||
+    '</div>' AS html
+FROM drh_vv_session_summary 
+WHERE health_category = 'SYSTEM_CHECK';
+
+SELECT 
     '<div style="max-width: 800px; margin: 2rem auto; background-color: white; border: 1px solid #e9ecef; border-left: 6px solid ' || 
         CASE overall_status WHEN 'PASS' THEN '#2fb344' WHEN 'WARNING' THEN '#f76707' ELSE '#d63939' END || 
     '; padding: 2rem; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">' ||
@@ -266,7 +278,7 @@ SELECT
              CASE overall_status WHEN 'PASS' THEN '🛡️' WHEN 'WARNING' THEN '⚠️' ELSE '🚨' END || 
         '</div>' ||
     '</div>' AS html
-FROM drh_vv_session_summary;
+FROM drh_vv_session_summary WHERE health_category = 'DATA_CONTENT_CHECK';
 
 -- 4. ACTION CENTER (Product-style Buttons)
 SELECT 'button' AS component, 'center' AS justify;
@@ -279,7 +291,8 @@ SELECT
     'circle-chevrons-right' AS icon,
     'teal' AS color
 FROM drh_vv_session_summary 
-WHERE overall_status = 'PASS' LIMIT 1;
+WHERE overall_status = 'PASS' 
+AND  health_category = 'DATA_CONTENT_CHECK' LIMIT 1;
 
 -- 2. PRIMARY ERROR ACTION
 -- Only shows if the status is NOT PASS
@@ -290,6 +303,7 @@ SELECT
     'red' AS color
 FROM drh_vv_session_summary 
 WHERE overall_status <> 'PASS' 
+AND  health_category = 'DATA_CONTENT_CHECK' 
 LIMIT 1;
 
 -- 3. SECONDARY DIAGNOSTICS ACTION (The "Avoid Duplication" fix)
@@ -303,6 +317,7 @@ SELECT
     'outline' AS variant
 FROM drh_vv_session_summary 
 WHERE overall_status = 'PASS' 
+AND  health_category = 'DATA_CONTENT_CHECK' 
 LIMIT 1;
 
 Select 'divider' as component;
@@ -347,9 +362,21 @@ SELECT
 ```sql drh/diagnostics-report.sql { route: { caption: "Diagnostics Report" } }
 -- @route.description "Observability Diagnostics - Trace & Metrics View"
 
+SELECT 
+    'alert' as component,
+    'Critical System Error: Data Ingestion Failed' as title,
+    validation_status_msg as description,
+    'alert-circle' as icon,
+    'red' as color
+FROM drh_vv_session_summary 
+WHERE health_category = 'SYSTEM_CHECK';
+
 select 
     'card'                     as component,    
-    2                          as columns; 
+    2                          as columns
+    FROM drh_vv_session_summary 
+WHERE health_category = 'DATA_CONTENT_CHECK'
+LIMIT 1; 
 
 -- 2. SUMMARY SECTION (Side-by-Side)
 -- Card 1: The "Hero" Status
@@ -358,21 +385,28 @@ SELECT
     CASE overall_status WHEN 'PASS' THEN 'teal' ELSE 'red' END as color,
     CASE overall_status WHEN 'PASS' THEN 'circle-check' ELSE 'alert-triangle' END as icon,
     'Service: ' || service_name || ' | Status: ' || overall_status as description
-FROM drh_vv_session_summary;
+FROM drh_vv_session_summary WHERE health_category = 'DATA_CONTENT_CHECK';
 
 -- Card 2: KPI Grid
 SELECT 
     'Execution Metrics' as title,
-    'datagrid' as component;
-SELECT 'Duration' as title, duration as description, 'clock' as icon FROM drh_vv_session_summary;
-SELECT 'Passed' as title, pass_count as description, 'check' as icon, 'teal' as color FROM drh_vv_session_summary;
-SELECT 'Critical' as title, fail_count as description, 'x' as icon, 'red' as color FROM drh_vv_session_summary;
+    'datagrid' as component FROM drh_vv_session_summary WHERE health_category = 'DATA_CONTENT_CHECK';
 
-SELECT 'card' AS component, 2 AS columns;
+SELECT 'Duration' as title, duration as description, 'clock' as icon FROM drh_vv_session_summary WHERE health_category = 'DATA_CONTENT_CHECK';
+SELECT 'Passed' as title, pass_count as description, 'check' as icon, 'teal' as color FROM drh_vv_session_summary WHERE health_category = 'DATA_CONTENT_CHECK';
+SELECT 'Critical' as title, fail_count as description, 'x' as icon, 'red' as color FROM drh_vv_session_summary WHERE health_category = 'DATA_CONTENT_CHECK';
+
+SELECT 'card' AS component, 2 AS columns FROM drh_vv_session_summary 
+WHERE health_category = 'DATA_CONTENT_CHECK'
+LIMIT 1;
+
 -- LEFT PANEL: The Trace List
 SELECT 
     'list' AS component,
-    'Evidence Trace' AS title;
+    'Evidence Trace' AS title
+FROM drh_vv_session_summary 
+WHERE health_category = 'DATA_CONTENT_CHECK'
+LIMIT 1;
 SELECT 
     CASE WHEN lvl = 3 THEN '　↳ ' || span_name ELSE span_name END AS title,
     evidence AS description,
@@ -380,7 +414,8 @@ SELECT
     CASE WHEN status <> 'OK' THEN 'alert-circle' ELSE 'circle-check' END AS icon,
     status as link_text
 FROM drh_vv_hierarchy
-WHERE lvl > 1
+WHERE lvl > 1 
+AND (SELECT health_category FROM drh_vv_session_summary LIMIT 1) = 'DATA_CONTENT_CHECK'
 ORDER BY start_time_unix_nano ASC;
 
 ```
