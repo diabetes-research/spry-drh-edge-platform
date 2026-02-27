@@ -165,13 +165,15 @@ for p in participants:
                 device_rows = df[event_col == "device"]
 
                 if not device_rows.empty:
-                    device_name = (
+                    raw_device = (
                         device_rows["Device Info"]
                         .dropna()
                         .astype(str)
                         .str.strip()
                         .iloc[0]
                     )
+                    # ✅ remove "Mobile App" if present (case-insensitive)
+                    device_name = re.sub(r"mobile\s*app", "", raw_device, flags=re.IGNORECASE).strip()
 
         # final safety fallback
         if not device_name:
