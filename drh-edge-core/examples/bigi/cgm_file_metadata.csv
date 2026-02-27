@@ -1,0 +1,17 @@
+metadata_id,devicename,device_id,source_platform,patient_id,file_name,file_format,file_upload_date,data_start_date,data_end_date,map_field_of_cgm_date,map_field_of_cgm_value,study_id,map_field_of_patient_id
+META-1,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-001,Dexcom_001,csv,2026-02-27T17:49:38.131755,2020-02-13T17:23:32,2020-02-22T17:53:23,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-2,Dexcom G6 Mobile App,Android G6,PhysioNet,BIGI-002,Dexcom_002,csv,2026-02-27T17:49:38.143248,2020-02-21T11:08:36,2020-02-29T09:38:24,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-3,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-003,Dexcom_003,csv,2026-02-27T17:49:38.154918,2020-02-22T10:51:44,2020-03-01T11:36:31,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-4,Dexcom G6 Mobile App,Android G6,PhysioNet,BIGI-004,Dexcom_004,csv,2026-02-27T17:49:38.166370,2020-02-27T10:51:20,2020-03-06T06:51:06,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-5,Dexcom Receiver with G6,MX84702427,PhysioNet,BIGI-005,Dexcom_005,csv,2026-02-27T17:49:38.178537,2020-02-27T13:30:13,2020-03-07T11:46:05,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-6,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-006,Dexcom_006,csv,2026-02-27T17:49:38.191067,2020-02-28T12:18:14,2020-03-09T09:27:51,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-7,Dexcom G6 Mobile App,Android G6,PhysioNet,BIGI-007,Dexcom_007,csv,2026-02-27T17:49:38.202304,2020-03-14T12:42:19,2020-03-22T11:06:57,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-8,Dexcom G6 Mobile App,Android G6,PhysioNet,BIGI-008,Dexcom_008,csv,2026-02-27T17:49:38.214472,2020-03-14T14:04:53,2020-03-23T11:39:31,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-9,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-009,Dexcom_009,csv,2026-02-27T17:49:38.225884,2020-03-21T10:51:51,2020-03-29T11:01:41,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-10,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-010,Dexcom_010,csv,2026-02-27T17:49:38.236800,2020-03-22T11:24:17,2020-03-30T09:19:02,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-11,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-011,Dexcom_011,csv,2026-02-27T17:49:38.249576,2020-04-06T09:26:10,2020-04-16T07:20:51,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-12,Dexcom G6 Mobile App,Android G6,PhysioNet,BIGI-012,Dexcom_012,csv,2026-02-27T17:49:38.261043,2020-05-03T17:52:13,2020-05-11T09:31:59,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-13,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-013,Dexcom_013,csv,2026-02-27T17:49:38.276303,2020-05-28T15:21:57,2020-06-04T12:11:40,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-14,Dexcom G6 Mobile App,Android G6,PhysioNet,BIGI-014,Dexcom_014,csv,2026-02-27T17:49:38.293696,2020-06-05T16:28:10,2020-06-13T11:02:56,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-15,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-015,Dexcom_015,csv,2026-02-27T17:49:38.303675,2020-07-19T17:33:52,2020-07-27T10:38:46,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
+META-16,Dexcom G6 Mobile App,iPhone G6,PhysioNet,BIGI-016,Dexcom_016,csv,2026-02-27T17:49:38.314907,2020-07-16T10:43:25,2020-07-24T10:18:05,Timestamp (YYYY-MM-DDThh:mm:ss),Glucose Value,BIGI,participant_id
