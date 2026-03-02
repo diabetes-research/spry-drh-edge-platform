@@ -45,7 +45,7 @@ def derive_diabetes_type(hba1c):
     if hba1c < 5.7:
         return "Normal"
     elif hba1c < 6.5:
-        return "PREDIABETES"
+        return "Prediabetes"
     return "T2D"
 
 
@@ -53,7 +53,7 @@ def derive_icd(diabetes_type):
     return {
         "T1D": "E10",
         "T2D": "E11",
-        "PREDIABETES": "R73.03"
+        "Prediabetes": "R73.03"
     }.get(diabetes_type, "")
 
 
@@ -86,7 +86,7 @@ for p in participants:
     if demo is not None and numeric:
         row = demo[demo["ID"] == int(numeric)]
         if not row.empty:
-            gender = row.iloc[0]["gender"]
+            gender = str(row.iloc[0]["gender"]).strip().lower().capitalize()
             hba1c = row.iloc[0]["baseline_hba1c"]
 
     diabetes_type = derive_diabetes_type(hba1c)
@@ -100,8 +100,8 @@ for p in participants:
         "",
         "",
         gender,
-        "UNKNOWN",
-        "UNKNOWN",
+        "Unknown",
+        "Unknown",
         random.randint(35, 65),
         "",
         hba1c,
@@ -178,30 +178,81 @@ for p in participants:
         # final safety fallback
         if not device_name:
             device_name = "Unknown Device"
+        # ---------- CGM Manufacturer Mapping ----------
 
+        CGM_MANUFACTURER_MAP = {
+            # Abbott
+            "freestyle libre": "Abbott",
+            "freestyle libre 2": "Abbott",
+            "freestyle libre 3": "Abbott",
+            "freestyle libre pro": "Abbott",
+            "freestyle navigator": "Abbott",
+
+            # Dexcom
+            "dexcom g4": "Dexcom",
+            "dexcom g5": "Dexcom",
+            "dexcom g6": "Dexcom",
+            "dexcom g7": "Dexcom",
+            "dexcom receiver with g6": "Dexcom",
+            "stelo": "Dexcom",
+            "clarity": "Dexcom",
+
+            # Medtronic
+            "guardian connect": "Medtronic",
+            "simplera cgm system": "Medtronic",
+            "carelink": "Medtronic",
+            "medtronic paradigm": "Medtronic",
+
+            # Senseonics
+            "eversense": "Senseonics",
+            "eversense xl": "Senseonics",
+            "eversense e3": "Senseonics",
+            "eversense 365": "Senseonics",
+
+            # Platform
+            "tidepool": "Tidepool"
+        }
+
+
+        def get_source_platform(device_name):
+            if not device_name:
+                return "Unknown"
+
+            normalized = device_name.strip().lower()
+
+            for key in CGM_MANUFACTURER_MAP:
+                if key in normalized:
+                    return CGM_MANUFACTURER_MAP[key]
+
+            return "Unknown"
+        source_platform = get_source_platform(device_name)
         metadata_rows.append([
             f"META-{meta_counter}",
             device_name,
             device_id,
-            "PhysioNet",
+            source_platform,
             pid,
             f.stem,
             "csv",
-            datetime.now().isoformat(),
-            start.isoformat(),
-            end.isoformat(),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            start.strftime("%Y-%m-%d %H:%M:%S"),
+            start.strftime("%Y-%m-%d %H:%M:%S"),
             ts_col,
             "Glucose Value",
             args.study_id,
-            "participant_id"
+            ""
         ])
 
         meta_counter += 1
 
 # ---------- derive study dates if missing ----------
+def normalize_datetime(dt_string):
+    if not dt_string:
+        return ""
+    return pd.to_datetime(dt_string).strftime("%Y-%m-%d %H:%M:%S")
 
-study_start = args.study_start_date or (global_min.isoformat() if global_min else "")
-study_end = args.study_end_date or (global_max.isoformat() if global_max else "")
+study_start = normalize_datetime(args.study_start_date) or (global_min.strftime("%Y-%m-%d %H:%M:%S") if global_min else "")
+study_end = normalize_datetime(args.study_end_date) or (global_max.strftime("%Y-%m-%d %H:%M:%S") if global_max else "")
 
 # ---------- write study.csv ----------
 
