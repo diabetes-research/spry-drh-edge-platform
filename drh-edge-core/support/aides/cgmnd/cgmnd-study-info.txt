@@ -1,0 +1,141 @@
+--- STUDY DATA ---
+# Must be exactly 4 letters or digits
+StudyID: CGMND
+StudyName: Continuous Glucose Monitoring Profiles in Healthy Nondiabetic Participants
+StartDate: 
+EndDate: 
+TreatmentModalities:
+FundingSource: Leona M. and Harry B. Helmsley Charitable Trust
+NCTNumber:
+StudyDescription: A multicenter, prospective observational analysis designed to establish normative continuous glucose monitoring (CGM) profiles in healthy, nondiabetic individuals across different age groups. It uses the Dexcom G6 CGM system to measure interstitial glucose values continuously over a period of up to 10 days
+
+---- INSTITUTIONS (Use ; for multiple) ---
+InstitutionNames: Barbara Davis Center for Diabetes
+Cities: Aurora, Colorado 80045
+States: CO
+Countries: USA;
+
+InstitutionNames: Jaeb Center for Health Research
+Cities: Tampa, Florida 33647
+States: FL
+Countries: USA;
+
+InstitutionNames: Keck School of Medicine of the University of Southern California
+Cities:  Los Angeles, California 90033
+States: CA
+Countries: USA;
+
+InstitutionNames: SUNY Upstate Medical University
+Cities: Syracuse, New York 13210
+States: NY
+Countries: USA;
+
+InstitutionNames: Henry Ford Medical Center
+Cities: Detroit, Michigan 48235
+States: MI
+Countries: USA;
+
+InstitutionNames: University of Iowa
+Cities: Iowa City, Iowa 52242
+States: IA
+Countries: USA;
+
+InstitutionNames: University of Oklahoma Health Sciences Center
+Cities: Oklahoma City, Oklahoma 73104
+States: OK
+Countries: USA;
+
+InstitutionNames: Indiana University School of Medicine
+Cities: Indianapolis, Indiana 46202
+States: IN
+Countries: USA;
+
+InstitutionNames: University of Miami
+Cities: Miami, Florida 33136
+States: FL
+Countries: USA;
+
+InstitutionNames: 0International Diabetes Center Park Nicollet
+Cities: Minneapolis, Minnesota 55416
+States: MN
+Countries: USA;
+
+InstitutionNames: Yale School of Medicine
+Cities: New Haven, Connecticut 06510
+States: CT
+Countries: USA;
+
+InstitutionNames: University of Louisville
+Cities: Louisville, Kentucky 40292
+States: KY
+Countries: USA;
+
+--- PERSONNEL (Use ; for multiple) ---
+# Primary investigators (will be linked to authors automatically if names match)
+Investigators: Davida Kruger; Viral Shah; Richard Bergenstal; Stephanie Woerner; David Sparling; Ruth Weinstock; Anne Peters; Jennifer Sherr; Francesco Vendrame; Michael Tansey; Sara Watson; Jennifer Dyer
+InvestigatorEmails: 
+
+# List all authors as they appear in the citation
+Authors: Viral N. Shah; Stephanie N. DuBose;Zoey Li; Roy W Beck; Anne L Peters; Ruth S Weinstock; Davida Kruger; Michael Tansey; David Sparling; Stephanie Woerner; Francesco Vendrame; Richard Bergenstal; William V Tamborlane; Sara E Watson; Jennifer Sherr
+
+--- LABS & SITES ---
+LabNames: Henry Ford Medical Center
+LabPIs: Davida Kruger
+SiteNames: Detroit
+SiteTypes: Clinical Research site;
+
+LabNames: University of Colorado/Denver, Barbara Davis Center Adult Clinic
+LabPIs: Viral Shah
+SiteNames: Aurora, Colorado
+SiteTypes: Clinical Research site;
+
+LabNames: International Diabetes Center
+LabPIs: Richard Bergenstal
+SiteNames: St. Louis Park, Minnesota
+SiteTypes: Clinical Research site;
+
+LabNames: Indiana University
+LabPIs: Stephanie Woerner
+SiteNames: Indianapolis, Indiana
+SiteTypes: Clinical Research site;
+
+LabNames: University of Oklahoma Health Sciences Center
+LabPIs: David Sparling
+SiteNames: Oklahoma City, Oklahoma
+SiteTypes: Clinical Research site;
+
+LabNames: SUNY Upstate Medical University
+LabPIs: Ruth Weinstock
+SiteNames: Syracuse, New York
+SiteTypes: Clinical Research site;
+
+LabNames: University of Southern California
+LabPIs: Ruth Weinstock
+SiteNames: Syracuse, New York
+SiteTypes: Clinical Research site;
+
+LabNames: University of Miami/Diabetes Research Institute
+LabPIs: Francesco Vendrame
+SiteNames: Miami, Florida
+SiteTypes: Clinical Research site;
+
+LabNames: University of Iowa
+LabPIs: Michael Tansey
+SiteNames: Iowa City, Iowa
+SiteTypes: Clinical Research site;
+
+LabNames: University of Louisville Physicians – Pediatric Endocrinology
+LabPIs: Sara Watson
+SiteNames: Louisville, Kentucky
+SiteTypes: Clinical Research site;
+
+LabNames: Central Ohio Pediatric Endocrine and Diabetes Services
+LabPIs: Jennifer Dyer
+SiteNames: Columbus, Ohio
+SiteTypes: Clinical Research site;
+
+
+--- PUBLICATIONS ---
+PubTitles: Continuous Glucose Monitoring Profiles in Healthy Nondiabetic Participants: A Multicenter Prospective Study
+DOIs: 10.1210/jc.2018-02763, 10.1210/clinem/dgab837
+PubSites: Journal of Clinical Endocrinology & Metabolism, Clinical Endocrinology

@@ -1,0 +1,16 @@
+author_id,name,email,investigator_id,study_id
+AUTH-01,Viral N. Shah,,,CGMND
+AUTH-02,Stephanie N. DuBose,,,CGMND
+AUTH-03,Zoey Li,,,CGMND
+AUTH-04,Roy W Beck,,,CGMND
+AUTH-05,Anne L Peters,,,CGMND
+AUTH-06,Ruth S Weinstock,,,CGMND
+AUTH-07,Davida Kruger,,INV-01,CGMND
+AUTH-08,Michael Tansey,,INV-10,CGMND
+AUTH-09,David Sparling,,INV-05,CGMND
+AUTH-10,Stephanie Woerner,,INV-04,CGMND
+AUTH-11,Francesco Vendrame,,INV-09,CGMND
+AUTH-12,Richard Bergenstal,,INV-03,CGMND
+AUTH-13,William V Tamborlane,,,CGMND
+AUTH-14,Sara E Watson,,,CGMND
+AUTH-15,Jennifer Sherr,,INV-08,CGMND
