@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Simplera Singer Tap (Supporting Manufacturer based cgm , Participant, Study, Author, Meal, Fitness)
-
+Physionet CGMacros Singer Tap 
+- required files -cgm_file_metadata,participant,study,cgm_tracing_* files
+- all other files are optional
 - Scans a directory for CSV files.
 - Identifies file content type based on filename patterns or headers.
 - Emits standard DRH Singer messages.
@@ -19,67 +20,61 @@ import subprocess
 import venv
 import uuid
 import re
+import venv
 
-# Bootstrap Logic to auto-install venv and dependencies
 def bootstrap_venv():
-    """
-    Handles environment setup.
-    Crucial: Prints NOTHING to stdout to avoid breaking the capture tool's JSON parser.
-    """
-    # 1. Check if we are already inside the venv
     if sys.prefix != sys.base_prefix:
         return
  
     script_path = os.path.abspath(__file__)
-    # script_dir is 'singer-tap'
-    script_dir = os.path.dirname(script_path)
-    # project_root is 'drh-edge-core'
-    project_root = os.path.dirname(script_dir)
-   
-    # Path to venv in drh-edge-core
+    script_dir = os.path.dirname(script_path)           # singer-tap
+    project_root = os.path.dirname(script_dir)          # drh-edge-core
+    platform_root = os.path.dirname(project_root)       # spry-drh-edge-platform
+    
     venv_dir = os.path.join(project_root, ".venv")
+    req_file = os.path.join(platform_root, "requirements.txt")
    
     if sys.platform == "win32":
         venv_python = os.path.join(venv_dir, "Scripts", "python.exe")
     else:
         venv_python = os.path.join(venv_dir, "bin", "python")
  
-    # 2. Create VENV if missing (Log to stderr only)
     if not os.path.exists(venv_python):
-        # We print to stderr so the capture tool ignores this text
         print(f"DEBUG: Creating venv at {venv_dir}", file=sys.stderr)
-        builder = venv.EnvBuilder(with_pip=True)
-        builder.create(venv_dir)
+        venv.EnvBuilder(with_pip=True).create(venv_dir)
  
-    # 3. Install dependencies (Silent)
-    # Redirect BOTH stdout and stderr to DEVNULL or stderr to keep the pipe clean
-    try:
-        # Check if already installed to avoid slow git-clones
-        check_cmd = [venv_python, "-c", "import drh_target"]
-        if subprocess.call(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
-            print("DEBUG: Installing drh-protocol...", file=sys.stderr)
-            subprocess.check_call(
-                [venv_python, "-m", "pip", "install","--upgrade", "git+https://github.com/diabetes-research/singer-drh-protocol.git#subdirectory=drh-target/python-pkg"],
-                stdout=subprocess.DEVNULL,
-                stderr=sys.stderr  # Errors go to stderr for debugging
-            )
-    except Exception as e:
-        print(f"FATAL: Bootstrap failed: {e}", file=sys.stderr)
-        sys.exit(1)
+    # Ensure python-dotenv is installed along with requirements
+    check_cmd = [venv_python, "-c", "import drh_target, dotenv"]
+    if subprocess.call(check_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
+        print(f"DEBUG: Installing from {req_file}...", file=sys.stderr)
+        # We explicitly add python-dotenv to ensure it's available for the next step
+        subprocess.check_call(
+            [venv_python, "-m", "pip", "install", "--upgrade", "-r", req_file, "python-dotenv"],
+            stdout=subprocess.DEVNULL, stderr=sys.stderr
+        )
  
-    # 4. Re-execute the script inside the VENV
     os.environ["PYTHONUNBUFFERED"] = "1"
-   
-    # Ensure the script path is absolute and clean
-    normalized_script_path = os.path.abspath(script_path)
-   
-    # Use the venv python to run the script
-    # We pass normalized_script_path as the first argument to python
     print(f"DEBUG: Re-executing with {venv_python}", file=sys.stderr)
-    os.execv(venv_python, [venv_python, normalized_script_path] + sys.argv[1:])
+    os.execv(venv_python, [venv_python, script_path] + sys.argv[1:])
 
-# Run bootstrap before anything else
+# --- 1. RUN BOOTSTRAP FIRST ---
 bootstrap_venv()
+
+# --- 2. LOAD ENV AFTER BOOTSTRAP (Now inside VENV) ---
+try:
+    from dotenv import load_dotenv # type: ignore
+    # Re-calculate platform root to find the .env file  
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _project_root = os.path.dirname(_script_dir)      
+    _env_path = os.path.join(_project_root, ".env")
+    
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path)
+    else:
+        print(f"DEBUG: .env file not found at {_env_path}", file=sys.stderr)
+except ImportError:
+    print("DEBUG: python-dotenv not found inside venv", file=sys.stderr)
+
 
 # Ensure we can import the SDK
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -238,11 +233,22 @@ FILES = get_files_config()
 
 
 MANDATORY_STREAM_NAMES = [
-    "participant", "institution", "lab", "study", "site",
-    "investigator", "publication", "author", "cgm_file_metadata"
+    "participant",
+    "institution",
+    "lab",
+    "study",
+    "site",
+    "investigator",
+    "publication",
+    "author",
+    "cgm_file_metadata"
 ]
 
-MANDATORY_CSVS = [FILES[s] for s in MANDATORY_STREAM_NAMES if s in FILES]
+MANDATORY_FILE_CHECK_STREAMS = [
+    "participant",
+    "study",
+    "cgm_file_metadata"
+]
 
 def get_expected_headers():
     headers = {}
@@ -259,6 +265,17 @@ def get_expected_headers():
 
 EXPECTED_HEADERS = get_expected_headers()
 
+FILE_CACHE = None
+def find_file(data_dir, filename):
+    global FILE_CACHE
+    if FILE_CACHE is None:
+        import glob
+        FILE_CACHE = {}
+        for filepath in glob.glob(os.path.join(data_dir, "**", "*.*"), recursive=True):
+            name = os.path.basename(filepath)
+            if name not in FILE_CACHE:
+                FILE_CACHE[name] = filepath
+    return FILE_CACHE.get(filename, os.path.join(data_dir, filename))
 
 
 def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=None, trace_id=None):
@@ -273,7 +290,7 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
         if not fname: 
             continue
         
-        fpath = os.path.join(data_dir, fname)
+        fpath = find_file(data_dir, fname)
         if os.path.exists(fpath):
             file_span_id = None
             file_start_time = None 
@@ -511,7 +528,7 @@ def check_file_extensions(data_dir):
     for key, filename in FILES.items():
         # Check extensions only for files that actually exist
         # If a file is missing, check_required_files will handle it (if mandatory)
-        if os.path.exists(os.path.join(data_dir, filename)):
+        if os.path.exists(find_file(data_dir, filename)):
             if not filename.lower().endswith('.csv'):
                 extension_errors.append(f"{filename}: Invalid extension (Expected .csv)")
                 
@@ -531,7 +548,7 @@ def check_cgm_metadata_consistency(data_dir):
     if not cgm_meta_filename:
         return []
         
-    cgm_meta_path = os.path.join(data_dir, cgm_meta_filename)
+    cgm_meta_path = find_file(data_dir, cgm_meta_filename)
     
     if os.path.exists(cgm_meta_path):
         try:
@@ -551,7 +568,7 @@ def check_cgm_metadata_consistency(data_dir):
                         else:
                             expected_file_with_ext = expected_file
                         
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         check_name = f"CGM File Presence: {expected_file}"
                         if os.path.exists(target_path):
@@ -587,7 +604,7 @@ def check_cgm_data_integrity(data_dir):
     if not cgm_meta_filename:
         return []
         
-    cgm_meta_path = os.path.join(data_dir, cgm_meta_filename)
+    cgm_meta_path = find_file(data_dir, cgm_meta_filename)
     
     if not os.path.exists(cgm_meta_path):
         return []
@@ -625,7 +642,7 @@ def check_cgm_data_integrity(data_dir):
                     else:
                         expected_file_with_ext = expected_file
                     
-                    target_path = os.path.join(data_dir, expected_file_with_ext)
+                    target_path = find_file(data_dir, expected_file_with_ext)
                     
                     # Extract base filename for check name
                     base_name = os.path.splitext(expected_file)[0]
@@ -695,7 +712,7 @@ def check_meal_data_consistency(data_dir):
     if not meal_meta_filename:
         return []
         
-    meal_meta_path = os.path.join(data_dir, meal_meta_filename)
+    meal_meta_path = find_file(data_dir, meal_meta_filename)
     
     if os.path.exists(meal_meta_path):
         try:
@@ -724,7 +741,7 @@ def check_meal_data_consistency(data_dir):
                         checked_files.add(expected_file_with_ext)
                         
 
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         check_name = f"Meal File Presence: {expected_file}"
                         if os.path.exists(target_path):
@@ -760,7 +777,7 @@ def check_fitness_data_consistency(data_dir):
     if not fitness_meta_filename:
         return []
         
-    fitness_meta_path = os.path.join(data_dir, fitness_meta_filename)
+    fitness_meta_path = find_file(data_dir, fitness_meta_filename)
     
     if os.path.exists(fitness_meta_path):
         try:
@@ -788,7 +805,7 @@ def check_fitness_data_consistency(data_dir):
                             continue
                         checked_files.add(expected_file_with_ext)
                         
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         check_name = f"Fitness File Presence: {expected_file}"
                         if os.path.exists(target_path):
@@ -824,7 +841,7 @@ def check_meal_data_integrity(data_dir):
     if not meal_meta_filename:
         return []
         
-    meal_meta_path = os.path.join(data_dir, meal_meta_filename)
+    meal_meta_path = find_file(data_dir, meal_meta_filename)
     
     if os.path.exists(meal_meta_path):
         try:
@@ -861,7 +878,7 @@ def check_meal_data_integrity(data_dir):
                             continue
                         checked_files.add(expected_file_with_ext)
 
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         # Extract base filename for check name
                         base_name = os.path.splitext(expected_file)[0]
@@ -931,7 +948,7 @@ def check_fitness_data_integrity(data_dir):
     if not fitness_meta_filename:
         return []
         
-    fitness_meta_path = os.path.join(data_dir, fitness_meta_filename)
+    fitness_meta_path = find_file(data_dir, fitness_meta_filename)
     
     if os.path.exists(fitness_meta_path):
         try:
@@ -968,7 +985,7 @@ def check_fitness_data_integrity(data_dir):
                             continue
                         checked_files.add(expected_file_with_ext)
 
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         # Extract base filename for check name
                         base_name = os.path.splitext(expected_file)[0]
@@ -1031,19 +1048,20 @@ def check_required_files(data_dir):
     missing_files = []
     
     # Check strict mandatory files
-    for fname in MANDATORY_CSVS:
-        if not os.path.exists(os.path.join(data_dir, fname)):
+    for stream in MANDATORY_FILE_CHECK_STREAMS:
+        fname = FILES.get(stream)
+        if fname and not os.path.exists(find_file(data_dir, fname)):
             missing_files.append(fname)
     
     # Check conditional mandatory files
     # If meal_data exists, meal_file_metadata is required
-    if os.path.exists(os.path.join(data_dir, FILES["meal_data"])):
-        if not os.path.exists(os.path.join(data_dir, FILES["meal_file_metadata"])):
+    if os.path.exists(find_file(data_dir, FILES["meal_data"])):
+        if not os.path.exists(find_file(data_dir, FILES["meal_file_metadata"])):
             missing_files.append(FILES["meal_file_metadata"])
 
     # If fitness_data exists, fitness_file_metadata is required
-    if os.path.exists(os.path.join(data_dir, FILES["fitness_data"])):
-        if not os.path.exists(os.path.join(data_dir, FILES["fitness_file_metadata"])):
+    if os.path.exists(find_file(data_dir, FILES["fitness_data"])):
+        if not os.path.exists(find_file(data_dir, FILES["fitness_file_metadata"])):
             missing_files.append(FILES["fitness_file_metadata"])
     
     return missing_files
@@ -1469,7 +1487,7 @@ def process_combined_cgm_tracing(emitter, data_dir):
     meta_filename = FILES.get("cgm_file_metadata")
     if not meta_filename: return
     
-    meta_path = os.path.join(data_dir, meta_filename)
+    meta_path = find_file(data_dir, meta_filename)
     if not os.path.exists(meta_path): return
     
     try:
@@ -1492,7 +1510,7 @@ def process_combined_cgm_tracing(emitter, data_dir):
                 tenant_id = os.environ.get("TENANT_ID", row.get("tenant_id"))
                 study_id = row.get("study_id")
                 
-                data_path = os.path.join(data_dir, file_name)
+                data_path = find_file(data_dir, file_name)
                 if not os.path.exists(data_path):
                     # Missing files are handled by validation checks (5 & 6)
                     continue
@@ -1538,7 +1556,7 @@ def process_raw_meal_data(emitter, data_dir):
     meta_filename = FILES.get("meal_file_metadata")
     if not meta_filename: return
     
-    meta_path = os.path.join(data_dir, meta_filename)
+    meta_path = find_file(data_dir, meta_filename)
     if not os.path.exists(meta_path): return
     
     processed_files = set()
@@ -1560,7 +1578,7 @@ def process_raw_meal_data(emitter, data_dir):
                     continue
                 processed_files.add(file_name)
                 
-                data_path = os.path.join(data_dir, file_name)
+                data_path = find_file(data_dir, file_name)
                 if not os.path.exists(data_path):
                      continue 
                 
@@ -1593,7 +1611,7 @@ def process_raw_fitness_data(emitter, data_dir):
     meta_filename = FILES.get("fitness_file_metadata")
     if not meta_filename: return
     
-    meta_path = os.path.join(data_dir, meta_filename)
+    meta_path = find_file(data_dir, meta_filename)
     if not os.path.exists(meta_path): return
     
     processed_files = set()
@@ -1615,7 +1633,7 @@ def process_raw_fitness_data(emitter, data_dir):
                     continue
                 processed_files.add(file_name)
                 
-                data_path = os.path.join(data_dir, file_name)
+                data_path = find_file(data_dir, file_name)
                 if not os.path.exists(data_path):
                      continue 
                 
@@ -1643,94 +1661,166 @@ def process_raw_fitness_data(emitter, data_dir):
 
 
 # OTel Helper Functions
+
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SpanExporter, SimpleSpanProcessor, SpanExportResult
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import MetricExporter, MetricExportResult, PeriodicExportingMetricReader
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import LogExporter, SimpleLogRecordProcessor, LogExportResult
+from opentelemetry._logs import set_logger_provider, LogRecord
+from opentelemetry.trace import SpanContext, TraceFlags, NonRecordingSpan
+from opentelemetry.trace.status import Status, StatusCode
+
+class SingerSpanExporter(SpanExporter):
+    def __init__(self, emitter, resource_id):
+        self.emitter = emitter
+        self.resource_id = resource_id
+    def export(self, spans):
+        for span in spans:
+            record = {
+                "name": span.name,
+                "trace_id": format(span.context.trace_id, "032x"),
+                "span_id": format(span.context.span_id, "016x"),
+                "parent_span_id": format(span.parent.span_id, "016x") if span.parent else "",
+                "start_time_unix_nano": span.start_time,
+                "end_time_unix_nano": span.end_time,
+                "attributes": dict(span.attributes or {}),
+                "status_code": {"code": span.status.status_code.name},
+                "resource_id": self.resource_id
+            }
+            self.emitter.emit_record("otel_spans", record)
+        return SpanExportResult.SUCCESS
+
+class SingerLogExporter(LogExporter):
+    def __init__(self, emitter, resource_id):
+        self.emitter = emitter
+        self.resource_id = resource_id
+    def export(self, log_records):
+        for log in log_records:
+            record = {
+                "time_unix_nano": log.timestamp,
+                "trace_id": format(log.trace_id, "032x") if log.trace_id else "",
+                "span_id": format(log.span_id, "016x") if log.span_id else "",
+                "severity_number": log.severity_number.value if log.severity_number else 9,
+                "severity_text": log.severity_text or "INFO",
+                "body": str(log.body),
+                "attributes": dict(log.attributes or {}),
+                "resource_id": self.resource_id
+            }
+            self.emitter.emit_record("otel_logs", record)
+        return LogExportResult.SUCCESS
+
+class SingerMetricExporter(MetricExporter):
+    def __init__(self, emitter, resource_id):
+        self.emitter = emitter
+        self.resource_id = resource_id
+    def export(self, metrics_data, timeout_millis=10000, **kwargs):
+        for resource_metric in metrics_data.resource_metrics:
+            for scope_metric in resource_metric.scope_metrics:
+                for metric in scope_metric.metrics:
+                    for dp in metric.data.data_points:
+                        record = {
+                            "name": metric.name,
+                            "description": metric.description or f"Metric for {metric.name}",
+                            "unit": metric.unit or "1",
+                            "time_unix_nano": dp.time_unix_nano,
+                            "value": float(dp.value),
+                            "attributes": dict(dp.attributes or {}),
+                            "resource_id": self.resource_id
+                        }
+                        self.emitter.emit_record("otel_metrics", record)
+        return MetricExportResult.SUCCESS
+    def shutdown(self, timeout_millis=30000, **kwargs):
+        pass
+
 def get_time_nano():
     """Returns current UTC time in nanoseconds."""
     return int(datetime.now(timezone.utc).timestamp() * 1e9)
 
 def emit_otel_resource(emitter):
-    """Emits the OTel Resource definition and returns the resource_id."""
+    """Emits the OTel Resource definition, initializes global OTel providers, and returns the resource_id."""
     resource_id = str(uuid.uuid4())
     record = {
         "resource_id": resource_id,
-        "service.name": "tap-simplera",
-        "service.version": "1.0.0",
+        "service.name": os.environ.get("OTEL_SERVICE_NAME", "tap-cgmacros"),
+        "service.version": os.environ.get("OTEL_SERVICE_VERSION", "1.0.0"),
         "service.instance.id": resource_id,
         "deployment.environment": os.environ.get("DEPLOY_ENV", "production"),
         "singer.role": "tap",
         "singer.stream": "all"
     }
     emitter.emit_record("otel_resource", record)
+
+    # Initialize Global OTel SDK Providers with Custom Singer Exporters
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(SingerSpanExporter(emitter, resource_id)))
+    trace.set_tracer_provider(tracer_provider)
+    
+    logger_provider = LoggerProvider()
+    logger_provider.add_log_record_processor(SimpleLogRecordProcessor(SingerLogExporter(emitter, resource_id)))
+    opentelemetry._logs.set_logger_provider(logger_provider)
+
+    meter_provider = MeterProvider(metric_readers=[PeriodicExportingMetricReader(SingerMetricExporter(emitter, resource_id), export_interval_millis=100)])
+    metrics.set_meter_provider(meter_provider)
+
     return resource_id
 
 def emit_otel_log(emitter, resource_id, severity, body, attributes=None, span_id="", trace_id=""):
-    """Emits an OTel Log record."""
-    if attributes is None:
-        attributes = {}
-    
-    # Map severity text to number (approximate)
-    severity_map = {
-        "DEBUG": 5, "INFO": 9, "WARN": 13, "ERROR": 17, "FATAL": 21
-    }
-    
-    record = {
-        "time_unix_nano": get_time_nano(),
-        "trace_id": trace_id, 
-        "span_id": span_id,
-        "severity_number": severity_map.get(severity, 9),
-        "severity_text": severity,
-        "body": str(body),
-        "attributes": attributes,
-        "resource_id": resource_id
-    }
-    emitter.emit_record("otel_logs", record)
+    """Emits an OTel Log record via SDK."""
+    if attributes is None: attributes = {}
+    severity_map = {"DEBUG": 5, "INFO": 9, "WARN": 13, "ERROR": 17, "FATAL": 21}
+    try:
+        from opentelemetry.sdk._logs import SeverityNumber
+        logger_provider = opentelemetry._logs.get_logger_provider()
+        otel_logger = logger_provider.get_logger(__name__)
+        tid = int(trace_id, 16) if trace_id else None
+        sid = int(span_id, 16) if span_id else None
+        sev_num = SeverityNumber(severity_map.get(severity, 9))
+        record = LogRecord(
+            timestamp=get_time_nano(),
+            trace_id=tid,
+            span_id=sid,
+            trace_flags=TraceFlags(1) if tid else None,
+            severity_text=severity,
+            severity_number=sev_num,
+            body=str(body),
+            attributes=attributes
+        )
+        otel_logger.emit(record)
+    except Exception as e:
+        LOGGER.error(f"OTel SDK Logging exception: {e}")
 
 def emit_otel_metric(emitter, resource_id, name, value, unit="1", attributes=None):
-    """Emits an OTel Metric data point."""
-    if attributes is None:
-        attributes = {}
-    
-    record = {
-        "name": name,
-        "description": f"Metric for {name}",
-        "unit": unit,
-        "time_unix_nano": get_time_nano(),
-        "value": float(value),
-        "attributes": attributes,
-        "resource_id": resource_id
-    }
-    emitter.emit_record("otel_metrics", record)
+    """Emits an OTel Metric via SDK."""
+    meter = metrics.get_meter(__name__)
+    counter = meter.create_counter(name, unit=unit, description=f"Metric for {name}")
+    counter.add(value, attributes or {})
 
 def emit_otel_span(emitter, resource_id, name, start_time_nano, end_time_nano, parent_span_id=None, attributes=None, status_code="OK", span_id=None, trace_id=None):
-    """Emits an OTel Span record."""
-    # base_attr = {"nature": "V&V"}
-    if attributes is None:
-        attributes = {}
+    """Emits an OTel Span via SDK."""
+    if attributes is None: attributes = {}
+    if not span_id: span_id = str(uuid.uuid4()).replace("-", "")[:16]
+    if not trace_id: trace_id = str(uuid.uuid4()).replace("-", "")
+    
+    tid = int(trace_id, 16)
+    sid = int(span_id, 16)
+    psid = int(parent_span_id, 16) if parent_span_id else None
+    
+    status_map = {"OK": StatusCode.OK, "ERROR": StatusCode.ERROR, "UNSET": StatusCode.UNSET}
+    
+    span_context = SpanContext(trace_id=tid, span_id=sid, is_remote=False, trace_flags=TraceFlags(1))
+    parent_context = trace.set_span_in_context(NonRecordingSpan(SpanContext(trace_id=tid, span_id=psid, is_remote=False, trace_flags=TraceFlags(1)))) if psid else None
 
-    # base_attr.update(attributes)    
+    tracer = trace.get_tracer(__name__)
+    span = tracer.start_span(name, start_time=start_time_nano, context=parent_context)
     
-    if not span_id:
-        span_id = str(uuid.uuid4()).replace("-", "")[:16] # 16-char hex
-    
-    if not trace_id:
-        trace_id = str(uuid.uuid4()).replace("-", "") # 32-char hex
-    
-    # Simple model: random new trace for each root, or link if parent provided (complexity skipped for now)
-    # Ideally reuse trace_id if passing context, here we treat each span as fresh or linked locally
-    
-    record = {
-        "name": name,
-        "trace_id": trace_id,
-        "span_id": span_id,
-        "parent_span_id": parent_span_id if parent_span_id else "",
-        "start_time_unix_nano": start_time_nano,
-        "end_time_unix_nano": end_time_nano,
-        "attributes": attributes,
-        "status_code": {
-            "code": status_code
-        },
-        "resource_id": resource_id
-    }
-    emitter.emit_record("otel_spans", record)
+    # Force SDK span internal context to retain manual external IDs provided in original manual tap code.
+    span._context = span_context
+    span.set_attributes(attributes)
+    span.set_status(Status(status_map.get(status_code, StatusCode.OK)))
+    span.end(end_time=end_time_nano)
     return span_id, trace_id
 
 
@@ -2050,7 +2140,7 @@ def main():
     
     # 7. Meal Data Validation (Static ID: 7) & 8. Meal Data Integrity (Static ID: 8)
     # Conditional Execution: Only if meal_file_metadata exists
-    if os.path.exists(os.path.join(data_dir, FILES["meal_file_metadata"])):
+    if os.path.exists(find_file(data_dir, FILES["meal_file_metadata"])):
         # Check 7
         check7_start = get_time_nano()
         check7_span_id = str(uuid.uuid4()).replace("-", "")[:16]
@@ -2111,7 +2201,7 @@ def main():
 
     # 9. Fitness Data Validation (Static ID: 9) & 10. Fitness Data Integrity (Static ID: 10)
     # Conditional Execution: Only if fitness_file_metadata exists
-    if os.path.exists(os.path.join(data_dir, FILES["fitness_file_metadata"])):
+    if os.path.exists(find_file(data_dir, FILES["fitness_file_metadata"])):
         # Check 9
         check9_start = get_time_nano()
         check9_span_id = str(uuid.uuid4()).replace("-", "")[:16]
@@ -2268,7 +2358,7 @@ def main():
                 LOGGER.warning(f"No processor defined for stream {stream_name} (file: {filename})")
 
         # 2. Fallback / Special Pattern Matching
-        if "cgm_tracing" in filename:
+        if "cgm_tracing" in filename or "CGMacros" in filename:
             process_raw_cgm_tracing(emitter, filepath)
             continue 
         
