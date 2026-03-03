@@ -5,6 +5,7 @@ Simplera Singer Tap (Supporting Manufacturer based cgm , Participant, Study, Aut
 - all other files are optional
 - Scans a directory for CSV files.
 - Identifies file content type based on filename patterns or headers.
+- complete validation
 - Emits standard DRH Singer messages.
 """
 
