@@ -9,3 +9,4 @@ validation-reports
 .venv
 *:Zone.Identifier
 .env
+drh-edge-core/node_modules
