@@ -234,9 +234,9 @@ for p in participants:
             pid,
             f.stem,
             "csv",
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            start.strftime("%Y-%m-%d %H:%M:%S"),
-            start.strftime("%Y-%m-%d %H:%M:%S"),
+            datetime.now().strftime("%Y-%m-%d"),   # changed
+            start.strftime("%Y-%m-%d"),            # changed
+            start.strftime("%Y-%m-%d"),            # changed
             ts_col,
             "Glucose Value",
             args.study_id,
