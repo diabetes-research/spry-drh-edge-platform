@@ -238,7 +238,7 @@ for p in participants:
             start.strftime("%Y-%m-%d"),            # changed
             start.strftime("%Y-%m-%d"),            # changed
             ts_col,
-            "Glucose Value",
+            "Glucose Value (mg/dL)",
             args.study_id,
             ""
         ])

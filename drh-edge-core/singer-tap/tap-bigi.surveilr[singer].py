@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Physionet CGMacros Singer Tap 
-- required files -cgm_file_metadata,participant,study,cgm_tracing_* files
-- all other files are optional
-- Scans a directory for CSV files.
-- Identifies file content type based on filename patterns or headers.
-- Emits standard DRH Singer messages.
+Physionet BIGIDEAS Singer Tap
+- Required files: cgm_file_metadata.csv, participant.csv, study.csv
+- CGM tracing CSV files are expected in numbered subfolders (for example: 001 to 016)
+- All other files are optional
+- Scans the parent study folder and all subfolders recursively for CSV files
+- From CGM tracing files, only rows with Event Type = EGV are emitted
+- Emits standard DRH Singer schema, record, and state messages
 """
 
 import sys
@@ -1148,7 +1149,10 @@ def process_raw_cgm_tracing(emitter, filepath):
         # Read all rows into a list of dictionaries
         with open(filepath, newline='', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
-            data_rows = list(reader)
+            data_rows = [
+                row for row in reader
+                if row.get("Event Type", "").strip() == "EGV"
+            ]
             
         record = {
             "raw_id": str(uuid.uuid4()),
