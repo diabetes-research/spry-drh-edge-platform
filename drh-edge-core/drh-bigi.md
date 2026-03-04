@@ -101,7 +101,7 @@ TENANT_NAME="Duke University"
   - Once verified, integrate the execution logic into the **Executable Markdown** using `surveilr` to orchestrate the pipeline.
 
 - Place the study data files in a **directory** in the same path as this markdown, then run the following command:
-  - `spry rb task prepare-db-deploy-server  drh-physio-cgmacros.md`
+  - `spry rb task prepare-db-deploy-server  drh-bigi.md`
 - The `prepare-db-deploy-server` task, requires the **`$STUDY_DATA_PATH`**, **`${TENANT_ID}`**, and **`${TENANT_NAME}`** as parameters which are provided through env.
 - This task block automates a data pipeline that cleans the environment, ingests study data via a Singer tap, and conditionally executes SQL transformations based on validation results before deploying an SQLPage-powered monitoring server.
 
@@ -146,7 +146,7 @@ else
 fi
 # 5. INITIALIZE SQLPAGE (Runs in both PASS and FAIL scenarios)
 # This allows the UI to show either the 'Launch' or 'Error' buttons based on your SQL queries
-spry sp spc --package --conf sqlpage/sqlpage.json -m drh-physio-cgmacros.md | sqlite3 resource-surveillance.sqlite.db
+spry sp spc --package --conf sqlpage/sqlpage.json -m drh-bigi.md | sqlite3 resource-surveillance.sqlite.db
 ```
 
 ```bash  clean --graph special --silent --descr "Clean up the project directory's generated artifacts"
