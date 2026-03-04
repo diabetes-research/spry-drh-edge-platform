@@ -7,6 +7,7 @@ Physionet BIGIDEAS Singer Tap
 - Scans the parent study folder and all subfolders recursively for CSV files
 - From CGM tracing files, only rows with Event Type = EGV are emitted
 - Emits standard DRH Singer schema, record, and state messages
+- Orignal Dexcom G6 CGM Data
 """
 
 import sys
