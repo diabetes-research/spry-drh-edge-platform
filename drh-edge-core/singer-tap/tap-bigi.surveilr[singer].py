@@ -8,6 +8,7 @@ Physionet BIGIDEAS Singer Tap
 - From CGM tracing files, only rows with Event Type = EGV are emitted
 - Complete validation
 - Emits standard DRH Singer schema, record, and state messages
+- Orignal Dexcom G6 CGM Data
 """
 
 import sys
