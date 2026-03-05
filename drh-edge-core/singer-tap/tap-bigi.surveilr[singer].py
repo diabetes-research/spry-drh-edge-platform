@@ -6,6 +6,7 @@ Physionet BIGIDEAS Singer Tap
 - All other files are optional
 - Scans the parent study folder and all subfolders recursively for CSV files
 - From CGM tracing files, only rows with Event Type = EGV are emitted
+- Complete validation
 - Emits standard DRH Singer schema, record, and state messages
 """
 
@@ -205,11 +206,240 @@ def get_stream_keys():
     for stream in ALL_STREAM_NAMES:
         schema = load_schema(stream)
         if schema and "key_properties" in schema:
-             keys[stream] = schema["key_properties"]
+            keys[stream] = schema["key_properties"]
         else:
-             keys[stream] = []
+            # Default fallback if schema missing key_props
+            # Attempt to guess: {stream}_id or id
+            default_key = f"{stream}_id"
+            # Check if this property exists in schema to be safe
+            if (
+                schema
+                and "properties" in schema
+                and default_key in schema["properties"]
+            ):
+                keys[stream] = [default_key]
+            elif schema and "properties" in schema and "id" in schema["properties"]:
+                keys[stream] = ["id"]
+            else:
+                keys[stream] = []
     return keys
+class ForeignKeyValidator:
+    """
+    Validates Foreign Keys across all streams.
+    Phase 1: Collection (during file reading)
+    Phase 2: Global Validation (after all files read)
+    """
 
+    def __init__(self):
+        # Maps stream_name -> set of collected IDs (Primary Keys)
+        self.stream_ids = {}
+        # List of pending checks: (source_stream, source_row_num, target_stream, target_id_value, field_name)
+        self.pending_fks = []
+        # Maps stream_name -> list of FK definitions from schema
+        self.schema_refs = {}
+
+    def register_schema(self, stream_name, schema):
+        """Parse schema to identify Foreign Key relationships."""
+        if stream_name in self.schema_refs:
+            return
+
+        self.schema_refs[stream_name] = []
+        properties = schema.get("properties", {})
+
+        for field_name, field_def in properties.items():
+            # Support 1: Custom 'foreign_key' property
+            fk_target = field_def.get("foreign_key")
+
+            # Support 2: Standard JSON Schema '$ref' (e.g. "study.json#/properties/study_id")
+            if not fk_target and "$ref" in field_def:
+                ref = field_def["$ref"]
+                # Extract stream name from "stream.json..."
+                match = re.match(r"^([a-zA-Z0-9_]+)\.json", ref)
+                if match:
+                    fk_target = match.group(1)
+
+            if fk_target:
+                self.schema_refs[stream_name].append(
+                    {"field": field_name, "target_stream": fk_target}
+                )
+
+    def track_row(self, stream_name, row, filename, line_num):
+        """
+        1. Collect Primary Keys for this row.
+        2. Record outgoing Foreign Keys for later validation.
+        """
+        # 1. Collect IDs
+        pk_list = STREAM_KEYS.get(stream_name, [])
+        # If specific PKs defined, use them. If not, we might default to 'id' or '{stream}_id' if present?
+        # For now, strictly use STREAM_KEYS mapping.
+
+        for pk in pk_list:
+            if pk in row and row[pk]:
+                if stream_name not in self.stream_ids:
+                    self.stream_ids[stream_name] = set()
+                self.stream_ids[stream_name].add(row[pk])
+
+        # 2. Track FKs
+        if stream_name in self.schema_refs:
+            for fk_def in self.schema_refs[stream_name]:
+                field = fk_def["field"]
+                target_stream = fk_def["target_stream"]
+
+                val = row.get(field)
+                if val:  # Only validate non-empty FKs
+                    self.pending_fks.append(
+                        {
+                            "source_stream": stream_name,
+                            "source_file": filename,
+                            "line": line_num,
+                            "field": field,
+                            "value": val,
+                            "target_stream": target_stream,
+                        }
+                    )
+
+    def validate(self):
+        """
+        Global Validation Phase.
+        Returns list of violation strings.
+        """
+        violations = []
+        print(
+            f"INFO:__main__:Starting Global FK Validation on {len(self.pending_fks)} references across {len(self.stream_ids)} streams...",
+            file=sys.stderr,
+        )
+
+        for check in self.pending_fks:
+            target_stream = check["target_stream"]
+            val = check["value"]
+
+            # If target stream has no IDs collected, it might be empty or missing.
+            # We strictly enforce FKs, so this is a violation if the file was processed.
+            # However, if the target file was optional and missing, this is still a violation of data integrity.
+
+            if target_stream not in self.stream_ids:
+                # Special case: maybe target stream wasn't loaded?
+                # For robust V&V, we flag it.
+                violations.append(
+                    f"FK Violation in {check['source_file']} line {check['line']}: {check['field']}='{val}' refers to missing stream '{target_stream}'"
+                )
+                continue
+
+            if val not in self.stream_ids[target_stream]:
+                violations.append(
+                    f"FK Violation in {check['source_file']} line {check['line']}: {check['field']}='{val}' not found in {target_stream}"
+                )
+
+        return violations
+class ForeignKeyValidator:
+    """
+    Validates Foreign Keys across all streams.
+    Phase 1: Collection (during file reading)
+    Phase 2: Global Validation (after all files read)
+    """
+
+    def __init__(self):
+        # Maps stream_name -> set of collected IDs (Primary Keys)
+        self.stream_ids = {}
+        # List of pending checks: (source_stream, source_row_num, target_stream, target_id_value, field_name)
+        self.pending_fks = []
+        # Maps stream_name -> list of FK definitions from schema
+        self.schema_refs = {}
+
+    def register_schema(self, stream_name, schema):
+        """Parse schema to identify Foreign Key relationships."""
+        if stream_name in self.schema_refs:
+            return
+
+        self.schema_refs[stream_name] = []
+        properties = schema.get("properties", {})
+
+        for field_name, field_def in properties.items():
+            # Support 1: Custom 'foreign_key' property
+            fk_target = field_def.get("foreign_key")
+
+            # Support 2: Standard JSON Schema '$ref' (e.g. "study.json#/properties/study_id")
+            if not fk_target and "$ref" in field_def:
+                ref = field_def["$ref"]
+                # Extract stream name from "stream.json..."
+                match = re.match(r"^([a-zA-Z0-9_]+)\.json", ref)
+                if match:
+                    fk_target = match.group(1)
+
+            if fk_target:
+                self.schema_refs[stream_name].append(
+                    {"field": field_name, "target_stream": fk_target}
+                )
+
+    def track_row(self, stream_name, row, filename, line_num):
+        """
+        1. Collect Primary Keys for this row.
+        2. Record outgoing Foreign Keys for later validation.
+        """
+        # 1. Collect IDs
+        pk_list = STREAM_KEYS.get(stream_name, [])
+        # If specific PKs defined, use them. If not, we might default to 'id' or '{stream}_id' if present?
+        # For now, strictly use STREAM_KEYS mapping.
+
+        for pk in pk_list:
+            if pk in row and row[pk]:
+                if stream_name not in self.stream_ids:
+                    self.stream_ids[stream_name] = set()
+                self.stream_ids[stream_name].add(row[pk])
+
+        # 2. Track FKs
+        if stream_name in self.schema_refs:
+            for fk_def in self.schema_refs[stream_name]:
+                field = fk_def["field"]
+                target_stream = fk_def["target_stream"]
+
+                val = row.get(field)
+                if val:  # Only validate non-empty FKs
+                    self.pending_fks.append(
+                        {
+                            "source_stream": stream_name,
+                            "source_file": filename,
+                            "line": line_num,
+                            "field": field,
+                            "value": val,
+                            "target_stream": target_stream,
+                        }
+                    )
+
+    def validate(self):
+        """
+        Global Validation Phase.
+        Returns list of violation strings.
+        """
+        violations = []
+        print(
+            f"INFO:__main__:Starting Global FK Validation on {len(self.pending_fks)} references across {len(self.stream_ids)} streams...",
+            file=sys.stderr,
+        )
+
+        for check in self.pending_fks:
+            target_stream = check["target_stream"]
+            val = check["value"]
+
+            # If target stream has no IDs collected, it might be empty or missing.
+            # We strictly enforce FKs, so this is a violation if the file was processed.
+            # However, if the target file was optional and missing, this is still a violation of data integrity.
+
+            if target_stream not in self.stream_ids:
+                # Special case: maybe target stream wasn't loaded?
+                # For robust V&V, we flag it.
+                violations.append(
+                    f"FK Violation in {check['source_file']} line {check['line']}: {check['field']}='{val}' refers to missing stream '{target_stream}'"
+                )
+                continue
+
+            if val not in self.stream_ids[target_stream]:
+                violations.append(
+                    f"FK Violation in {check['source_file']} line {check['line']}: {check['field']}='{val}' not found in {target_stream}"
+                )
+
+        return violations
+            
 STREAM_KEYS = get_stream_keys()
 
 # File Configuration from Environment
@@ -279,7 +509,14 @@ def find_file(data_dir, filename):
     return FILE_CACHE.get(filename, os.path.join(data_dir, filename))
 
 
-def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=None, trace_id=None):
+def check_file_headers(
+    data_dir,
+    emitter=None,
+    resource_id=None,
+    parent_span_id=None,
+    trace_id=None,
+    fk_validator=None,
+):
     """
     Check if existing files have required headers AND validate data formats.
     Returns a list of result dicts: {"name": str, "status": str, "details": str}
@@ -363,6 +600,8 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                         pattern_span_id = str(uuid.uuid4()).replace("-", "")[:16] if (emitter and resource_id) else None
                         
                         schema = load_schema(key)
+                        if fk_validator:
+                            fk_validator.register_schema(key, schema)
                         properties = schema.get("properties", {})
                         header_map = {col: i for i, col in enumerate(header)}
                         
@@ -371,6 +610,13 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                         
                         for row in reader:
                             line_num += 1
+                            if fk_validator:
+                                row_dict = {
+                                    col: row[idx]
+                                    for col, idx in header_map.items()
+                                    if idx < len(row)
+                                }
+                                fk_validator.track_row(key, row_dict, fname, line_num)
                             for field_name, field_def in properties.items():
                                 if field_name not in header_map: continue
                                 idx = header_map[field_name]
@@ -447,13 +693,24 @@ def check_file_headers(data_dir, emitter=None, resource_id=None, parent_span_id=
                                            status_code=sub_status, trace_id=trace_id)
 
                         # --- 4.1.4 Foreign Key Check (Commented) ---
-                        # if emitter and resource_id:
-                        #    fk_start = get_time_nano()
-                        #    fk_span_id = str(uuid.uuid4()).replace("-", "")[:16]
-                        #    # ... Logic to check FKs ...
-                        #    emit_otel_span(emitter, resource_id, f"{OTelNames.CHK_FK_INTEGRITY}: {fname}", fk_start, get_time_nano(), 
-                        #                   parent_span_id=file_span_id, span_id=fk_span_id,
-                        #                   attributes={OTelNames.ATTR_VALIDATION_LEVEL: "fk_check"}, status_code="OK", trace_id=trace_id)
+                        if emitter and resource_id:
+                            fk_start = get_time_nano()
+                            fk_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+
+                            emit_otel_span(
+                                emitter,
+                                resource_id,
+                                f"{OTelNames.CHK_FK_INTEGRITY}: {fname}",
+                                fk_start,
+                                get_time_nano(),
+                                parent_span_id=file_span_id,
+                                span_id=fk_span_id,
+                                attributes={
+                                    OTelNames.ATTR_VALIDATION_LEVEL: "fk_collection"
+                                },
+                                status_code="OK",
+                                trace_id=trace_id,
+                            )
 
 
                         if row_errors:
@@ -1969,13 +2226,21 @@ def main():
     
     
     # 4. File Schema and Required Columns + Field Format Check (Static ID: 4)
+    fk_validator = ForeignKeyValidator()
     schema_val_start = get_time_nano()
     # Create the ID for the schema validation span beforehand to pass it down
     schema_span_id = str(uuid.uuid4()).replace("-", "")[:16]
     current_span_id = schema_span_id # Update context
     
     # We call the function passing the parent span ID AND root_trace_id
-    schema_results = check_file_headers(data_dir, emitter=emitter, resource_id=otel_resource_id, parent_span_id=schema_span_id, trace_id=root_trace_id)
+    schema_results = check_file_headers(
+        data_dir,
+        emitter=emitter,
+        resource_id=otel_resource_id,
+        parent_span_id=schema_span_id,
+        trace_id=root_trace_id,
+        fk_validator=fk_validator,
+    )
     
     schema_failures = 0
     for res in schema_results:
@@ -2007,6 +2272,59 @@ def main():
     
     if schema_failures > 0:
         fail_and_exit("File Schema Headers", schema_failures)
+    
+    # 4.1.4 Global Foreign Key Validation
+    if fk_validator:
+        fk_start = get_time_nano()
+        fk_span_id = str(uuid.uuid4()).replace("-", "")[:16]
+
+        violations = fk_validator.validate()
+
+        fk_status = "OK"
+        if violations:
+            fk_status = "ERROR"
+            for v in violations:
+                emit_diagnostic(4, "Foreign Key Check", "FAILED", v)
+                emit_otel_log(
+                    emitter,
+                    otel_resource_id,
+                    "ERROR",
+                    f"Diagnostic FAILED: Foreign Key Check",
+                    attributes={"check_id": 4, "details": v},
+                    span_id=fk_span_id,
+                    trace_id=root_trace_id,
+                )
+        else:
+            msg = "All Foreign Key references are valid"
+            emit_diagnostic(4, "Foreign Key Check", "PASSED", msg)
+            emit_otel_log(
+                emitter,
+                otel_resource_id,
+                "INFO",
+                f"Diagnostic PASSED: Foreign Key Check",
+                attributes={"check_id": 4, "details": msg},
+                span_id=fk_span_id,
+                trace_id=root_trace_id,
+            )
+
+        emit_otel_span(
+            emitter,
+            otel_resource_id,
+            OTelNames.CHK_FK_INTEGRITY,
+            fk_start,
+            get_time_nano(),
+            parent_span_id=root_span_id,
+            span_id=fk_span_id,
+            trace_id=root_trace_id,
+            attributes={
+                OTelNames.ATTR_VALIDATION_LEVEL: "fk_global",
+                "violations": len(violations),
+            },
+            status_code=fk_status,
+        )
+
+        if violations:
+            fail_and_exit("Foreign Key Integrity", len(violations))
 
 
     # 5. CGM Metadata Consistency Check (Static ID: 5)
