@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Dexcom Singer Tap (Supporting Clarity, API, Participant, Study, Author, Meal, Fitness)
-- required files -cgm_file_metadata,participant,study,cgm_tracing_* files
-- all other files are optional
-- Scans a directory for CSV files.
-- Identifies file content type based on filename patterns or headers.
-- complete validation
-- Emits standard DRH Singer messages.
+Physionet BIGIDEAS Singer Tap
+- Required files: cgm_file_metadata.csv, participant.csv, study.csv
+- CGM tracing CSV files are expected in numbered subfolders (for example: 001 to 016)
+- All other files are optional
+- Scans the parent study folder and all subfolders recursively for CSV files
+- From CGM tracing files, only rows with Event Type = EGV are emitted
+- Complete validation
+- Emits standard DRH Singer schema, record, and state messages
+- Orignal Dexcom G6 CGM Data
 """
 
 import sys
@@ -21,6 +23,7 @@ import subprocess
 import venv
 import uuid
 import re
+import venv
 
 def bootstrap_venv():
     if sys.prefix != sys.base_prefix:
@@ -74,6 +77,7 @@ try:
         print(f"DEBUG: .env file not found at {_env_path}", file=sys.stderr)
 except ImportError:
     print("DEBUG: python-dotenv not found inside venv", file=sys.stderr)
+
 
 # Ensure we can import the SDK
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -203,7 +207,7 @@ def get_stream_keys():
     for stream in ALL_STREAM_NAMES:
         schema = load_schema(stream)
         if schema and "key_properties" in schema:
-             keys[stream] = schema["key_properties"]
+            keys[stream] = schema["key_properties"]
         else:
             # Default fallback if schema missing key_props
             # Attempt to guess: {stream}_id or id
@@ -220,8 +224,6 @@ def get_stream_keys():
             else:
                 keys[stream] = []
     return keys
-
-
 class ForeignKeyValidator:
     """
     Validates Foreign Keys across all streams.
@@ -330,8 +332,115 @@ class ForeignKeyValidator:
                 )
 
         return violations
+class ForeignKeyValidator:
+    """
+    Validates Foreign Keys across all streams.
+    Phase 1: Collection (during file reading)
+    Phase 2: Global Validation (after all files read)
+    """
 
+    def __init__(self):
+        # Maps stream_name -> set of collected IDs (Primary Keys)
+        self.stream_ids = {}
+        # List of pending checks: (source_stream, source_row_num, target_stream, target_id_value, field_name)
+        self.pending_fks = []
+        # Maps stream_name -> list of FK definitions from schema
+        self.schema_refs = {}
 
+    def register_schema(self, stream_name, schema):
+        """Parse schema to identify Foreign Key relationships."""
+        if stream_name in self.schema_refs:
+            return
+
+        self.schema_refs[stream_name] = []
+        properties = schema.get("properties", {})
+
+        for field_name, field_def in properties.items():
+            # Support 1: Custom 'foreign_key' property
+            fk_target = field_def.get("foreign_key")
+
+            # Support 2: Standard JSON Schema '$ref' (e.g. "study.json#/properties/study_id")
+            if not fk_target and "$ref" in field_def:
+                ref = field_def["$ref"]
+                # Extract stream name from "stream.json..."
+                match = re.match(r"^([a-zA-Z0-9_]+)\.json", ref)
+                if match:
+                    fk_target = match.group(1)
+
+            if fk_target:
+                self.schema_refs[stream_name].append(
+                    {"field": field_name, "target_stream": fk_target}
+                )
+
+    def track_row(self, stream_name, row, filename, line_num):
+        """
+        1. Collect Primary Keys for this row.
+        2. Record outgoing Foreign Keys for later validation.
+        """
+        # 1. Collect IDs
+        pk_list = STREAM_KEYS.get(stream_name, [])
+        # If specific PKs defined, use them. If not, we might default to 'id' or '{stream}_id' if present?
+        # For now, strictly use STREAM_KEYS mapping.
+
+        for pk in pk_list:
+            if pk in row and row[pk]:
+                if stream_name not in self.stream_ids:
+                    self.stream_ids[stream_name] = set()
+                self.stream_ids[stream_name].add(row[pk])
+
+        # 2. Track FKs
+        if stream_name in self.schema_refs:
+            for fk_def in self.schema_refs[stream_name]:
+                field = fk_def["field"]
+                target_stream = fk_def["target_stream"]
+
+                val = row.get(field)
+                if val:  # Only validate non-empty FKs
+                    self.pending_fks.append(
+                        {
+                            "source_stream": stream_name,
+                            "source_file": filename,
+                            "line": line_num,
+                            "field": field,
+                            "value": val,
+                            "target_stream": target_stream,
+                        }
+                    )
+
+    def validate(self):
+        """
+        Global Validation Phase.
+        Returns list of violation strings.
+        """
+        violations = []
+        print(
+            f"INFO:__main__:Starting Global FK Validation on {len(self.pending_fks)} references across {len(self.stream_ids)} streams...",
+            file=sys.stderr,
+        )
+
+        for check in self.pending_fks:
+            target_stream = check["target_stream"]
+            val = check["value"]
+
+            # If target stream has no IDs collected, it might be empty or missing.
+            # We strictly enforce FKs, so this is a violation if the file was processed.
+            # However, if the target file was optional and missing, this is still a violation of data integrity.
+
+            if target_stream not in self.stream_ids:
+                # Special case: maybe target stream wasn't loaded?
+                # For robust V&V, we flag it.
+                violations.append(
+                    f"FK Violation in {check['source_file']} line {check['line']}: {check['field']}='{val}' refers to missing stream '{target_stream}'"
+                )
+                continue
+
+            if val not in self.stream_ids[target_stream]:
+                violations.append(
+                    f"FK Violation in {check['source_file']} line {check['line']}: {check['field']}='{val}' not found in {target_stream}"
+                )
+
+        return violations
+            
 STREAM_KEYS = get_stream_keys()
 
 # File Configuration from Environment
@@ -388,6 +497,17 @@ def get_expected_headers():
 
 EXPECTED_HEADERS = get_expected_headers()
 
+FILE_CACHE = None
+def find_file(data_dir, filename):
+    global FILE_CACHE
+    if FILE_CACHE is None:
+        import glob
+        FILE_CACHE = {}
+        for filepath in glob.glob(os.path.join(data_dir, "**", "*.*"), recursive=True):
+            name = os.path.basename(filepath)
+            if name not in FILE_CACHE:
+                FILE_CACHE[name] = filepath
+    return FILE_CACHE.get(filename, os.path.join(data_dir, filename))
 
 
 def check_file_headers(
@@ -409,7 +529,7 @@ def check_file_headers(
         if not fname: 
             continue
         
-        fpath = os.path.join(data_dir, fname)
+        fpath = find_file(data_dir, fname)
         if os.path.exists(fpath):
             file_span_id = None
             file_start_time = None 
@@ -593,6 +713,7 @@ def check_file_headers(
                                 trace_id=trace_id,
                             )
 
+
                         if row_errors:
                             results.append({
                                 "name": f"File Schema Check: {fname}",
@@ -666,7 +787,7 @@ def check_file_extensions(data_dir):
     for key, filename in FILES.items():
         # Check extensions only for files that actually exist
         # If a file is missing, check_required_files will handle it (if mandatory)
-        if os.path.exists(os.path.join(data_dir, filename)):
+        if os.path.exists(find_file(data_dir, filename)):
             if not filename.lower().endswith('.csv'):
                 extension_errors.append(f"{filename}: Invalid extension (Expected .csv)")
                 
@@ -686,7 +807,7 @@ def check_cgm_metadata_consistency(data_dir):
     if not cgm_meta_filename:
         return []
         
-    cgm_meta_path = os.path.join(data_dir, cgm_meta_filename)
+    cgm_meta_path = find_file(data_dir, cgm_meta_filename)
     
     if os.path.exists(cgm_meta_path):
         try:
@@ -706,7 +827,7 @@ def check_cgm_metadata_consistency(data_dir):
                         else:
                             expected_file_with_ext = expected_file
                         
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         check_name = f"CGM File Presence: {expected_file}"
                         if os.path.exists(target_path):
@@ -742,7 +863,7 @@ def check_cgm_data_integrity(data_dir):
     if not cgm_meta_filename:
         return []
         
-    cgm_meta_path = os.path.join(data_dir, cgm_meta_filename)
+    cgm_meta_path = find_file(data_dir, cgm_meta_filename)
     
     if not os.path.exists(cgm_meta_path):
         return []
@@ -780,7 +901,7 @@ def check_cgm_data_integrity(data_dir):
                     else:
                         expected_file_with_ext = expected_file
                     
-                    target_path = os.path.join(data_dir, expected_file_with_ext)
+                    target_path = find_file(data_dir, expected_file_with_ext)
                     
                     # Extract base filename for check name
                     base_name = os.path.splitext(expected_file)[0]
@@ -850,7 +971,7 @@ def check_meal_data_consistency(data_dir):
     if not meal_meta_filename:
         return []
         
-    meal_meta_path = os.path.join(data_dir, meal_meta_filename)
+    meal_meta_path = find_file(data_dir, meal_meta_filename)
     
     if os.path.exists(meal_meta_path):
         try:
@@ -879,7 +1000,7 @@ def check_meal_data_consistency(data_dir):
                         checked_files.add(expected_file_with_ext)
                         
 
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         check_name = f"Meal File Presence: {expected_file}"
                         if os.path.exists(target_path):
@@ -915,7 +1036,7 @@ def check_fitness_data_consistency(data_dir):
     if not fitness_meta_filename:
         return []
         
-    fitness_meta_path = os.path.join(data_dir, fitness_meta_filename)
+    fitness_meta_path = find_file(data_dir, fitness_meta_filename)
     
     if os.path.exists(fitness_meta_path):
         try:
@@ -943,7 +1064,7 @@ def check_fitness_data_consistency(data_dir):
                             continue
                         checked_files.add(expected_file_with_ext)
                         
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         check_name = f"Fitness File Presence: {expected_file}"
                         if os.path.exists(target_path):
@@ -979,7 +1100,7 @@ def check_meal_data_integrity(data_dir):
     if not meal_meta_filename:
         return []
         
-    meal_meta_path = os.path.join(data_dir, meal_meta_filename)
+    meal_meta_path = find_file(data_dir, meal_meta_filename)
     
     if os.path.exists(meal_meta_path):
         try:
@@ -1016,7 +1137,7 @@ def check_meal_data_integrity(data_dir):
                             continue
                         checked_files.add(expected_file_with_ext)
 
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         # Extract base filename for check name
                         base_name = os.path.splitext(expected_file)[0]
@@ -1086,7 +1207,7 @@ def check_fitness_data_integrity(data_dir):
     if not fitness_meta_filename:
         return []
         
-    fitness_meta_path = os.path.join(data_dir, fitness_meta_filename)
+    fitness_meta_path = find_file(data_dir, fitness_meta_filename)
     
     if os.path.exists(fitness_meta_path):
         try:
@@ -1123,7 +1244,7 @@ def check_fitness_data_integrity(data_dir):
                             continue
                         checked_files.add(expected_file_with_ext)
 
-                        target_path = os.path.join(data_dir, expected_file_with_ext)
+                        target_path = find_file(data_dir, expected_file_with_ext)
                         
                         # Extract base filename for check name
                         base_name = os.path.splitext(expected_file)[0]
@@ -1188,18 +1309,18 @@ def check_required_files(data_dir):
     # Check strict mandatory files
     for stream in MANDATORY_FILE_CHECK_STREAMS:
         fname = FILES.get(stream)
-        if fname and not os.path.exists(os.path.join(data_dir, fname)):
+        if fname and not os.path.exists(find_file(data_dir, fname)):
             missing_files.append(fname)
     
     # Check conditional mandatory files
     # If meal_data exists, meal_file_metadata is required
-    if os.path.exists(os.path.join(data_dir, FILES["meal_data"])):
-        if not os.path.exists(os.path.join(data_dir, FILES["meal_file_metadata"])):
+    if os.path.exists(find_file(data_dir, FILES["meal_data"])):
+        if not os.path.exists(find_file(data_dir, FILES["meal_file_metadata"])):
             missing_files.append(FILES["meal_file_metadata"])
 
     # If fitness_data exists, fitness_file_metadata is required
-    if os.path.exists(os.path.join(data_dir, FILES["fitness_data"])):
-        if not os.path.exists(os.path.join(data_dir, FILES["fitness_file_metadata"])):
+    if os.path.exists(find_file(data_dir, FILES["fitness_data"])):
+        if not os.path.exists(find_file(data_dir, FILES["fitness_file_metadata"])):
             missing_files.append(FILES["fitness_file_metadata"])
     
     return missing_files
@@ -1286,7 +1407,10 @@ def process_raw_cgm_tracing(emitter, filepath):
         # Read all rows into a list of dictionaries
         with open(filepath, newline='', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
-            data_rows = list(reader)
+            data_rows = [
+                row for row in reader
+                if row.get("Event Type", "").strip() == "EGV"
+            ]
             
         record = {
             "raw_id": str(uuid.uuid4()),
@@ -1625,7 +1749,7 @@ def process_combined_cgm_tracing(emitter, data_dir):
     meta_filename = FILES.get("cgm_file_metadata")
     if not meta_filename: return
     
-    meta_path = os.path.join(data_dir, meta_filename)
+    meta_path = find_file(data_dir, meta_filename)
     if not os.path.exists(meta_path): return
     
     try:
@@ -1648,7 +1772,7 @@ def process_combined_cgm_tracing(emitter, data_dir):
                 tenant_id = os.environ.get("TENANT_ID", row.get("tenant_id"))
                 study_id = row.get("study_id")
                 
-                data_path = os.path.join(data_dir, file_name)
+                data_path = find_file(data_dir, file_name)
                 if not os.path.exists(data_path):
                     # Missing files are handled by validation checks (5 & 6)
                     continue
@@ -1694,7 +1818,7 @@ def process_raw_meal_data(emitter, data_dir):
     meta_filename = FILES.get("meal_file_metadata")
     if not meta_filename: return
     
-    meta_path = os.path.join(data_dir, meta_filename)
+    meta_path = find_file(data_dir, meta_filename)
     if not os.path.exists(meta_path): return
     
     processed_files = set()
@@ -1716,7 +1840,7 @@ def process_raw_meal_data(emitter, data_dir):
                     continue
                 processed_files.add(file_name)
                 
-                data_path = os.path.join(data_dir, file_name)
+                data_path = find_file(data_dir, file_name)
                 if not os.path.exists(data_path):
                      continue 
                 
@@ -1749,7 +1873,7 @@ def process_raw_fitness_data(emitter, data_dir):
     meta_filename = FILES.get("fitness_file_metadata")
     if not meta_filename: return
     
-    meta_path = os.path.join(data_dir, meta_filename)
+    meta_path = find_file(data_dir, meta_filename)
     if not os.path.exists(meta_path): return
     
     processed_files = set()
@@ -1771,7 +1895,7 @@ def process_raw_fitness_data(emitter, data_dir):
                     continue
                 processed_files.add(file_name)
                 
-                data_path = os.path.join(data_dir, file_name)
+                data_path = find_file(data_dir, file_name)
                 if not os.path.exists(data_path):
                      continue 
                 
@@ -1808,7 +1932,7 @@ def emit_otel_resource(emitter):
     resource_id = str(uuid.uuid4())
     record = {
         "resource_id": resource_id,
-        "service.name": os.environ.get("OTEL_SERVICE_NAME", "tap-dexcom-clarity"),        
+        "service.name": os.environ.get("OTEL_SERVICE_NAME", "tap-cgmacros"),
         "service.version": os.environ.get("OTEL_SERVICE_VERSION", "1.0.0"),
         "service.instance.id": resource_id,
         "deployment.environment": os.environ.get("DEPLOY_ENV", "production"),
@@ -2118,7 +2242,7 @@ def main():
         trace_id=root_trace_id,
         fk_validator=fk_validator,
     )
-
+    
     schema_failures = 0
     for res in schema_results:
          emit_diagnostic(4, res["name"], res["status"], res["details"])
@@ -2267,7 +2391,7 @@ def main():
     
     # 7. Meal Data Validation (Static ID: 7) & 8. Meal Data Integrity (Static ID: 8)
     # Conditional Execution: Only if meal_file_metadata exists
-    if os.path.exists(os.path.join(data_dir, FILES["meal_file_metadata"])):
+    if os.path.exists(find_file(data_dir, FILES["meal_file_metadata"])):
         # Check 7
         check7_start = get_time_nano()
         check7_span_id = str(uuid.uuid4()).replace("-", "")[:16]
@@ -2328,7 +2452,7 @@ def main():
 
     # 9. Fitness Data Validation (Static ID: 9) & 10. Fitness Data Integrity (Static ID: 10)
     # Conditional Execution: Only if fitness_file_metadata exists
-    if os.path.exists(os.path.join(data_dir, FILES["fitness_file_metadata"])):
+    if os.path.exists(find_file(data_dir, FILES["fitness_file_metadata"])):
         # Check 9
         check9_start = get_time_nano()
         check9_span_id = str(uuid.uuid4()).replace("-", "")[:16]
@@ -2485,7 +2609,9 @@ def main():
                 LOGGER.warning(f"No processor defined for stream {stream_name} (file: {filename})")
 
         # 2. Fallback / Special Pattern Matching
-        if "cgm_tracing" in filename:
+        parent_folder = os.path.basename(os.path.dirname(filepath))
+
+        if parent_folder.isdigit() and len(parent_folder) == 3:
             process_raw_cgm_tracing(emitter, filepath)
             continue 
         

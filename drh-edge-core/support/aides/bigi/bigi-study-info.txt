@@ -1,0 +1,35 @@
+--- STUDY DATA ---
+# Must be exactly 4 letters or digits
+StudyID: BIGI
+StudyName: BIG IDEAs Lab Glycemic Variability and Wearable Device Data
+StartDate: 
+EndDate: 
+TreatmentModalities: Continuous Glucose Monitoring (CGM), Wearable Physiological Monitoring, Digital Biomarker Engineering, Standardized Meal Testing, Oral Glucose Tolerance Test (OGTT)
+FundingSource: Duke MEDx
+NCTNumber: 
+StudyDescription: Dataset of 16 participants with elevated but non-diabetic glucose levels monitored for 8-10 days using Dexcom G6 CGM and Empatica E4 wearable devices to generate digital biomarkers for glycemic variability and prediabetes risk detection.
+
+---- INSTITUTIONS (Use ; for multiple) ---
+InstitutionNames: Duke University; Duke University Health System
+Cities: Durham
+States: NC
+Countries: USA
+
+--- PERSONNEL (Use ; for multiple) ---
+# Primary investigators (will be linked to authors automatically if names match)
+Investigators: Jessilyn Dunn; Brinnae Bent; Peter Cho; Juseong Kim
+InvestigatorEmails: 
+
+# List all authors as they appear in the citation
+Authors: Peter Cho; Juseong Kim; Brinnae Bent; Jessilyn Dunn
+
+--- LABS & SITES ---
+LabNames: BIG IDEAs Lab; Duke MEDx; Biomedical Engineering Department
+LabPIs: Jessilyn Dunn
+SiteNames: Duke Hospital Diabetes Research Clinic
+SiteTypes: Clinical Research Site
+
+--- PUBLICATIONS ---
+PubTitles: BIG IDEAs Lab Glycemic Variability and Wearable Device Data (version 1.1.2)
+DOIs: 10.13026/zthx-5212
+PubSites: PhysioNet
