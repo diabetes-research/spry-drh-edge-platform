@@ -176,7 +176,6 @@ def _load_clinical_data(input_folder: Path) -> Dict[str, pd.Series]:
             "Race": row.get('Race'),
             "Ethnicity": row.get('Ethnicity'),
             "A1c PDL (Lab)": row.get('HbA1c'),
-            "EnrollmentDt": "2022-01-01" # Anchor Date
         })
     
     return index
@@ -242,12 +241,12 @@ def process_case_cgmnd(args: argparse.Namespace, output_dir: Path) -> None:
             stats[pid_str]["min_days"] = min(stats[pid_str]["min_days"], group["DeviceDtDaysFromEnroll"].min())
             stats[pid_str]["max_days"] = max(stats[pid_str]["max_days"], group["DeviceDtDaysFromEnroll"].max())
 
-    for pid, p_stats in stats.items():
-        # Anchor date from joined records
-        bio_row = bio_index.get(pid)
-        anchor_str = _safe_get(bio_row, "EnrollmentDt") or args.study_start_date
-        anchor_date = datetime.strptime(anchor_str, "%Y-%m-%d")
+    # Use --study-start-date as the anchor for all participants.
+    # The CGMND dataset stores relative 'DeviceDtDaysFromEnroll' integers,
+    # so we add each participant's min/max relative days to this anchor date.
+    anchor_date = datetime.strptime(args.study_start_date, "%Y-%m-%d")
 
+    for pid, p_stats in stats.items():
         # Translate relative days to absolute dates
         start_date = (anchor_date + timedelta(days=int(p_stats["min_days"]))).strftime("%Y-%m-%d")
         end_date = (anchor_date + timedelta(days=int(p_stats["max_days"]))).strftime("%Y-%m-%d")
@@ -293,13 +292,13 @@ def main():
     parser.add_argument("--cgm-file", required=True)
     parser.add_argument("--input-folder", required=True)
     parser.add_argument("--output-folder", required=True)
-    parser.add_argument("--timestamp-column", default="Timestamp (YYYY-MM-DDThh:mm:ss)")
+    parser.add_argument("--timestamp-column", default="DeviceTm")
     parser.add_argument("--participant-id-column", default="PtID")
-    parser.add_argument("--cgm-value-column", default="Glucose Value (mg/dL)")
+    parser.add_argument("--cgm-value-column", default="value")
     parser.add_argument("--study-id", default="CGMND")
     parser.add_argument("--study-name", default="CGM in Non-Diabetic Participants")
-    parser.add_argument("--study-start-date", default="2022-01-01")
-    parser.add_argument("--study-end-date", default="2023-12-31")
+    parser.add_argument("--study-start-date", default="2018-01-01")
+    parser.add_argument("--study-end-date", default="2018-12-20")
     parser.add_argument("--treatment-modalities", default="Continuous Glucose Monitoring")
     parser.add_argument("--funding-source", default="T1D Exchange")
     parser.add_argument("--nct-number", default="")

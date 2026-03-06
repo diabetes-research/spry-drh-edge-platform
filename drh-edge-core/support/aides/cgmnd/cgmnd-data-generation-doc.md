@@ -104,13 +104,13 @@ This script is the "data" processor. It iterates through raw participant folders
         --cgm-distribution single_file_all_participants \
         --cgm-file         "raw-data/cgmd-table-data/NonDiabDeviceCGM.csv" \
         --input-folder     "raw-data/cgmd-table-data" \
-        --timestamp-column "Timestamp (YYYY-MM-DDThh:mm:ss)" \
+        --timestamp-column "DeviceTm" \
         --participant-id-column "PtID" \
-        --cgm-value-column "Glucose Value (mg/dL)" \
+        --cgm-value-column "value" \
         --output-folder    "examples/cgmnd-output" \
         --study-id         "CGMND" \
         --study-name       "CGM in Non-Diabetic Participants (T1DX)" \
-        --study-start-date "2018-12-10" \
+        --study-start-date "2018-01-01" \
         --study-end-date   "2018-12-20" \
         --treatment-modalities "Continuous Glucose Monitoring" \
         --funding-source   "Leona M. and Harry B. Helmsley Charitable Trust" \
@@ -129,7 +129,7 @@ This script is the "data" processor. It iterates through raw participant folders
 ### Technical Architecture
 - **Input Architecture**: Single CSV file for all participants (`NonDiabDeviceCGM.csv`).
 - **Clinical Sources**: `NonDiabScreening.csv` and `NonDiabPtRoster.csv` (Inner join on `PtID`).
-- **Timestamp Logic**: Convert relative `DeviceDtDaysFromEnroll` (integers) to absolute ISO dates using a configurable `EnrollmentDt` anchor (default: `2022-01-01`).
+- **Timestamp Logic**: Convert relative `DeviceDtDaysFromEnroll` (integers) to absolute ISO dates using a configurable `EnrollmentDt` anchor (study start date: `2018-01-01`).
 - **Medical Logic**: 
     - Calculate BMI: `weight_kg / (height_cm / 100)^2`.
     - Map Gender: M/F to Male/Female.
@@ -142,6 +142,8 @@ This script is the "data" processor. It iterates through raw participant folders
 - `--output-folder`: Destination for the 3 DRH CSVs.
 - `--study-id`: 4-6 character study identifier.
 - `--timestamp-column`: Name of the date/time field in the CGM file.
+- `--study-start-date`: Start date of the study. There is no data provided  for this in the data set and published paper does not mention the start date of the study. Based on the manuscript recieved date for the approval the study date is assumpted to be 2018-01-01.
+- `--study-end-date`: End date of the study. There is no data provided  for this in the data se and published paper does not mention the end date of the study. Based on the manuscript recieved date for the approval the study date is assumpted to be 2018-12-20.
 - `--participant-id-column`: Column mapping to participant IDs across all files.
 
 ### Output Schema Standards

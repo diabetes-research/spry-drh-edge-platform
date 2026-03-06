@@ -2,8 +2,8 @@
 # Must be exactly 4 letters or digits
 StudyID: CGMND
 StudyName: Continuous Glucose Monitoring Profiles in Healthy Nondiabetic Participants
-StartDate: 
-EndDate: 
+StartDate: 2018-01-01
+EndDate: 2018-12-20
 TreatmentModalities:
 FundingSource: Leona M. and Harry B. Helmsley Charitable Trust
 NCTNumber:
