@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "surveilr": {
+      "command": "surveilr",
+      "args": [
+        "mcp",
+        "server",
+        "-d",
+        "/ABSOLUTE/PATH/TO/YOUR/resource-surveillance.sqlite.db"
+      ],
+      "env": {}
+    }   
+  }
+}
