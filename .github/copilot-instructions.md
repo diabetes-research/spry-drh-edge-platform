@@ -26,7 +26,7 @@ These tables define the study structure, participants, and researchers.
 | **`participant`** | Table |  Master list of enrolled research subjects. |
 | **`drh_participant`** | Table | Detailed demographics (Age, Gender, BMI, Diabetes Type). |
 | **`drh_investigator`** | Table | List of researchers associated with the studies. |
-| **`drh_institution` / `drh_lab**` | View | Organizational hierarchy and participating laboratories.|
+| **`drh_institution`** / **`drh_lab`** | View | Organizational hierarchy and participating laboratories.|
 | **`drh_site`** | View | Specific clinical sites where data collection occurs. |
 | **`drh_author`** | View |  Profiles of authors for linked publications. |
 | **`drh_publication`** | View | Research papers and DOIs linked to the study. |
@@ -86,7 +86,7 @@ Tables used to monitor the platform and handle sensitive data de-identification.
 * **Health & Logging:**
 * **`drh_vv_session_summary`**: Ingestion success/failure "Health Check."
 * **`drh_vv_hierarchy`**: Deep-dive trace evidence of the processing pipeline.
-* **`drh_otel_spans` / `drh_otel_logs**`: OpenTelemetry traces for system troubleshooting.
+* **`drh_otel_spans`** / **`drh_otel_logs`**: OpenTelemetry traces for system troubleshooting.
 * **`drh_schema_logs`**: Dynamic catalog of all available data streams and columns.
 
 ---
