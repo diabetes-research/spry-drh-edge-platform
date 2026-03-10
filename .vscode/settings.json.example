@@ -1,4 +1,0 @@
-{
-  "github.copilot.chat.mcp.enabled": true,
-  "github.copilot.chat.mcp.configFile": "/ABSOLUTE/PATH/TO/YOUR/mcp.json"
-}

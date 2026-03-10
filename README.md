@@ -44,6 +44,10 @@ The **DRH Edge Platform** is an automated ecosystem designed to bridge the gap b
   - [Advanced: Developing Custom Integrations](#advanced-developing-custom-integrations)
     - [Creating a Custom Singer Tap](#creating-a-custom-singer-tap)
   - [Platform Architecture Highlights](#platform-architecture-highlights)
+  - [🤖 Local AI Research Assistant (MCP)](#-local-ai-research-assistant-mcp)
+    - [**Key Benefits for Researchers**](#key-benefits-for-researchers)
+  - [🔗 Deep Dive Documentation](#-deep-dive-documentation)
+  - [👉 **MCP Orchestration \& Prompting Guide**](#-mcp-orchestration--prompting-guide)
   - [🎨 Platform Visual Showcase](#-platform-visual-showcase)
     - [🏛️ Research Landing Page](#️-research-landing-page)
     - [🔍 Quality Assurance: The Validation Gate](#-quality-assurance-the-validation-gate)
@@ -557,6 +561,22 @@ surveilr ingest files -r singer-tap/tap-mydata.surveilr[singer].py
 - **Observability**: Powered by OpenTelemetry (OTel). If validation fails, the ETL is automatically blocked, and the UI displays specific row-level errors.
 - **Performance**: Leverages DuckDB for high-performance analytics on massive datasets.
 
+---
+
+## 🤖 Local AI Research Assistant (MCP)
+
+The latest version of **DRH Edge** introduces native support for the **Model Context Protocol (MCP)**. This feature allows you to turn your local environment into an AI-powered research hub where you can "chat" with your clinical data directly.
+
+### **Key Benefits for Researchers**
+
+- **Privacy-First AI**: Perform high-level clinical reasoning and data exploration locally; your sensitive RSSD data never leaves your machine.
+- **Universal Compatibility**: Use your preferred AI client—such as **Claude Code**, **GitHub Copilot**, **Cursor**, or even local models like **Grok**—to interact with the data.
+- **Zero-Cloud Dependency**: Unlike traditional platforms, you do not need to bring your data to the cloud to use advanced AI features; the intelligence is brought to your local data.
+
+## 🔗 Deep Dive Documentation
+
+- For full setup templates, pathing guides, and prompting strategies, please refer to the:
+👉 **[MCP Orchestration & Prompting Guide](MCP-TOOLING-GUIDE.md)**
 ---
 
 ## 🎨 Platform Visual Showcase

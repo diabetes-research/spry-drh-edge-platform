@@ -1,0 +1,4 @@
+{
+  "github.copilot.chat.mcp.enabled": true,
+  "github.copilot.chat.mcp.configFile": ".vscode/mcp.json"
+}

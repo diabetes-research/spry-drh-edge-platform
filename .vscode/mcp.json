@@ -6,7 +6,7 @@
         "mcp",
         "server",
         "-d",
-        "/ABSOLUTE/PATH/TO/YOUR/resource-surveillance.sqlite.db"
+        "./drh-edge-core/resource-surveillance.sqlite.db"
       ],
       "env": {}
     }   

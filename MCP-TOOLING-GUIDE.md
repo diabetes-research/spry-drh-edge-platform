@@ -20,7 +20,7 @@
 
 The complete schema — all tables, views, types, descriptions, and example prompts — is maintained in:
 
-```
+```txt
 .github/copilot-instructions.md
 ```
 
@@ -81,17 +81,9 @@ Servers are the "drivers" that give the AI specific capabilities.
 
 ---
 
-### 3.1 Why Absolute Paths Are Mandatory
+### 3.1 Configuration Files
 
-When using a relative path like `./resource-surveillance.sqlite.db`, the "starting point" depends on which folder is active in VS Code or the terminal. If you open a subfolder, the MCP server may silently fail to find the database.
-
-> **Rule:** Always use the absolute path to your database. This guarantees the AI finds your data regardless of which folder or file you have open.
-
----
-
-### 3.2 Configuration Files
-
-#### A. `mcp.json.example`
+#### A. `mcp.json
 
 Place in your project root. Defines the connection to the `surveilr` binary and your local research database.
 
@@ -104,7 +96,7 @@ Place in your project root. Defines the connection to the `surveilr` binary and 
         "mcp",
         "server",
         "-d",
-        "/ABSOLUTE/PATH/TO/YOUR/resource-surveillance.sqlite.db"
+        "./drh-edge-core/resource-surveillance.sqlite.db"
       ],
       "env": {}
     }   
@@ -112,14 +104,14 @@ Place in your project root. Defines the connection to the `surveilr` binary and 
 }
 ```
 
-#### B. `settings.json.example` (VS Code)
+#### B. `settings.json` (VS Code)
 
 Tells GitHub Copilot where to find your MCP configuration.
 
 ```json
 {
   "github.copilot.chat.mcp.enabled": true,
-  "github.copilot.chat.mcp.configFile": "/ABSOLUTE/PATH/TO/YOUR/mcp.json"
+  "github.copilot.chat.mcp.configFile": ".vscode/mcp.json"
 }
 ```
 
@@ -131,7 +123,7 @@ Contains the **full schema reference and query rules**. Automatically loaded by 
 
 ---
 
-### 3.3 Privacy & Security Note
+### 3.2 Privacy & Security Note
 
 > 🔒 **The `surveilr-mcp` server operates entirely on your local machine.**
 >
@@ -280,13 +272,31 @@ recruitment statistics as a formatted summary table.
 
 ## Part 5 — New Researcher Onboarding SOP
 
-Follow these steps in order when joining the DRH team.
+Follow these steps in order when joining the DRH team to enable your Local AI Research Assistant.
 
-1. **Identify your Absolute Path** — Find the full path to your workspace (e.g., `/home/username/workspaces/drh-edge-platform/`).
-2. **Create `mcp.json`** — Copy `mcp.json.example` to `mcp.json` and replace the placeholder with your absolute database path.
-3. **Configure VS Code** — Copy the contents of `settings.json.example` into your local `.vscode/settings.json`, ensuring the path to `mcp.json` is also absolute.
-4. **Review the schema** — Read `.github/copilot-instructions.md` to understand which tables are physical vs. views before writing your first query.
-5. **Verify Setup** — Open Copilot Chat in VS Code and run any basic prompt .
+1. **Initialize the Environment** — Ensure you have the latest version of the repository and that your workspace root is the base of the `drh-edge-platform`.
+2. **Verify the MCP Config** — Open `.vscode/mcp.json`. This file uses a relative path to bridge the `surveilr` binary to the local RSSD.
+   1. - **Command**: `surveilr`
+   2. - **Database Path**: `./drh-edge-core/resource-surveillance.sqlite.db`
+
+3. **Enable VS Code Integration** — Open `.vscode/settings.json`. This is pre-configured to point to the local `mcp.json`. If you are using **GitHub Copilot**, ensure that "MCP support" is toggled **ON** in your Copilot settings.
+4. **Review the Schema Rules** — Read `.github/copilot-instructions.md`. This is your "Rules of Engagement" for the AI. It explains which clinical tables are physical and which are virtual views.
+
+- **Critical Rule**: If the AI says "Table not found," you must remind it to use the **`query_sql`** tool for views.
+
+- **Test the Connection** — Open Copilot Chat in VS Code and run a test prompt:
+
+> *"Check the overall_status from the `drh_vv_session_summary` view using **query_sql**."*
+
+---
+
+### **Summary of Final Configuration (Relative Paths)**
+
+| File | Relative Path Reference | Purpose |
+| --- | --- | --- |
+| **`mcp.json`** | `./drh-edge-core/resource-surveillance.sqlite.db` | Connects AI to the local SQLite DB. |
+| **`settings.json`** | `.vscode/mcp.json` | Tells VS Code where the AI config lives. |
+| **`instructions.md`** | Local Workspace | Provides the "Brain" for the AI's clinical knowledge. |
 
 ---
 
