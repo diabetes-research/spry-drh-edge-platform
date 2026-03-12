@@ -1,0 +1,12 @@
+study_id,site_id,site_name,site_type
+CGMND,SITE-01,Detroit,Clinical Research site
+CGMND,SITE-02,"Aurora, Colorado",Clinical Research site
+CGMND,SITE-03,"St. Louis Park, Minnesota",Clinical Research site
+CGMND,SITE-04,"Indianapolis, Indiana",Clinical Research site
+CGMND,SITE-05,"Oklahoma City, Oklahoma",Clinical Research site
+CGMND,SITE-06,"Syracuse, New York",Clinical Research site
+CGMND,SITE-07,"Syracuse, New York",Clinical Research site
+CGMND,SITE-08,"Miami, Florida",Clinical Research site
+CGMND,SITE-09,"Iowa City, Iowa",Clinical Research site
+CGMND,SITE-10,"Louisville, Kentucky",Clinical Research site
+CGMND,SITE-11,"Columbus, Ohio",Clinical Research site

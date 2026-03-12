@@ -1,0 +1,12 @@
+lab_id,lab_name,lab_pi,institution_id,study_id
+LAB-01,Henry Ford Medical Center,Davida Kruger,INST-05,CGMND
+LAB-02,"University of Colorado/Denver, Barbara Davis Center Adult Clinic",Viral Shah,INST-01,CGMND
+LAB-03,International Diabetes Center,Richard Bergenstal,INST-10,CGMND
+LAB-04,Indiana University,Stephanie Woerner,INST-08,CGMND
+LAB-05,University of Oklahoma Health Sciences Center,David Sparling,INST-07,CGMND
+LAB-06,SUNY Upstate Medical University,Ruth Weinstock,INST-04,CGMND
+LAB-07,University of Southern California,Ruth Weinstock,INST-03,CGMND
+LAB-08,University of Miami/Diabetes Research Institute,Francesco Vendrame,INST-09,CGMND
+LAB-09,University of Iowa,Michael Tansey,INST-06,CGMND
+LAB-10,University of Louisville Physicians – Pediatric Endocrinology,Sara Watson,INST-01,CGMND
+LAB-11,Central Ohio Pediatric Endocrine and Diabetes Services,Jennifer Dyer,INST-01,CGMND

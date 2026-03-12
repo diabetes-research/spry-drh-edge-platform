@@ -34,7 +34,7 @@ source .venv/bin/activate
 **Example Run (CGMND):**
 
 ```bash
-.venv/bin/python3 support/aides/cgmnd/generate-study-supporting-files.py support/aides/cgmnd/cgmnd-study-info.txt examples/cgmnd-supporting-data
+.venv/bin/python3 support/aides/cgmnd/generate-study-supporting-files.py support/aides/cgmnd/cgmnd-study-info.txt examples/cgmnd
 ```
 
 ### Input File Requirements

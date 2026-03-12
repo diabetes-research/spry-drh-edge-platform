@@ -1,0 +1,13 @@
+institution_id,institution_name,city,state,country
+INST-01,Barbara Davis Center for Diabetes,"Aurora, Colorado 80045",CO,USA
+INST-02,Jaeb Center for Health Research,"Tampa, Florida 33647",FL,USA
+INST-03,Keck School of Medicine of the University of Southern California,"Los Angeles, California 90033",CA,USA
+INST-04,SUNY Upstate Medical University,"Syracuse, New York 13210",NY,USA
+INST-05,Henry Ford Medical Center,"Detroit, Michigan 48235",MI,USA
+INST-06,University of Iowa,"Iowa City, Iowa 52242",IA,USA
+INST-07,University of Oklahoma Health Sciences Center,"Oklahoma City, Oklahoma 73104",OK,USA
+INST-08,Indiana University School of Medicine,"Indianapolis, Indiana 46202",IN,USA
+INST-09,University of Miami,"Miami, Florida 33136",FL,USA
+INST-10,0International Diabetes Center Park Nicollet,"Minneapolis, Minnesota 55416",MN,USA
+INST-11,Yale School of Medicine,"New Haven, Connecticut 06510",CT,USA
+INST-12,University of Louisville,"Louisville, Kentucky 40292",KY,USA

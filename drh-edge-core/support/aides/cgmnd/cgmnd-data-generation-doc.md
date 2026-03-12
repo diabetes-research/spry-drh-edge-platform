@@ -1,10 +1,8 @@
 # CGMND Data Generation Documentation
 
-
 This guide provides an overview of the Python scripts used to process the **CGMND** dataset for the Diabetes Research Hub (DRH) platform
 
 This project uses two primary scripts to transform raw research data and study information into structured, relational CSV files compatible with the DRH Edge Core platform.
-
 
 ## 1. Study Supporting Files Generator
 
@@ -41,6 +39,7 @@ This script acts as the "administrative" processor. It takes a high-level text d
 ### Clinical Source Mapping (Automatic)
 
 The generator handles clinical data ingestion automatically from the raw source files:
+
 - **Source Files**: `NonDiabScreening.csv` and `NonDiabPtRoster.csv` must both be present in the `raw-data/cgmnd-table-data/` folder.
 - **Internal Logic**: The script joins these files on `PtID`, calculates BMI (`kg / (cm/100)^2`), and maps demographics for use in the DRH output.
 - **Anchor Date**: Translates relative "Days From Enrollment" to absolute dates anchored to `2018-09-21`.
@@ -71,6 +70,7 @@ source .venv/bin/activate      # if bash/zsh
 ```
 
 **Command Syntax:**
+
 ```bash
 .venv/bin/python3 support/aides/cgmnd/cgmnd-content-generator.py <input_file_path> <output_directory_path>
 ```
@@ -87,27 +87,28 @@ Use this command to process the combined dataset where all participant data resi
 
 This script is the "data" processor. It iterates through raw participant folders containing CGM (Continuous Glucose Monitoring) data. It performs heavy lifting such as:
 
-* **Demographics Mapping:** Pulling gender and HbA1c from a `Demographics.csv` file if available.
-* **Clinical Derivation:** Automatically calculating diabetes types (Normal, Prediabetes, T2D) based on HbA1c levels and assigning corresponding ICD-10 codes.
-* **Device Identification:** Parsing CGM files to detect the hardware used (e.g., Dexcom G6) and mapping it to the correct manufacturer.
-* **Temporal Normalization:** Detecting and formatting timestamps to ensure consistency across the dataset.
+- **Demographics Mapping:** Pulling gender and HbA1c from a `Demographics.csv` file if available.
+- **Clinical Derivation:** Automatically calculating diabetes types (Normal, Prediabetes, T2D) based on HbA1c levels and assigning corresponding ICD-10 codes.
+- **Device Identification:** Parsing CGM files to detect the hardware used (e.g., Dexcom G6) and mapping it to the correct manufacturer.
+- **Temporal Normalization:** Detecting and formatting timestamps to ensure consistency across the dataset.
 
 ### **Outputs**
 
-* `participant.csv`: Demographic and clinical status for every subject.
-* `cgm_file_metadata.csv`: A detailed log of every data file found, including date ranges and device info.
-* `study.csv`: An updated version of study info including calculated start/end dates from the actual data.
+- `participant.csv`: Demographic and clinical status for every subject.
+- `cgm_file_metadata.csv`: A detailed log of every data file found, including date ranges and device info.
+- `study.csv`: An updated version of study info including calculated start/end dates from the actual data.
 
 #### **The Execution Command**
+
 ```bash
 .venv/bin/python3 support/aides/cgmnd/cgmnd-content-generator.py \
         --cgm-distribution single_file_all_participants \
-        --cgm-file         "raw-data/cgmd-table-data/NonDiabDeviceCGM.csv" \
-        --input-folder     "raw-data/cgmd-table-data" \
+        --cgm-file         "raw-data/cgmnd-table-data/NonDiabDeviceCGM.csv" \
+        --input-folder     "raw-data/cgmnd-table-data" \
         --timestamp-column "DeviceTm" \
         --participant-id-column "PtID" \
         --cgm-value-column "value" \
-        --output-folder    "examples/cgmnd-output" \
+        --output-folder    "examples/cgmnd" \
         --study-id         "CGMND" \
         --study-name       "CGM in Non-Diabetic Participants (T1DX)" \
         --study-start-date "2018-01-01" \
@@ -127,16 +128,18 @@ This script is the "data" processor. It iterates through raw participant folders
 **Task:** Act as a Senior Python Data Engineer. Maintain a CLI utility named `cgmnd-content-generator.py` that processes a single large CGM CSV file and joins it with clinical source tables to generate standardized DRH outputs.
 
 ### Technical Architecture
+
 - **Input Architecture**: Single CSV file for all participants (`NonDiabDeviceCGM.csv`).
 - **Clinical Sources**: `NonDiabScreening.csv` and `NonDiabPtRoster.csv` (Inner join on `PtID`).
 - **Timestamp Logic**: Convert relative `DeviceDtDaysFromEnroll` (integers) to absolute ISO dates using a configurable `EnrollmentDt` anchor (study start date: `2018-01-01`).
-- **Medical Logic**: 
-    - Calculate BMI: `weight_kg / (height_cm / 100)^2`.
-    - Map Gender: M/F to Male/Female.
-    - Derive ICD-10 from HbA1c: Prediabetes (R73.03), Type 2 (E11.9).
+- **Medical Logic**:
+  - Calculate BMI: `weight_kg / (height_cm / 100)^2`.
+  - Map Gender: M/F to Male/Female.
+  - Derive ICD-10 from HbA1c: Prediabetes (R73.03), Type 2 (E11.9).
 - **Processing**: Use `pandas` for table operations and chunked reading for the large CGM file (10MB+).
 
 ### CLI Requirements
+
 - `--cgm-file`: Path to the large combined CGM file.
 - `--input-folder`: Directory containing the Screening and Roster CSVs.
 - `--output-folder`: Destination for the 3 DRH CSVs.
@@ -147,6 +150,7 @@ This script is the "data" processor. It iterates through raw participant folders
 - `--participant-id-column`: Column mapping to participant IDs across all files.
 
 ### Output Schema Standards
+
 1. **`study.csv`**: Single row containing study metadata (Start/End dates, Funding, NCT).
 2. **`participant.csv`**: One row per participant found in the clinical join.
 3. **`cgm_file_metadata.csv`**: One row per participant found in the CGM file, containing absolute `data_start_date` and `data_end_date`.
