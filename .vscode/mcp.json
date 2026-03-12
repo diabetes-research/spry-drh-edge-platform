@@ -9,6 +9,15 @@
         "./drh-edge-core/resource-surveillance.sqlite.db"
       ],
       "env": {}
-    }   
+    },
+    "drh-orchestrator": {
+      "command": "drh-edge-core/.venv/bin/python3",
+      "args": [
+        "drh-edge-core/mcp-tools/drh-orchestrator-server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "drh-edge-core/"
+      }
+    }
   }
 }

@@ -3,13 +3,14 @@
 These instructions apply to all chats in this workspace.
 
 ## MCP and data-query rules
-1. Use Surveilr MCP only for all data queries (no Pylance MCP, no direct `sqlite3` fallback).
+1. Use surveilr MCP for all data queries(no Pylance MCP, no direct `sqlite3` fallback) and drh-orchestrator MCP for all system management tasks (ingestion, reset, configuration) .
 2. Use MCP tools such as `mcp_surveilr_query_sql`, `mcp_surveilr_get_table_sample`, `mcp_surveilr_get_table_metadata`, `mcp_surveilr_get_schema` as needed.
 3. Run the query and show results directly in chat unless explicitly asked to save files.
 4. If no rows match, explicitly state `row_count=0` and suggest a broader query.
 5. Keep responses concise and actionable.
 6. When creating charts, first fetch category/count data via Surveilr MCP, then render a Mermaid chart.
 7. Provide responses directly in the VS Code chat window only; do not require or route through any external client.
+8. Pipeline Workflow: If a user asks to "ingest," "setup," or "reset," use drh-orchestrator. If they ask to "analyze," "query," or "show data," use surveilr.
 
 ## Diabetes Research Schema
 
