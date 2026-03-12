@@ -35,33 +35,51 @@ def is_port_in_use(port: int) -> bool:
 
 @mcp.tool()
 def reset_drh_environment():
-    """Runs the reset.sh script to wipe the local database and environment."""
-    # 1. Get the directory where THIS python file is located
-    # (e.g., /Users/anitha/projects/drh-edge-platform/drh-edge-core/mcp-tools/)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    """Wipes the local database, cache, and kills hanging UI processes without breaking the venv."""
+    results = []
     
-    # 2. Find reset.sh relative to the python script
-    # Assuming reset.sh is in the same folder as this python file:
-    reset_script_path = os.path.join(script_dir, "reset.sh")
-    
-    # 3. If reset.sh is one level up (in drh-edge-core/), use:
-    # reset_script_path = os.path.join(script_dir, "..", "reset.sh")
-
-    if not os.path.exists(reset_script_path):
-        return f"Error: Could not find {reset_script_path}"
-
     try:
-        # 4. Run the script. 
-        # We use 'cwd=...' to make sure the bash script runs INSIDE its own folder
-        result = subprocess.run(
-            ["bash", reset_script_path], 
-            capture_output=True, 
-            text=True, 
-            check=True
-        )
-        return f"Reset Successful:\n{result.stdout}"
-    except subprocess.CalledProcessError as e:
-        return f"Reset Failed (Exit Code {e.returncode}):\n{e.stderr}"
+        # 1. Kill any hanging python3 processes (like surveilr or older tap runs)
+        # We do this carefully to avoid killing the MCP server itself
+        current_pid = os.getpid()
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                # Kill other python instances or surveilr/sqlpage
+                if proc.info['pid'] != current_pid and ("python3" in proc.info['name'] or "surveilr" in proc.info['name']):
+                    proc.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        results.append("✅ Terminated hanging background processes.")
+
+        # 2. Cleanup Database and Cache files
+        # Files to remove: .db, .db-shm, .db-wal, and dev-src.auto
+        patterns = [
+            "resource-surveillance.sqlite.db", 
+            "dev-src.auto", 
+            "*.db-shm", 
+            "*.db-wal"
+        ]
+        
+        removed_count = 0
+        for pattern in patterns:
+            full_pattern = os.path.join(PROJECT_ROOT, pattern)
+            for f in glob.glob(full_pattern):
+                os.remove(f)
+                removed_count += 1
+        results.append(f"✅ Cleaned up {removed_count} database/cache files.")
+
+        # 3. Ensure taps are executable (chmod +x)
+        tap_dir = os.path.join(PROJECT_ROOT, "singer-tap")
+        if os.path.exists(tap_dir):
+            for tap_file in glob.glob(os.path.join(tap_dir, "*.py")):
+                current_mode = os.stat(tap_file).st_mode
+                os.chmod(tap_file, current_mode | 0o111) # Adds execute permission
+            results.append("✅ Verified execution permissions for singer-taps.")
+
+        return "\n".join(results)
+
+    except Exception as e:
+        return f"❌ Reset failed: {str(e)}"
 
 @mcp.tool()
 def configure_study_context(runbook_name: str, study_data_path: str, tenant_name: str, tenant_id: str, otel_name: str = "tap-orchestrator"):
