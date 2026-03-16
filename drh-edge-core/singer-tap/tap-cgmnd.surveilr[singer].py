@@ -243,39 +243,17 @@ def emit_otel_resource(emitter):
     return resource_id
 
 
-LOCAL_SCHEMAS = {
-    "combined_cgm_tracing": {
-        "type": "object",
-        "properties": {
-            "tenant_id": {"type": ["string", "null"]},
-            "study_id": {"type": ["string", "null"]},
-            "participant_id": {"type": "string"},
-            "Date_Time": {"type": "string", "format": "date-time"},
-            "CGM_Value": {"type": "number"},
-        },
-        "required": ["participant_id", "Date_Time", "CGM_Value"],
-        "key_properties": ["participant_id", "Date_Time"],
-    }
-}
+
 
 
 def load_schema(stream_name):
     """Load JSON schema for the specified stream."""
-    # 1. Check local hardcoded schemas first
-    if stream_name in LOCAL_SCHEMAS:
-        return LOCAL_SCHEMAS[stream_name]
-
-    # 2. Try OTel defaults if it's an OTel stream
-    if stream_name.startswith("otel_"):
-        return {"type": "object", "properties": {}, "key_properties": []}
-
-    # 3. Load from library resources
     try:
         fname = f"{stream_name}.json"
         with importlib.resources.open_text("drh_target.schemas", fname) as f:
             return json.load(f)
-    except Exception:
-        # Suppress noisy error for missing library schemas
+    except Exception as e:
+        LOGGER.error(f"Failed to load schema for {stream_name}: {e}")
         return {}
 
 
@@ -296,7 +274,7 @@ ALL_STREAM_NAMES = [
     "cgm_tracing",
     "meal",
     "fitness",
-    "combined_cgm_tracing",
+    #"combined_cgm_tracing",
     "otel_resource",
     "otel_logs",
     "otel_metrics",
@@ -1464,7 +1442,7 @@ def process_cgm_tracing(
 
     # 2. Process Files in a Single Pass
     start_time = get_time_nano()
-    span_id, trace_id = emit_otel_span(
+    span_id, _ = emit_otel_span(
         emitter,
         emitter.otel_resource_id,
         OTelNames.CAT_CGM_INTEGRITY,

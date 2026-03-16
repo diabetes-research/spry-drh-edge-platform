@@ -46,9 +46,9 @@ if [ -f ".env" ]; then
     set -a
     source ".env"
     set +a
-    echo "DEBUG: Environment sourced."
+    echo "DEBUG: Environment sourced from $(pwd)/.env"
 else
-    echo "WARN: .env file not found."
+    echo "WARN: .env file not found in $(pwd)"
 fi
 
 # 1. Cleanup
@@ -91,17 +91,65 @@ SELECT 'shell' AS component,
        true AS fixed_top_menu,
        '/' AS link,
        '{"link":"/","title":"Home"}' AS menu_item,
-        '{"link":"https://drh.diabetestechnology.org/","title":"DRH Home","target": "__blank"}' AS menu_item,
-        '/js/wc/d3/agp-chart.js' AS javascript_module,
-        '/js/wc/formula-component.js' AS javascript_module
+       'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js' AS javascript,
+       'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/sql.min.js' AS javascript,
+       'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/handlebars.min.js' AS javascript,
+       'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/json.min.js' AS javascript,
+        'https://app.devl.drh.diabetestechnology.org/js/d3-aide.js' AS javascript,
+        '/d3-aide-component.js' AS javascript,  
+        '{"link":"https://drh.diabetestechnology.org/","title":"DRH Home","target": "__blank"}' AS menu_item, 
+        '{"link":"https://www.diabetestechnology.org/index.shtml","title":"DTS Home","target": "__blank"}' AS menu_item,         
+       '/js/wc/d3/stacked-bar-chart.js' AS javascript_module,
+       '/js/wc/d3/gri-chart.js' AS javascript_module,
+       '/js/wc/d3/dgp-chart.js' AS javascript_module,
+       '/js/wc/d3/agp-chart.js' AS javascript_module,
+       '/js/wc/formula-component.js' AS javascript_module
        ;
 
 SET resource_json = sqlpage.read_file_as_text('spry.d/auto/resource/${path}.auto.json');
 SET page_title  = json_extract($resource_json, '$.route.caption');
+SET page_description  = json_extract($resource_json, '$.route.description');
+SET page_path = json_extract($resource_json, '$.route.path');
+${ctx.breadcrumbs()}
+-- END: PARTIAL global-layout.sql
+-- this is the `${cell.info}` cell on line ${cell.startLine}
+```
+
+```sql PARTIAL api-head.sql --inject drh/api/**
+-- BEGIN: PARTIAL api-head.sql
+select
+   'http_header' as component,
+   'application/json' as "Content-Type";
+-- END: PARTIAL api-head.sql
+```
+
+```sql PARTIAL chart-head.sql --inject drh/chart/**
+-- BEGIN: PARTIAL chart-head.sql
+-- END: PARTIAL chart-head.sql
 ```
 
 ```contribute sqlpage_files --base sqlpage/templates --mode package
 **/* templates --mime text/plain
+```
+
+```contribute sqlpage_files --base https://app.devl.drh.diabetestechnology.org/
+https://app.devl.drh.diabetestechnology.org/js/d3-aide.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/d3/stacked-bar-chart.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/d3/gri-chart.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/d3/dgp-chart.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/d3/agp-chart.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/formula-component.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/axis-D3QohQNI.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/line-Co2p4suz.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/lit-element-CA3xe_EJ.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/state-DQ3nVIzR.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/transform-CPUYrfNj.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/custom-W6OohYNa.js .
+https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js .
+```
+
+```contribute sqlpage_files --base .
+./d3-aide-component.js .
 ```
 
 ## Home Page
