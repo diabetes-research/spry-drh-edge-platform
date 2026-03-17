@@ -131,8 +131,8 @@ def _standardize_demographic(value: Optional[str], mapping: Dict[str, str], allo
 def derive_icd_from_hba1c(hba1c_raw: str) -> Tuple[str, str]:
     try:
         val = float(hba1c_raw)
-        if val >= 6.5: return "Type 2", "E11.9"
-        if val >= 5.7: return "Prediabetes", "R73.03"
+        if val >= 6.5: return "T2D", "E11"
+        if val >= 5.7: return "PREDIABETES", "R73.03"  # implicitly val < 6.5
         return "", ""
     except (ValueError, TypeError):
         return "", ""
@@ -220,56 +220,62 @@ def process_case_cgmnd(args: argparse.Namespace, output_dir: Path) -> None:
 
     # 3. Process CGM Data & Metadata
     log.info("Reading large CGM file (chunked)...")
-    meta_records = []
+
+    meta_file = output_dir / "cgm_file_metadata.csv"
     meta_id_counter = 1
+
+    # Use --study-start-date as the anchor for all relative day offsets.
+    # The CGMND dataset stores relative 'DeviceDtDaysFromEnroll' integers,
+    # so we translate each row's relative day into an absolute date.
+    anchor_date = datetime.strptime(args.study_start_date, "%Y-%m-%d")
 
     # Chunked read of the large CGM file
     chunks = pd.read_csv(cgm_file, 
                          usecols=[args.participant_id_column, "DeviceDtDaysFromEnroll", "DeviceTm", "RecordType"],
                          chunksize=CHUNK_SIZE)
-    
-    # Track stats per participant
-    stats = {}
-    
+
+    first_write = True
+
     for chunk in chunks:
         cgm_only = chunk[chunk['RecordType'] == 'CGM']
-        for pid, group in cgm_only.groupby(args.participant_id_column):
-            pid_str = str(pid)
-            if pid_str not in stats:
-                stats[pid_str] = {"min_days": float('inf'), "max_days": float('-inf')}
-            
-            stats[pid_str]["min_days"] = min(stats[pid_str]["min_days"], group["DeviceDtDaysFromEnroll"].min())
-            stats[pid_str]["max_days"] = max(stats[pid_str]["max_days"], group["DeviceDtDaysFromEnroll"].max())
 
-    # Use --study-start-date as the anchor for all participants.
-    # The CGMND dataset stores relative 'DeviceDtDaysFromEnroll' integers,
-    # so we add each participant's min/max relative days to this anchor date.
-    anchor_date = datetime.strptime(args.study_start_date, "%Y-%m-%d")
+        meta_records = []
+        for _, row in cgm_only.iterrows():
+            try:
+                day_offset = int(row["DeviceDtDaysFromEnroll"])
+            except (TypeError, ValueError):
+                # Skip rows with invalid day offsets
+                continue
 
-    for pid, p_stats in stats.items():
-        # Translate relative days to absolute dates
-        start_date = (anchor_date + timedelta(days=int(p_stats["min_days"]))).strftime("%Y-%m-%d")
-        end_date = (anchor_date + timedelta(days=int(p_stats["max_days"]))).strftime("%Y-%m-%d")
+            date_str = (anchor_date + timedelta(days=day_offset)).strftime("%Y-%m-%d")
 
-        meta_records.append({
-            "metadata_id": f"META-{meta_id_counter}",
-            "devicename": "CGMND Device",
-            "device_id": "CGMND-001",
-            "source_platform": "Dexcom", # Non-diabetic dataset often uses Dexcom in G6 era
-            "patient_id": f"{args.study_id}-{pid}",
-            "file_name": cgm_file.stem,
-            "file_format": "csv",
-            "file_upload_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            "data_start_date": start_date,
-            "data_end_date": end_date,
-            "map_field_of_cgm_date": args.timestamp_column,
-            "map_field_of_cgm_value": args.cgm_value_column,
-            "study_id": args.study_id,
-            "map_field_of_patient_id": args.participant_id_column,
-        })
-        meta_id_counter += 1
+            meta_records.append({
+                "metadata_id": f"META-{meta_id_counter}",
+                "devicename": "CGMND Device",
+                "device_id": "CGMND-001",
+                "source_platform": "Dexcom", # Non-diabetic dataset often uses Dexcom in G6 era
+                "patient_id": f"{args.study_id}-{row[args.participant_id_column]}",
+                "file_name": cgm_file.stem,
+                "file_format": "csv",
+                "file_upload_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "data_start_date": date_str,
+                "data_end_date": date_str,
+                "map_field_of_cgm_date": args.timestamp_column,
+                "map_field_of_cgm_value": args.cgm_value_column,
+                "study_id": args.study_id,
+                "map_field_of_patient_id": args.participant_id_column,
+            })
+            meta_id_counter += 1
 
-    pd.DataFrame(meta_records)[METADATA_COLUMNS].to_csv(output_dir / "cgm_file_metadata.csv", index=False)
+        if meta_records:
+            pd.DataFrame(meta_records)[METADATA_COLUMNS].to_csv(
+                meta_file,
+                index=False,
+                mode="w" if first_write else "a",
+                header=first_write,
+            )
+            first_write = False
+
     log.info("cgm_file_metadata.csv generated.")
 
     # 4. Generate study.csv
@@ -294,7 +300,7 @@ def main():
     parser.add_argument("--output-folder", required=True)
     parser.add_argument("--timestamp-column", default="DeviceTm")
     parser.add_argument("--participant-id-column", default="PtID")
-    parser.add_argument("--cgm-value-column", default="value")
+    parser.add_argument("--cgm-value-column", default="Value")
     parser.add_argument("--study-id", default="CGMND")
     parser.add_argument("--study-name", default="CGM in Non-Diabetic Participants")
     parser.add_argument("--study-start-date", default="2018-01-01")
