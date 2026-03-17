@@ -107,7 +107,7 @@ This script is the "data" processor. It iterates through raw participant folders
         --input-folder     "raw-data/cgmnd-table-data" \
         --timestamp-column "DeviceTm" \
         --participant-id-column "PtID" \
-        --cgm-value-column "value" \
+        --cgm-value-column "Value" \
         --output-folder    "examples/cgmnd" \
         --study-id         "CGMND" \
         --study-name       "CGM in Non-Diabetic Participants (T1DX)" \
