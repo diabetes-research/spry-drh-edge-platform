@@ -1408,6 +1408,88 @@ def normalize_timestamp(ts: str) -> str:
         return ts
 
 
+def _get_participant_lookup_and_prefix(data_dir: str):
+    """Build raw PtID -> prefixed participant_id lookup and derive study prefix."""
+    participant_lookup = {}
+    study_prefix = ""
+
+    participant_path = find_file(data_dir, FILES.get("participant", "participant.csv"))
+    if os.path.exists(participant_path):
+        with open(participant_path, "r", encoding="utf-8-sig") as pf:
+            reader = csv.DictReader(pf)
+            for row in reader:
+                participant_id = (row.get("participant_id") or "").strip()
+                if not participant_id:
+                    continue
+                if "-" in participant_id:
+                    raw_pid = participant_id.split("-", 1)[1]
+                    if raw_pid:
+                        participant_lookup[raw_pid] = participant_id
+                    if not study_prefix:
+                        study_prefix = participant_id.split("-", 1)[0]
+                else:
+                    participant_lookup[participant_id] = participant_id
+
+    if not study_prefix:
+        study_path = find_file(data_dir, FILES.get("study", "study.csv"))
+        if os.path.exists(study_path):
+            with open(study_path, "r", encoding="utf-8-sig") as sf:
+                first_row = next(csv.DictReader(sf), None)
+                if first_row:
+                    study_prefix = (first_row.get("study_id") or "").strip() or (
+                        first_row.get("study_name") or ""
+                    ).strip()
+
+    return participant_lookup, study_prefix
+
+
+def process_raw_cgm_tracing(
+    emitter: ValidatingDRHLoader,
+    filepath: str,
+    participant_lookup: Optional[Dict[str, str]] = None,
+    study_prefix: str = "",
+):
+    """
+    Emit one RAW_CGM_TRACING record for NonDiabDeviceCGM.csv.
+    Includes only rows where RecordType == CGM and normalizes PtID to
+    StudyPrefix-PtID format when possible.
+    """
+    try:
+        with open(filepath, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            data_rows = []
+            for row in reader:
+                if (row.get("RecordType", "") or "").strip().upper() != "CGM":
+                    continue
+
+                raw_pid = (row.get("PtID", "") or "").strip()
+                if raw_pid:
+                    mapped_pid = (participant_lookup or {}).get(raw_pid)
+                    if not mapped_pid:
+                        mapped_pid = f"{study_prefix}-{raw_pid}" if study_prefix else raw_pid
+                    row["PtID"] = mapped_pid
+
+                data_rows.append(row)
+
+        record = {
+            "raw_id": str(uuid.uuid4()),
+            "raw_file_name": os.path.basename(filepath),
+            "raw_data_payload": data_rows,
+        }
+        emitter.emit_record("cgm_tracing", record)
+
+    except Exception as e:
+        LOGGER.error(f"Error processing raw CGM tracing {filepath}: {e}")
+        if hasattr(emitter, "otel_resource_id") and emitter.otel_resource_id:
+            emit_otel_log(
+                emitter,
+                emitter.otel_resource_id,
+                "ERROR",
+                f"Error processing raw CGM tracing {filepath}: {e}",
+                {"file": filepath},
+            )
+
+
 def process_cgm_tracing(
     emitter: ValidatingDRHLoader, data_dir: str, state: StateManager
 ):
@@ -1969,7 +2051,24 @@ def main():
         process_metadata_stream(emitter, data_dir, stream)
 
     # 3. High-Volume Tracing
-    process_cgm_tracing(emitter, data_dir, state)
+    raw_cgm_path = find_file(data_dir, "NonDiabDeviceCGM.csv")
+    if os.path.exists(raw_cgm_path):
+        participant_lookup, study_prefix = _get_participant_lookup_and_prefix(data_dir)
+        process_raw_cgm_tracing(
+            emitter,
+            raw_cgm_path,
+            participant_lookup=participant_lookup,
+            study_prefix=study_prefix,
+        )
+    else:
+        LOGGER.info("No NonDiabDeviceCGM.csv found, skipping raw CGM tracing.")
+
+    # if os.environ.get("ENABLE_COMBINED_CGM_TRACING", "false").lower() == "true":
+        process_cgm_tracing(emitter, data_dir, state)
+    # else:
+        LOGGER.info(
+            "Skipping combined_cgm_tracing emission (unsupported by default target schemas)."
+        )
 
     # 4. Final State
     state.emit_state()
