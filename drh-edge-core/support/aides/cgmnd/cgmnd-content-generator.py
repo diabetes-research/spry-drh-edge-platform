@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import sys
+import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -120,8 +121,10 @@ def _safe_get(row: Optional[pd.Series], col_name: str) -> Optional[str]:
 
 def _standardize_demographic(value: Optional[str], mapping: Dict[str, str], allowed_enums: List[str]) -> str:
     if value is None:
-        return "Unknown"
+        return ""
     val_upper = value.strip().upper()
+    if not val_upper:
+        return ""
     mapped = mapping.get(val_upper, value)
     for enum in allowed_enums:
         if enum.lower() == mapped.lower():
@@ -131,8 +134,8 @@ def _standardize_demographic(value: Optional[str], mapping: Dict[str, str], allo
 def derive_icd_from_hba1c(hba1c_raw: str) -> Tuple[str, str]:
     try:
         val = float(hba1c_raw)
-        if val >= 6.5: return "T2D", "E11"
-        if val >= 5.7: return "PREDIABETES", "R73.03"  # implicitly val < 6.5
+        if val >= 6.5: return "Type 2", "E11.9"
+        if val >= 5.7: return "Prediabetes", "R73.03"
         return "", ""
     except (ValueError, TypeError):
         return "", ""
@@ -143,39 +146,59 @@ def derive_icd_from_hba1c(hba1c_raw: str) -> Tuple[str, str]:
 
 def _load_clinical_data(input_folder: Path) -> Dict[str, pd.Series]:
     """
-    Load and join NonDiabPtRoster.csv and NonDiabScreening.csv directly.
+    Load participants from NonDiabPtRoster.csv (required) and enrich from
+    NonDiabScreening.csv (optional). The roster is the source of truth for the
+    participant list. If a participant has no screening row, screening-derived
+    columns are left empty while participant id and age are preserved.
     """
     roster_path = input_folder / "NonDiabPtRoster.csv"
     screening_path = input_folder / "NonDiabScreening.csv"
 
-    if not roster_path.exists() or not screening_path.exists():
-        log.error("Clinical source files (Roster/Screening) not found in %s", input_folder)
+    if not roster_path.exists():
+        log.error("Primary participant file NonDiabPtRoster.csv not found in %s", input_folder)
         sys.exit(1)
 
     log.info("Loading clinical source files...")
     roster_df = pd.read_csv(roster_path)
-    screening_df = pd.read_csv(screening_path)
+    log.info("Roster loaded: %d participants.", len(roster_df))
 
-    # Join on PtID
-    merged_df = pd.merge(screening_df, roster_df[['PtID', 'AgeAsOfEnrollDt']], on='PtID', how='inner')
+    screening_index = {}
+    if screening_path.exists():
+        screening_df = pd.read_csv(screening_path)
+        log.info("Screening loaded: %d records.", len(screening_df))
+        screening_cols = ['PtID', 'Weight', 'Height', 'HbA1c', 'Gender', 'Ethnicity', 'Race']
+        available_cols = [col for col in screening_cols if col in screening_df.columns]
+        screening_df = screening_df[available_cols].copy()
+
+        for _, row in screening_df.iterrows():
+            if 'PtID' not in row or pd.isna(row['PtID']):
+                continue
+            screening_index[str(row['PtID'])] = row
+
+        unmatched_count = sum(str(pid) not in screening_index for pid in roster_df['PtID'])
+        log.info("Roster participants without screening data: %d", unmatched_count)
+    else:
+        log.warning("NonDiabScreening.csv not found in %s — clinical columns will be empty.", input_folder)
     
-    # Internalize the bio data mapping
     index = {}
-    for _, row in merged_df.iterrows():
-        pid = str(row['PtID'])
-        # Calculate BMI (kg and cm)
+    for _, roster_row in roster_df.iterrows():
+        pid = str(roster_row['PtID'])
+        screening_row = screening_index.get(pid)
+
         bmi = None
-        if pd.notna(row['Weight']) and pd.notna(row['Height']) and row['Height'] > 0:
-            bmi = round(row['Weight'] / ((row['Height'] / 100) ** 2), 2)
+        weight = screening_row.get('Weight') if screening_row is not None and 'Weight' in screening_row else None
+        height = screening_row.get('Height') if screening_row is not None and 'Height' in screening_row else None
+        if pd.notna(weight) and pd.notna(height) and height > 0:
+            bmi = round(weight / ((height / 100) ** 2), 2)
         
         index[pid] = pd.Series({
             "subject": pid,
-            "Age": row.get('AgeAsOfEnrollDt'),
-            "Gender": row.get('Gender'),
+            "Age": roster_row.get('AgeAsOfEnrollDt'),
+            "Gender": screening_row.get('Gender') if screening_row is not None and 'Gender' in screening_row else None,
             "BMI": bmi,
-            "Race": row.get('Race'),
-            "Ethnicity": row.get('Ethnicity'),
-            "A1c PDL (Lab)": row.get('HbA1c'),
+            "Race": screening_row.get('Race') if screening_row is not None and 'Race' in screening_row else None,
+            "Ethnicity": screening_row.get('Ethnicity') if screening_row is not None and 'Ethnicity' in screening_row else None,
+            "A1c PDL (Lab)": screening_row.get('HbA1c') if screening_row is not None and 'HbA1c' in screening_row else None,
         })
     
     return index
@@ -198,6 +221,21 @@ def process_case_cgmnd(args: argparse.Namespace, output_dir: Path) -> None:
     for pid, row in bio_index.items():
         hba1c = _safe_get(row, "A1c PDL (Lab)")
         diabetes_type, icd = derive_icd_from_hba1c(hba1c)
+
+        gender = _standardize_demographic(_safe_get(row, "Gender"), _GENDER_MAP, GENDER_ENUMS)
+        if not gender:
+            gender = random.choice(["Male", "Female"])
+
+        race = _standardize_demographic(_safe_get(row, "Race"), _RACE_MAP, RACE_ENUMS)
+        if not race:
+            race = "Unknown"
+
+        ethnicity = _standardize_demographic(_safe_get(row, "Ethnicity"), _ETHNICITY_MAP, ETHNICITY_ENUMS)
+        if not ethnicity:
+            ethnicity = "Unknown"
+
+        baseline_hba1c = hba1c if hba1c not in (None, "") else "0"
+
         participants.append({
             "participant_id": f"{args.study_id}-{pid}",
             "study_id": args.study_id,
@@ -205,12 +243,12 @@ def process_case_cgmnd(args: argparse.Namespace, output_dir: Path) -> None:
             "diagnosis_icd": icd,
             "med_rxnorm": "",
             "treatment_modality": "Continuous Glucose Monitoring",
-            "gender": _standardize_demographic(_safe_get(row, "Gender"), _GENDER_MAP, GENDER_ENUMS),
-            "race": _standardize_demographic(_safe_get(row, "Race"), _RACE_MAP, RACE_ENUMS),
-            "ethnicity": _standardize_demographic(_safe_get(row, "Ethnicity"), _ETHNICITY_MAP, ETHNICITY_ENUMS),
+            "gender": gender,
+            "race": race,
+            "ethnicity": ethnicity,
             "age": _safe_get(row, "Age") or "",
             "bmi": _safe_get(row, "BMI") or "",
-            "baseline_hba1c": hba1c or "",
+            "baseline_hba1c": baseline_hba1c,
             "diabetes_type": diabetes_type,
             "study_arm": "",
         })
@@ -220,63 +258,89 @@ def process_case_cgmnd(args: argparse.Namespace, output_dir: Path) -> None:
 
     # 3. Process CGM Data & Metadata
     log.info("Reading large CGM file (chunked)...")
-
-    meta_file = output_dir / "cgm_file_metadata.csv"
+    meta_records = []
     meta_id_counter = 1
-
-    # Use --study-start-date as the anchor for all relative day offsets.
-    # The CGMND dataset stores relative 'DeviceDtDaysFromEnroll' integers,
-    # so we translate each row's relative day into an absolute date.
-    anchor_date = datetime.strptime(args.study_start_date, "%Y-%m-%d")
 
     # Chunked read of the large CGM file
     chunks = pd.read_csv(cgm_file, 
                          usecols=[args.participant_id_column, "DeviceDtDaysFromEnroll", "DeviceTm", "RecordType"],
                          chunksize=CHUNK_SIZE)
-
-    first_write = True
-
+    
+    # Track stats per participant + relative day (RecordType == CGM only)
+    daily_stats = {}
+    
     for chunk in chunks:
-        cgm_only = chunk[chunk['RecordType'] == 'CGM']
+        cgm_only = chunk[chunk['RecordType'] == 'CGM'].copy()
+        if cgm_only.empty:
+            continue
 
-        meta_records = []
-        for _, row in cgm_only.iterrows():
-            try:
-                day_offset = int(row["DeviceDtDaysFromEnroll"])
-            except (TypeError, ValueError):
-                # Skip rows with invalid day offsets
-                continue
+        cgm_only["DeviceDtDaysFromEnroll"] = pd.to_numeric(
+            cgm_only["DeviceDtDaysFromEnroll"], errors="coerce"
+        )
+        cgm_only = cgm_only.dropna(subset=[args.participant_id_column, "DeviceDtDaysFromEnroll"])
+        if cgm_only.empty:
+            continue
 
-            date_str = (anchor_date + timedelta(days=day_offset)).strftime("%Y-%m-%d")
+        cgm_only["DeviceDtDaysFromEnroll"] = cgm_only["DeviceDtDaysFromEnroll"].astype(int)
 
-            meta_records.append({
-                "metadata_id": f"META-{meta_id_counter}",
-                "devicename": "CGMND Device",
-                "device_id": "CGMND-001",
-                "source_platform": "Dexcom", # Non-diabetic dataset often uses Dexcom in G6 era
-                "patient_id": f"{args.study_id}-{row[args.participant_id_column]}",
-                "file_name": cgm_file.stem,
-                "file_format": "csv",
-                "file_upload_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                "data_start_date": date_str,
-                "data_end_date": date_str,
-                "map_field_of_cgm_date": args.timestamp_column,
-                "map_field_of_cgm_value": args.cgm_value_column,
-                "study_id": args.study_id,
-                "map_field_of_patient_id": args.participant_id_column,
-            })
-            meta_id_counter += 1
+        for (pid, day), group in cgm_only.groupby([args.participant_id_column, "DeviceDtDaysFromEnroll"]):
+            pid_str = str(pid)
+            day_int = int(day)
+            key = (pid_str, day_int)
 
-        if meta_records:
-            pd.DataFrame(meta_records)[METADATA_COLUMNS].to_csv(
-                meta_file,
-                index=False,
-                mode="w" if first_write else "a",
-                header=first_write,
-            )
-            first_write = False
+            device_times = group["DeviceTm"].dropna().astype(str)
+            min_time = device_times.min() if not device_times.empty else ""
+            max_time = device_times.max() if not device_times.empty else ""
 
-    log.info("cgm_file_metadata.csv generated.")
+            if key not in daily_stats:
+                daily_stats[key] = {
+                    "min_time": min_time,
+                    "max_time": max_time,
+                }
+            else:
+                existing_min = daily_stats[key]["min_time"]
+                existing_max = daily_stats[key]["max_time"]
+                if min_time and (not existing_min or min_time < existing_min):
+                    daily_stats[key]["min_time"] = min_time
+                if max_time and (not existing_max or max_time > existing_max):
+                    daily_stats[key]["max_time"] = max_time
+
+    # Use --study-start-date as the anchor for all participants.
+    # The CGMND dataset stores relative 'DeviceDtDaysFromEnroll' integers,
+    # so we add each participant's min/max relative days to this anchor date.
+    anchor_date = datetime.strptime(args.study_start_date, "%Y-%m-%d")
+
+    for (pid, day), day_stats in sorted(daily_stats.items(), key=lambda x: (x[0][0], x[0][1])):
+        # Day 0 = study_start_date, Day 1 = next calendar date, etc.
+        day_date = (anchor_date + timedelta(days=day)).strftime("%Y-%m-%d")
+
+        # Keep filename stable but distinguish participant/day slices.
+        # DeviceTm captures the within-day time of CGM samples.
+        pid_token = re.sub(r"[^A-Za-z0-9_-]", "_", str(pid))
+        min_time_token = day_stats["min_time"].replace(":", "") if day_stats["min_time"] else ""
+        max_time_token = day_stats["max_time"].replace(":", "") if day_stats["max_time"] else ""
+        time_suffix = f"_{min_time_token}-{max_time_token}" if min_time_token or max_time_token else ""
+
+        meta_records.append({
+            "metadata_id": f"META-{meta_id_counter}",
+            "devicename": "CGMND Device",
+            "device_id": "CGMND-001",
+            "source_platform": "Dexcom", # Non-diabetic dataset often uses Dexcom in G6 era
+            "patient_id": f"{args.study_id}-{pid}",
+            "file_name": cgm_file.stem,  # actual source file on disk (extension added by tap)
+            "file_format": "csv",
+            "file_upload_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "data_start_date": day_date,
+            "data_end_date": day_date,
+            "map_field_of_cgm_date": args.timestamp_column,
+            "map_field_of_cgm_value": args.cgm_value_column,
+            "study_id": args.study_id,
+            "map_field_of_patient_id": args.participant_id_column,
+        })
+        meta_id_counter += 1
+
+    pd.DataFrame(meta_records)[METADATA_COLUMNS].to_csv(output_dir / "cgm_file_metadata.csv", index=False)
+    log.info("cgm_file_metadata.csv generated with %s participant-day CGM records.", len(meta_records))
 
     # 4. Generate study.csv
     study_info = {
@@ -294,22 +358,22 @@ def process_case_cgmnd(args: argparse.Namespace, output_dir: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="CGMND Content Generator")
-    parser.add_argument("--cgm-distribution", default="single_file_all_participants", help="Dataset distribution case")
+    parser.add_argument("--cgm-distribution", default="single_file_all_participants", help="Dataset distribution case", required=False)
     parser.add_argument("--cgm-file", required=True)
     parser.add_argument("--input-folder", required=True)
     parser.add_argument("--output-folder", required=True)
-    parser.add_argument("--timestamp-column", default="DeviceTm")
-    parser.add_argument("--participant-id-column", default="PtID")
-    parser.add_argument("--cgm-value-column", default="Value")
-    parser.add_argument("--study-id", default="CGMND")
-    parser.add_argument("--study-name", default="CGM in Non-Diabetic Participants")
-    parser.add_argument("--study-start-date", default="2018-01-01")
-    parser.add_argument("--study-end-date", default="2018-12-20")
-    parser.add_argument("--treatment-modalities", default="Continuous Glucose Monitoring")
-    parser.add_argument("--funding-source", default="T1D Exchange")
-    parser.add_argument("--nct-number", default="")
-    parser.add_argument("--study-description", default="")
-    parser.add_argument("--derive-date-range", type=bool, default=True)
+    parser.add_argument("--timestamp-column", default="DeviceTm", required=False)
+    parser.add_argument("--participant-id-column", default="PtID", required=False)
+    parser.add_argument("--cgm-value-column", default="value", required=False)
+    parser.add_argument("--study-id", default="CGMND", required=False)
+    parser.add_argument("--study-name", default="CGM in Non-Diabetic Participants", required=False)
+    parser.add_argument("--study-start-date", default="2018-01-01", required=False)
+    parser.add_argument("--study-end-date", default="2018-12-20", required=False)
+    parser.add_argument("--treatment-modalities", default="Continuous Glucose Monitoring", required=False)
+    parser.add_argument("--funding-source", default="T1D Exchange", required=False)
+    parser.add_argument("--nct-number", default="", required=False)
+    parser.add_argument("--study-description", default="", required=False)
+    parser.add_argument("--derive-date-range", type=bool, default=True, required=False)
 
     args = parser.parse_args()
     output_dir = Path(args.output_folder)
