@@ -330,15 +330,18 @@ def get_files_config():
 FILES = get_files_config()
 
 MANDATORY_STREAM_NAMES = [
+    "study",
     "participant",
+    "cgm_file_metadata",
+]
+
+SUPPORT_STREAM_NAMES = [
     "institution",
     "lab",
-    "study",
     "site",
     "investigator",
     "publication",
     "author",
-    "cgm_file_metadata",
 ]
 
 MANDATORY_FILE_CHECK_STREAMS = ["participant", "study", "cgm_file_metadata"]
@@ -1408,95 +1411,73 @@ def normalize_timestamp(ts: str) -> str:
         return ts
 
 
-def _get_participant_lookup_and_prefix(data_dir: str):
-    """Build raw PtID -> prefixed participant_id lookup and derive study prefix."""
-    participant_lookup = {}
-    study_prefix = ""
-
-    participant_path = find_file(data_dir, FILES.get("participant", "participant.csv"))
-    if os.path.exists(participant_path):
-        with open(participant_path, "r", encoding="utf-8-sig") as pf:
-            reader = csv.DictReader(pf)
-            for row in reader:
-                participant_id = (row.get("participant_id") or "").strip()
-                if not participant_id:
-                    continue
-                if "-" in participant_id:
-                    raw_pid = participant_id.split("-", 1)[1]
-                    if raw_pid:
-                        participant_lookup[raw_pid] = participant_id
-                    if not study_prefix:
-                        study_prefix = participant_id.split("-", 1)[0]
-                else:
-                    participant_lookup[participant_id] = participant_id
-
-    if not study_prefix:
-        study_path = find_file(data_dir, FILES.get("study", "study.csv"))
-        if os.path.exists(study_path):
-            with open(study_path, "r", encoding="utf-8-sig") as sf:
-                first_row = next(csv.DictReader(sf), None)
-                if first_row:
-                    study_prefix = (first_row.get("study_id") or "").strip() or (
-                        first_row.get("study_name") or ""
-                    ).strip()
-
-    return participant_lookup, study_prefix
-
-
 def process_raw_cgm_tracing(
     emitter: ValidatingDRHLoader,
-    filepath: str,
-    participant_lookup: Optional[Dict[str, str]] = None,
-    study_prefix: str = "",
+    data_dir: str,
 ):
     """
-    Emit one RAW_CGM_TRACING record for NonDiabDeviceCGM.csv.
-    Includes only rows where RecordType == CGM and normalizes PtID to
-    StudyPrefix-PtID format when possible.
+    Emit one RAW_CGM_TRACING record per metadata file.
+    CGMND now generates one real CSV per participant, so the tap reads the
+    file_name listed in cgm_file_metadata.csv and emits its full CGM payload.
     """
-    try:
-        with open(filepath, newline="", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            # Keep at most one row per patient in the payload (reduces size for large CGM dumps).
-            # If multiple rows exist for the same patient, we keep the first one seen.
-            data_rows_by_participant: Dict[str, Dict[str, str]] = {}
+    meta_path = find_file(data_dir, FILES.get("cgm_file_metadata", "cgm_file_metadata.csv"))
+    if not os.path.exists(meta_path):
+        LOGGER.info("No cgm_file_metadata.csv found, skipping raw CGM tracing.")
+        return
 
-            for row in reader:
-                if (row.get("RecordType", "") or "").strip().upper() != "CGM":
+    try:
+        with open(meta_path, newline="", encoding="utf-8-sig") as meta_file:
+            meta_reader = csv.DictReader(meta_file)
+
+            for meta_row in meta_reader:
+                participant_id = (meta_row.get("patient_id") or "").strip()
+                file_name = (meta_row.get("file_name") or "").strip()
+                file_format = (meta_row.get("file_format") or "").strip()
+
+                if not participant_id or not file_name:
                     continue
 
-                raw_pid = (row.get("PtID", "") or "").strip()
-                if raw_pid:
-                    mapped_pid = (participant_lookup or {}).get(raw_pid)
-                    if not mapped_pid:
-                        mapped_pid = f"{study_prefix}-{raw_pid}" if study_prefix else raw_pid
-                    row["PtID"] = mapped_pid
+                resolved_name = (
+                    f"{file_name}.{file_format}"
+                    if file_format and not file_name.lower().endswith(f".{file_format.lower()}")
+                    else file_name
+                )
+                data_path = find_file(data_dir, resolved_name)
+                if not os.path.exists(data_path):
+                    LOGGER.warning(
+                        "Raw CGM tracing file referenced in metadata not found: %s",
+                        resolved_name,
+                    )
+                    continue
 
-                    # Only keep the first row seen per participant to constrain payload size.
-                    if mapped_pid in data_rows_by_participant:
-                        continue
+                with open(data_path, newline="", encoding="utf-8-sig") as data_file:
+                    reader = csv.DictReader(data_file)
+                    rows = [
+                        row
+                        for row in reader
+                        if (row.get("RecordType", "") or "").strip().upper() in ("", "CGM")
+                    ]
 
-                    data_rows_by_participant[mapped_pid] = row
+                if not rows:
+                    continue
 
-        # Emit one cgm_tracing record per participant.
-        for participant_id, row in data_rows_by_participant.items():
-            record = {
-                "raw_id": str(uuid.uuid4()),
-                "raw_file_name": os.path.basename(filepath),
-                "participant_id": participant_id,
-                "raw_data_payload": [row],
-            }
-            emitter.emit_record("cgm_tracing", record)
+                record = {
+                    "raw_id": str(uuid.uuid4()),
+                    "raw_file_name": os.path.basename(data_path),
+                    "participant_id": participant_id,
+                    "raw_data_payload": rows,
+                }
+                emitter.emit_record("cgm_tracing", record)
 
     except Exception as e:
-        LOGGER.error(f"Error processing raw CGM tracing {filepath}: {e}")
+        LOGGER.error(f"Error processing raw CGM tracing from metadata in {data_dir}: {e}")
         if hasattr(emitter, "otel_resource_id") and emitter.otel_resource_id:
             emit_otel_log(
                 emitter,
                 emitter.otel_resource_id,
                 "ERROR",
-                f"Error processing raw CGM tracing {filepath}: {e}",
-                {"file": filepath},
+                f"Error processing raw CGM tracing from metadata in {data_dir}: {e}",
+                {"data_dir": data_dir},
             )
 
 
@@ -1663,7 +1644,7 @@ def process_metadata_stream(
     emitter: ValidatingDRHLoader, data_dir: str, stream_name: str
 ):
     """Processes static metadata streams."""
-    file_path = os.path.join(data_dir, f"{stream_name}.csv")
+    file_path = find_file(data_dir, FILES.get(stream_name, f"{stream_name}.csv"))
     if not os.path.exists(file_path):
         return
 
@@ -1684,7 +1665,7 @@ def process_metadata_stream(
 # --- 6. CORE LOGIC ---
 def main():
     """Primary entry point for the Singer tap."""
-    parser = argparse.ArgumentParser(description="Singer Tap for CGMacros Dataset")
+    parser = argparse.ArgumentParser(description="Singer Tap for CGMND Dataset")
     parser.add_argument("-c", "--config", help="Config file")
     parser.add_argument("-s", "--state", help="State file")
     parser.add_argument("--discover", action="store_true", help="Do discovery")
@@ -1751,7 +1732,7 @@ def main():
             trace_id=root_trace_id,
             status_code="ERROR",
         )
-        sys.exit(0)
+        sys.exit(1)
 
     # 1. Emit Initial Schemas
     for stream in ALL_STREAM_NAMES:
@@ -1778,7 +1759,7 @@ def main():
             trace_id=root_trace_id,
             status_code="ERROR",
         )
-        sys.exit(0)
+        sys.exit(1)
 
     # Check 1: Folder & Resource Scan
     s1 = get_time_nano()
@@ -2050,35 +2031,15 @@ def main():
         process_metadata_stream(emitter, data_dir, stream)
 
     # 2. Support Metadata
-    for stream in [
-        "institution",
-        "lab",
-        "investigator",
-        "publication",
-        "author",
-        "site",
-    ]:
+    for stream in SUPPORT_STREAM_NAMES:
         process_metadata_stream(emitter, data_dir, stream)
 
     # 3. High-Volume Tracing
-    raw_cgm_path = find_file(data_dir, "NonDiabDeviceCGM.csv")
-    if os.path.exists(raw_cgm_path):
-        participant_lookup, study_prefix = _get_participant_lookup_and_prefix(data_dir)
-        process_raw_cgm_tracing(
-            emitter,
-            raw_cgm_path,
-            participant_lookup=participant_lookup,
-            study_prefix=study_prefix,
-        )
-    else:
-        LOGGER.info("No NonDiabDeviceCGM.csv found, skipping raw CGM tracing.")
+    process_raw_cgm_tracing(emitter, data_dir)
 
-    # if os.environ.get("ENABLE_COMBINED_CGM_TRACING", "false").lower() == "true":
-        process_cgm_tracing(emitter, data_dir, state)
-    # else:
-        LOGGER.info(
-            "Skipping combined_cgm_tracing emission (unsupported by default target schemas)."
-        )
+    LOGGER.info(
+        "Skipping combined_cgm_tracing emission; CGMND uses raw cgm_tracing plus SQL ETL."
+    )
 
     # 4. Final State
     state.emit_state()
