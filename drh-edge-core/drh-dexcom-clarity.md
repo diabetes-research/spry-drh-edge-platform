@@ -167,8 +167,8 @@ Spry but make it easier to trace where _partial_ injections are occurring.
 SELECT 'shell' AS component,
        'Diabetes Research Hub Edge' AS title,
        NULL AS icon,
-       'https://drh.diabetestechnology.org/_astro/favicon.CcrFY5y9.ico' AS favicon,
-       'https://drh.diabetestechnology.org/images/diabetic-research-hub-logo.png' AS image,
+       '/favicon.ico' AS favicon,
+       '/logo.png' AS image,
        'fluid' AS layout,
        true AS fixed_top_menu,
        '/' AS link,
@@ -177,7 +177,7 @@ SELECT 'shell' AS component,
        'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/sql.min.js' AS javascript,
        'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/handlebars.min.js' AS javascript,
        'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/languages/json.min.js' AS javascript,
-        'https://app.devl.drh.diabetestechnology.org/js/d3-aide.js' AS javascript,
+        '/js/d3-aide.js' AS javascript,
         '/d3-aide-component.js' AS javascript,  
         '{"link":"https://drh.diabetestechnology.org/","title":"DRH Home","target": "__blank"}' AS menu_item, 
         '{"link":"https://www.diabetestechnology.org/index.shtml","title":"DTS Home","target": "__blank"}' AS menu_item,         
@@ -214,24 +214,24 @@ select
 **/* templates --mime text/plain
 ```
 
-```contribute sqlpage_files --base https://app.devl.drh.diabetestechnology.org/
-https://app.devl.drh.diabetestechnology.org/js/d3-aide.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/d3/stacked-bar-chart.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/d3/gri-chart.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/d3/dgp-chart.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/d3/agp-chart.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/formula-component.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/assets/axis-D3QohQNI.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/assets/line-Co2p4suz.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/assets/lit-element-CA3xe_EJ.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/assets/state-DQ3nVIzR.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/assets/transform-CPUYrfNj.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/assets/custom-W6OohYNa.js .
-https://app.devl.drh.diabetestechnology.org/js/wc/assets/band-B4BH55T4.js .
-```
-
 ```contribute sqlpage_files --base .
 ./d3-aide-component.js .
+./favicon.ico .
+./logo.png .
+
+./js/d3-aide.js js/d3-aide.js
+./js/wc/d3/stacked-bar-chart.js js/wc/d3/stacked-bar-chart.js
+./js/wc/d3/gri-chart.js js/wc/d3/gri-chart.js
+./js/wc/d3/dgp-chart.js js/wc/d3/dgp-chart.js
+./js/wc/d3/agp-chart.js js/wc/d3/agp-chart.js
+./js/wc/formula-component.js js/wc/formula-component.js
+./js/wc/assets/axis-D3QohQNI.js js/wc/assets/axis-D3QohQNI.js
+./js/wc/assets/line-Co2p4suz.js js/wc/assets/line-Co2p4suz.js
+./js/wc/assets/lit-element-CA3xe_EJ.js js/wc/assets/lit-element-CA3xe_EJ.js
+./js/wc/assets/state-DQ3nVIzR.js js/wc/assets/state-DQ3nVIzR.js
+./js/wc/assets/transform-CPUYrfNj.js js/wc/assets/transform-CPUYrfNj.js
+./js/wc/assets/custom-W6OohYNa.js js/wc/assets/custom-W6OohYNa.js
+./js/wc/assets/band-B4BH55T4.js js/wc/assets/band-B4BH55T4.js
 ```
 
 ## DRH EDGE  Home Page
