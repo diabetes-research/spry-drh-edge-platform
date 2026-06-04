@@ -47,7 +47,6 @@ The **DRH Edge Platform** is an automated ecosystem designed to bridge the gap b
   - [🤖 Local AI Research Assistant (MCP)](#-local-ai-research-assistant-mcp)
     - [**Key Benefits for Researchers**](#key-benefits-for-researchers)
   - [🔗 Deep Dive Documentation](#-deep-dive-documentation)
-  - [👉 **MCP Orchestration \& Prompting Guide**](#-mcp-orchestration--prompting-guide)
   - [🎨 Platform Visual Showcase](#-platform-visual-showcase)
     - [🏛️ Research Landing Page](#️-research-landing-page)
     - [🔍 Quality Assurance: The Validation Gate](#-quality-assurance-the-validation-gate)
@@ -577,6 +576,7 @@ The latest version of **DRH Edge** introduces native support for the **Model Con
 
 - For full setup templates, pathing guides, and prompting strategies, please refer to the:
 👉 **[MCP Orchestration & Prompting Guide](MCP-TOOLING-GUIDE.md)**
+
 ---
 
 ## 🎨 Platform Visual Showcase
